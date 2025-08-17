@@ -47,3 +47,5 @@ yarn-error.log*
 bin/
 build/
 *__debug*
+tree.txt
+commandlist.txt

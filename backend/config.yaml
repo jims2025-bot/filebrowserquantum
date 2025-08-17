@@ -1,10 +1,11 @@
 server:
-  port: 80
-  baseURL:  "/"
+  port: 8080
+  baseURL: "/"
   logging:
     - levels: "info|warning|error"
   sources:
-    - path: "/srv"
+    # Change this line
+    - path: "E:/PERSONAL/PHOTOS/zScannedAlbums"
 userDefaults:
   preview:
     image: true
