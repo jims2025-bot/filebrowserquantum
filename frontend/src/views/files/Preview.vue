@@ -54,6 +54,94 @@
       </div>
     </div>
 
+    <!-- START OF NEW TABBED INTERFACE -->
+    <div class="metadata-container">
+      <div class="tabs-header">
+        <button
+          v-for="tab in tabs"
+          :key="tab.name"
+          :class="{ active: activeTab === tab.name }"
+          @click="selectTab(tab.name)"
+        >
+          {{ tab.label }}
+        </button>
+      </div>
+      <div class="tabs-content">
+        <!-- DETAILS Tab -->
+        <div v-if="activeTab === 'details'" class="tab-pane">
+          <h3>File Details</h3>
+          <ul>
+            <li><strong>Name:</strong> {{ req.name }}</li>
+            <li><strong>Path:</strong> {{ req.path }}</li>
+            <li><strong>Size:</strong> {{ req.size | bytesToSize }}</li>
+            <li><strong>Type:</strong> {{ req.type }}</li>
+            <li><strong>Modified:</strong> {{ formattedModifiedDate }}</li>
+          </ul>
+        </div>
+
+        <!-- EXIF Tab -->
+        <div v-if="activeTab === 'exif'" class="tab-pane">
+          <h3>EXIF Metadata</h3>
+          <!--
+            TODO:
+            Bind your fetched EXIF data here. Example:
+            <ul v-if="metadata && metadata.exif">
+              <li v-for="(value, key) in metadata.exif" :key="key">
+                <strong>{{ key }}:</strong> {{ value }}
+              </li>
+            </ul>
+            <p v-else>No EXIF data available.</p>
+          -->
+          <p>This tab will display EXIF metadata once implemented in the backend.</p>
+        </div>
+
+        <!-- IPTC Tab -->
+        <div v-if="activeTab === 'iptc'" class="tab-pane">
+          <h3>IPTC Metadata</h3>
+          <!--
+            TODO:
+            Bind your fetched IPTC data here. Example:
+            <ul v-if="metadata && metadata.iptc">
+              <li v-for="(value, key) in metadata.iptc" :key="key">
+                <strong>{{ key }}:</strong> {{ value }}
+              </li>
+            </ul>
+            <p v-else>No IPTC data available.</p>
+          -->
+          <p>This tab will display IPTC metadata once implemented in the backend.</p>
+        </div>
+
+        <!-- XMP Tab -->
+        <div v-if="activeTab === 'xmp'" class="tab-pane">
+          <h3>XMP Metadata</h3>
+          <!--
+            TODO:
+            Bind your fetched XMP data here. Example:
+            <ul v-if="metadata && metadata.xmp">
+              <li v-for="(value, key) in metadata.xmp" :key="key">
+                <strong>{{ key }}:</strong> {{ value }}
+              </li>
+            </ul>
+            <p v-else>No XMP data available.</p>
+          -->
+          <p>This tab will display XMP metadata once implemented in the backend.</p>
+        </div>
+
+        <!-- MAP Tab -->
+        <div v-if="activeTab === 'map'" class="tab-pane">
+          <h3>Map Location</h3>
+          <!--
+            TODO:
+            Implement a map component here using latitude and longitude data from your API call.
+            <div id="map-container"></div>
+            <p v-else>No geographical data available.</p>
+          -->
+          <p>This tab will display a map of the image's location once implemented in the backend and frontend.</p>
+        </div>
+      </div>
+    </div>
+    <!-- END OF NEW TABBED INTERFACE -->
+
     <button
       @click="prev"
       @mouseover="hoverNav = true"
@@ -87,6 +175,7 @@ import { state, getters, mutations } from "@/store";
 import { getFileExtension } from "@/utils/files";
 import { convertToVTT } from "@/utils/subtitles";
 import { getTypeInfo } from "@/utils/mimetype";
+import moment from "moment";
 
 export default {
   name: "preview",
@@ -108,6 +197,17 @@ export default {
       nextRaw: "",
       currentPrompt: null, // Replaces Vuex getter `currentPrompt`
       subtitlesList: [],
+      // START OF NEW DATA PROPERTIES
+      activeTab: "details",
+      tabs: [
+        { name: "details", label: "Details" },
+        { name: "exif", label: "EXIF" },
+        { name: "iptc", label: "IPTC" },
+        { name: "xmp", label: "XMP" },
+        { name: "map", label: "Map" },
+      ],
+      metadata: null,
+      // END OF NEW DATA PROPERTIES
     };
   },
   computed: {
@@ -141,6 +241,12 @@ export default {
     req() {
       return state.req;
     },
+    formattedModifiedDate() {
+      if (!this.req || !this.req.modified) {
+        return '';
+      }
+      return moment(this.req.modified).format('LL');
+    }
   },
   watch: {
     req() {
@@ -149,6 +255,10 @@ export default {
       }
       this.updatePreview();
       this.toggleNavigation();
+      // START OF NEW WATCHER LOGIC
+      this.activeTab = "details"; // Reset to the first tab when the file changes
+      this.fetchMetadata(); // Fetch metadata for the new file
+      // END OF NEW WATCHER LOGIC
     },
   },
   async mounted() {
@@ -164,11 +274,39 @@ export default {
       source: state.req.source,
       url: state.req.url,
     });
+    // START OF NEW MOUNTED LOGIC
+    this.fetchMetadata(); // Fetch metadata on initial mount
+    // END OF NEW MOUNTED LOGIC
   },
   beforeUnmount() {
     window.removeEventListener("keydown", this.key);
   },
   methods: {
+    // START OF NEW METHODS
+    selectTab(tabName) {
+      this.activeTab = tabName;
+    },
+    async fetchMetadata() {
+      // Check if the file is an image before trying to fetch metadata
+      if (this.previewType !== 'image') {
+        this.metadata = null;
+        return;
+      }
+      
+      // TODO: Replace this with your actual API call.
+      // This is a placeholder to show the structure.
+      // You should call your new /api/metadata endpoint here.
+      // Example:
+      // try {
+      //   const res = await filesApi.fetchMetadata(state.req.source, state.req.path);
+      //   this.metadata = res.data;
+      // } catch (error) {
+      //   console.error("Failed to fetch metadata:", error);
+      //   this.metadata = null;
+      // }
+      console.log('Fetching metadata for:', state.req.path);
+    },
+    // END OF NEW METHODS
     async subtitles() {
       if (!state.req.subtitles || state.req.subtitles.length === 0) {
         return [];
@@ -321,3 +459,85 @@ export default {
   },
 };
 </script>
+<style lang="scss">
+:root {
+  --dark-theme-1: #1a1a1a;
+  --dark-theme-2: #242424;
+  --accent: #42b983;
+}
+
+#previewer {
+  display: flex;
+  height: 100%;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  background: var(--dark-theme-1);
+  position: absolute;
+  top: 0;
+  left: 0;
+  
+  .preview {
+    width: 100%;
+    height: calc(100% - 150px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+.metadata-container {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  max-height: 150px;
+  background: var(--dark-theme-1);
+  color: #fff;
+  border-top: 1px solid var(--dark-theme-2);
+  padding: 1rem;
+  overflow-y: auto;
+  
+  .tabs-header {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 1rem;
+    
+    button {
+      background: none;
+      border: none;
+      color: #fff;
+      font-weight: bold;
+      padding: 0.5rem 1rem;
+      cursor: pointer;
+      opacity: 0.6;
+      transition: opacity 0.2s ease-in-out;
+      
+      &:hover {
+        opacity: 1;
+      }
+      
+      &.active {
+        opacity: 1;
+        border-bottom: 2px solid var(--accent);
+      }
+    }
+  }
+  
+  .tab-pane {
+    h3 {
+      margin-top: 0;
+      color: var(--accent);
+      text-align: center;
+    }
+    
+    ul {
+      list-style-type: none;
+      padding: 0;
+      li {
+        padding: 0.25rem 0;
+      }
+    }
+  }
+}
+</style>
