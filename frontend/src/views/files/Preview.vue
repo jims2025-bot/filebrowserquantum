@@ -1,13 +1,5 @@
 <template>
   <div id="previewer" @mousemove="toggleNavigation" @touchstart="toggleNavigation">
-    <!-- Header for controls -->
-    <div class="header-controls">
-      <label class="metadata-toggle">
-        <input type="checkbox" v-model="isMetadataVisible" />
-        Metadata
-      </label>
-    </div>
-
     <div class="preview" :class="{ 'full-height': !isMetadataVisible }">
       <ExtendedImage v-if="previewType == 'image'" :src="raw"> </ExtendedImage>
       <audio
@@ -62,9 +54,7 @@
       </div>
     </div>
 
-    <!-- START OF NEW TABBED INTERFACE -->
     <div class="metadata-container" v-if="isMetadataVisible" :style="{ height: metadataHeight + 'px' }">
-      <!-- The resize handle now also listens for touchstart events -->
       <div class="resize-handle" @mousedown="startResize" @touchstart.stop="startResize"></div>
       <div class="tabs-header">
         <button
@@ -77,7 +67,6 @@
         </button>
       </div>
       <div class="tabs-content">
-        <!-- DETAILS Tab -->
         <div v-if="activeTab === 'details'" class="tab-pane">
           <h3>File Details</h3>
           <ul>
@@ -89,69 +78,27 @@
           </ul>
         </div>
 
-        <!-- EXIF Tab -->
         <div v-if="activeTab === 'exif'" class="tab-pane">
           <h3>EXIF Metadata</h3>
-          <!--
-            TODO:
-            Bind your fetched EXIF data here. Example:
-            <ul v-if="metadata && metadata.exif">
-              <li v-for="(value, key) in metadata.exif" :key="key">
-                <strong>{{ key }}:</strong> {{ value }}
-              </li>
-            </ul>
-            <p v-else>No EXIF data available.</p>
-          -->
           <p>This tab will display EXIF metadata once implemented in the backend.</p>
         </div>
 
-        <!-- IPTC Tab -->
         <div v-if="activeTab === 'iptc'" class="tab-pane">
           <h3>IPTC Metadata</h3>
-          <!--
-            TODO:
-            Bind your fetched IPTC data here. Example:
-            <ul v-if="metadata && metadata.iptc">
-              <li v-for="(value, key) in metadata.iptc" :key="key">
-                <strong>{{ key }}:</strong> {{ value }}
-              </li>
-            </ul>
-            <p v-else>No IPTC data available.</p>
-          -->
           <p>This tab will display IPTC metadata once implemented in the backend.</p>
         </div>
 
-        <!-- XMP Tab -->
         <div v-if="activeTab === 'xmp'" class="tab-pane">
           <h3>XMP Metadata</h3>
-          <!--
-            TODO:
-            Bind your fetched XMP data here. Example:
-            <ul v-if="metadata && metadata.xmp">
-              <li v-for="(value, key) in metadata.xmp" :key="key">
-                <strong>{{ key }}:</strong> {{ value }}
-              </li>
-            </ul>
-            <p v-else>No XMP data available.</p>
-          -->
           <p>This tab will display XMP metadata once implemented in the backend.</p>
         </div>
 
-        <!-- MAP Tab -->
         <div v-if="activeTab === 'map'" class="tab-pane">
           <h3>Map Location</h3>
-          <!--
-            TODO:
-            Implement a map component here using latitude and longitude data from your API call.
-            <div id="map-container"></div>
-            <p v-else>No geographical data available.</p>
-          -->
           <p>This tab will display a map of the image's location once implemented in the backend and frontend.</p>
         </div>
       </div>
     </div>
-    <!-- END OF NEW TABBED INTERFACE -->
-
     <button
       @click="prev"
       @mouseover="hoverNav = true"
@@ -207,7 +154,7 @@ export default {
       autoPlay: false,
       previousRaw: "",
       nextRaw: "",
-      currentPrompt: null, // Replaces Vuex getter `currentPrompt`
+      currentPrompt: null,
       subtitlesList: [],
       // START OF NEW DATA PROPERTIES
       activeTab: "details",
@@ -219,7 +166,6 @@ export default {
         { name: "map", "label": "Map" },
       ],
       metadata: null,
-      isMetadataVisible: true,
       isResizing: false,
       metadataHeight: 250, // Default height in pixels
       // END OF NEW DATA PROPERTIES
@@ -261,7 +207,10 @@ export default {
         return '';
       }
       return moment(this.req.modified).format('LL');
-    }
+    },
+    isMetadataVisible() {
+      return getters.isMetadataVisible();
+    },
   },
   watch: {
     req() {
@@ -341,7 +290,6 @@ export default {
         event.preventDefault();
       }
     },
-    // Unified resize function for mouse and touch
     resizeMetadata(event) {
       if (!this.isResizing) return;
       // Get the correct vertical position from mouse or touch event
@@ -535,15 +483,6 @@ export default {
     z-index: 20;
     color: #fff;
     font-size: 14px;
-
-    .metadata-toggle {
-      display: flex;
-      align-items: center;
-
-      input[type="checkbox"] {
-        margin-right: 5px;
-      }
-    }
   }
 
   .preview {

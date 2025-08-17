@@ -305,4 +305,5 @@ export const getters = {
     }
     return true;
   },
+  isMetadataVisible: () => state.isMetadataVisible,  
 };

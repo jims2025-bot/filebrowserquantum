@@ -1,7 +1,7 @@
 import * as i18n from "@/i18n";
 import { state } from "./state.js";
 import { getters } from "./getters.js";
-import { emitStateChanged } from './eventBus'; // Import the function from eventBus.js
+import { emitStateChanged } from './eventBus';
 import { usersApi } from "@/api";
 import { notify } from "@/notify";
 import { sortedItems } from "@/utils/sort.js";
@@ -17,6 +17,10 @@ export const mutations = {
   },
   toggleOverflowMenu: () => {
     state.showOverflowMenu = !state.showOverflowMenu;
+    emitStateChanged();
+  },
+  toggleMetadataVisibility: () => {
+    state.isMetadataVisible = !state.isMetadataVisible;
     emitStateChanged();
   },
   setWatchDirChangeAvailable() {
@@ -214,7 +218,7 @@ export const mutations = {
       }
       // Ensure locale exists and is valid
       if (!value.locale) {
-        value.locale = i18n.detectLocale();  // Default to detected locale if missing
+        value.locale = i18n.detectLocale();
       }
       state.user = value;
     } catch (error) {
@@ -361,4 +365,3 @@ export const mutations = {
     emitStateChanged();
   },
 };
-

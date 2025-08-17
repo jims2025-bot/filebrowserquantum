@@ -10,6 +10,7 @@
     <search v-if="showSearch" />
     <title v-else-if="isSettings" class="topTitle">{{ $t("sidebar.settings") }}</title>
     <title v-else class="topTitle">{{ req.name }}</title>
+    
     <action
       v-if="isListingView"
       class="menu-button"
@@ -19,7 +20,13 @@
       :disabled="isSearchActive"
     />
     <action
-      v-else-if="!isShare"
+      v-if="isMetadataToggleVisible"
+      icon="info"
+      label="Metadata"
+      @action="toggleMetadata"
+    />
+    <action
+      v-if="!isShare && isPreviewView"
       :icon="iconName"
       :disabled="noItems"
       @click="toggleOverflow"
@@ -50,6 +57,9 @@ export default {
     },
     isListingView() {
       return getters.currentView() == "listingView";
+    },
+    isPreviewView() {
+      return getters.currentView() == "preview";
     },
     iconName() {
       return getters.currentPromptName() === "OverflowMenu"
@@ -101,8 +111,14 @@ export default {
     isSettings() {
       return getters.isSettings();
     },
+    isMetadataToggleVisible() {
+      return getters.currentView() === 'preview';
+    },
   },
   methods: {
+    toggleMetadata() {
+      mutations.toggleMetadataVisibility();
+    },
     toggleOverflow() {
       if (getters.currentPromptName() === "OverflowMenu") {
         mutations.closeHovers();
