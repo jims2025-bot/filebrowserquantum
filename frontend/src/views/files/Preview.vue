@@ -1,6 +1,14 @@
 <template>
   <div id="previewer" @mousemove="toggleNavigation" @touchstart="toggleNavigation">
-    <div class="preview">
+    <!-- Header for controls -->
+    <div class="header-controls">
+      <label class="metadata-toggle">
+        <input type="checkbox" v-model="isMetadataVisible" />
+        Metadata
+      </label>
+    </div>
+
+    <div class="preview" :class="{ 'full-height': !isMetadataVisible }">
       <ExtendedImage v-if="previewType == 'image'" :src="raw"> </ExtendedImage>
       <audio
         v-else-if="previewType == 'audio'"
@@ -55,7 +63,9 @@
     </div>
 
     <!-- START OF NEW TABBED INTERFACE -->
-    <div class="metadata-container">
+    <div class="metadata-container" v-if="isMetadataVisible" :style="{ height: metadataHeight + 'px' }">
+      <!-- The resize handle now also listens for touchstart events -->
+      <div class="resize-handle" @mousedown="startResize" @touchstart.stop="startResize"></div>
       <div class="tabs-header">
         <button
           v-for="tab in tabs"
@@ -205,10 +215,13 @@ export default {
         { name: "details", label: "Details" },
         { name: "exif", label: "EXIF" },
         { name: "iptc", label: "IPTC" },
-        { name: "xmp", label: "XMP" },
+        { name: "xmp", "label": "XMP" },
         { name: "map", "label": "Map" },
       ],
       metadata: null,
+      isMetadataVisible: true,
+      isResizing: false,
+      metadataHeight: 250, // Default height in pixels
       // END OF NEW DATA PROPERTIES
     };
   },
@@ -276,12 +289,22 @@ export default {
       source: state.req.source,
       url: state.req.url,
     });
-    // START OF NEW MOUNTED LOGIC
+    // START OF NEW MOUNTED LOGIC FOR RESIZING
     this.fetchMetadata(); // Fetch metadata on initial mount
-    // END OF NEW MOUNTED LOGIC
+    document.addEventListener('mousemove', this.resizeMetadata);
+    document.addEventListener('mouseup', this.stopResize);
+    document.addEventListener('touchmove', this.resizeMetadata);
+    document.addEventListener('touchend', this.stopResize);
+    // END OF NEW MOUNTED LOGIC FOR RESIZING
   },
   beforeUnmount() {
     window.removeEventListener("keydown", this.key);
+    // START OF NEW UNMOUNT LOGIC FOR RESIZING
+    document.removeEventListener('mousemove', this.resizeMetadata);
+    document.removeEventListener('mouseup', this.stopResize);
+    document.removeEventListener('touchmove', this.resizeMetadata);
+    document.removeEventListener('touchend', this.stopResize);
+    // END OF NEW UNMOUNT LOGIC FOR RESIZING
   },
   methods: {
     // START OF NEW METHODS
@@ -307,6 +330,31 @@ export default {
       //   this.metadata = null;
       // }
       console.log('Fetching metadata for:', state.req.path);
+    },
+    // Unified start resize function for mouse and touch
+    startResize(event) {
+      this.isResizing = true;
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = 'ns-resize';
+      // To prevent mobile touch from scrolling the page
+      if (event.type === 'touchstart') {
+        event.preventDefault();
+      }
+    },
+    // Unified resize function for mouse and touch
+    resizeMetadata(event) {
+      if (!this.isResizing) return;
+      // Get the correct vertical position from mouse or touch event
+      const clientY = event.touches ? event.touches[0].clientY : event.clientY;
+      const newHeight = window.innerHeight - clientY;
+      const minHeight = 50;
+      const maxHeight = window.innerHeight * 0.8;
+      this.metadataHeight = Math.min(Math.max(newHeight, minHeight), maxHeight);
+    },
+    stopResize() {
+      this.isResizing = false;
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
     },
     // END OF NEW METHODS
     async subtitles() {
@@ -480,6 +528,24 @@ export default {
   top: 0;
   left: 0;
   
+  .header-controls {
+    position: absolute;
+    top: 10px;
+    left: 20px;
+    z-index: 20;
+    color: #fff;
+    font-size: 14px;
+
+    .metadata-toggle {
+      display: flex;
+      align-items: center;
+
+      input[type="checkbox"] {
+        margin-right: 5px;
+      }
+    }
+  }
+
   .preview {
     width: 100%;
     height: auto;
@@ -487,11 +553,14 @@ export default {
     display: flex;
     align-items: center;
     justify-content: center;
+
+    &.full-height {
+      height: 100%;
+    }
   }
 }
 
 .metadata-container {
-  // Positioning and sizing for the resizable tab bar
   position: relative;
   width: 100%;
   min-height: 50px;
@@ -501,7 +570,16 @@ export default {
   border-top: 1px solid var(--dark-theme-2);
   padding: 1rem;
   overflow-y: auto;
-  resize: vertical;
+  
+  .resize-handle {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 10px;
+    cursor: ns-resize;
+    background: transparent;
+  }
   
   .tabs-header {
     display: flex;
