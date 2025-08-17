@@ -149,6 +149,7 @@
       :class="{ hidden: !hasPrevious || !showNav }"
       :aria-label="$t('buttons.previous')"
       :title="$t('buttons.previous')"
+      class="nav-button nav-button-prev"
     >
       <i class="material-icons">chevron_left</i>
     </button>
@@ -159,6 +160,7 @@
       :class="{ hidden: !hasNext || !showNav }"
       :aria-label="$t('buttons.next')"
       :title="$t('buttons.next')"
+      class="nav-button nav-button-next"
     >
       <i class="material-icons">chevron_right</i>
     </button>
@@ -204,7 +206,7 @@ export default {
         { name: "exif", label: "EXIF" },
         { name: "iptc", label: "IPTC" },
         { name: "xmp", label: "XMP" },
-        { name: "map", label: "Map" },
+        { name: "map", "label": "Map" },
       ],
       metadata: null,
       // END OF NEW DATA PROPERTIES
@@ -468,6 +470,7 @@ export default {
 
 #previewer {
   display: flex;
+  flex-direction: column;
   height: 100%;
   width: 100%;
   align-items: center;
@@ -479,7 +482,8 @@ export default {
   
   .preview {
     width: 100%;
-    height: calc(100% - 150px);
+    height: auto;
+    flex-grow: 1;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -487,16 +491,17 @@ export default {
 }
 
 .metadata-container {
-  position: absolute;
-  bottom: 0;
-  left: 0;
+  // Positioning and sizing for the resizable tab bar
+  position: relative;
   width: 100%;
-  max-height: 150px;
+  min-height: 50px;
+  max-height: 80%;
   background: var(--dark-theme-1);
   color: #fff;
   border-top: 1px solid var(--dark-theme-2);
   padding: 1rem;
   overflow-y: auto;
+  resize: vertical;
   
   .tabs-header {
     display: flex;
@@ -539,5 +544,46 @@ export default {
       }
     }
   }
+}
+
+// Styling for the navigation buttons
+.nav-button {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+  background: rgba(0, 0, 0, 0.4);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  height: 40px;
+  width: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 1;
+  transition: opacity 0.3s ease;
+
+  i {
+    font-size: 36px;
+  }
+  
+  &:hover {
+    background: rgba(0, 0, 0, 0.7);
+  }
+
+  &.hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
+.nav-button-prev {
+  left: 20px;
+}
+
+.nav-button-next {
+  right: 20px;
 }
 </style>
