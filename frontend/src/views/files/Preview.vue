@@ -257,7 +257,7 @@ export default {
       if (this.metadata.xmp && Object.keys(this.metadata.xmp).length > 0) {
         tabs.push({ name: "xmp", label: "XMP" });
       }
-      console.log("Available tabs:", tabs); // Debug
+      console.log("Available tabs:", tabs);
       return tabs;
     },
     raw() {
@@ -297,20 +297,28 @@ export default {
     },
   },
   watch: {
-    req() {
+    async req() {
       if (!getters.isLoggedIn()) {
         return;
       }
-      this.updatePreview();
+      await this.updatePreview();
       this.toggleNavigation();
-      this.activeTab = "details";
-      this.fetchMetadata();
+      await this.fetchMetadata();
+      // Validate activeTab against availableTabs after metadata is fetched
+      this.$nextTick(() => {
+        const availableTabNames = this.availableTabs.map(tab => tab.name);
+        console.log("Validating activeTab:", this.activeTab, "Available:", availableTabNames);
+        if (!availableTabNames.includes(this.activeTab)) {
+          this.activeTab = "details";
+          console.log("Reset activeTab to 'details' as current tab is not available");
+        }
+      });
     },
   },
   async mounted() {
     window.addEventListener("keydown", this.key);
     this.subtitlesList = await this.subtitles();
-    this.updatePreview();
+    await this.updatePreview();
     mutations.resetSelected();
     mutations.addSelected({
       name: state.req.name,
@@ -320,7 +328,7 @@ export default {
       source: state.req.source,
       url: state.req.url,
     });
-    this.fetchMetadata();
+    await this.fetchMetadata();
     document.addEventListener("mousemove", this.resizeMetadata);
     document.addEventListener("mouseup", this.stopResize);
     document.addEventListener("touchmove", this.resizeMetadata);
