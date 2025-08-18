@@ -6,20 +6,19 @@ COPY ./backend ./
 #RUN swag init --output swagger/docs
 RUN ln -s swagger /usr/local/go/src/
 RUN go build -ldflags="-w -s \
-  -X 'github.com/gtsteffaniak/filebrowser/backend/common/version.Version=${VERSION}' \
-  -X 'github.com/gtsteffaniak/filebrowser/backend/common/version.CommitSHA=${REVISION}'" \
+  -X 'github.com/jims2025-bot/filebrowserquantum/backend/common/version.Version=${VERSION}' \
+  -X 'github.com/jims2025-bot/filebrowserquantum/backend/common/version.CommitSHA=${REVISION}'" \
   -o filebrowser .
 
 FROM node:slim AS nbuild
 WORKDIR /app
 COPY ./frontend/package.json ./
 RUN npm i --maxsockets 1
-COPY  ./frontend/ ./
+COPY ./frontend/ ./
 RUN npm run build-docker
 
 FROM alpine:latest
-
-RUN apk add --no-cache curl xz && \
+RUN apk add --no-cache curl xz exiftool && \
     ARCH=$(uname -m) && \
     case "$ARCH" in \
       x86_64)   URL="https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz" ;; \
@@ -51,8 +50,8 @@ COPY --from=nbuild --chown=filebrowser:1000 /app/dist/ ./http/dist/
 RUN [ "filebrowser", "version" ]
 RUN [ "ffmpeg", "-version" ]
 RUN [ "ffprobe", "-version" ]
+RUN [ "exiftool", "-ver" ]
 
 USER root
-# exposing default port for auto discovery.
 EXPOSE 80
 ENTRYPOINT [ "./filebrowser" ]
