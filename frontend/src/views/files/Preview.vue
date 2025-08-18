@@ -1,7 +1,23 @@
 <template>
   <div id="previewer" @mousemove="toggleNavigation" @touchstart="toggleNavigation">
     <div class="preview" :class="{ 'full-height': !isMetadataVisible }">
-      <ExtendedImage v-if="previewType == 'image'" :src="raw"></ExtendedImage>
+      <div class="image-container" v-if="previewType == 'image'">
+        <img ref="image" :src="raw" @load="updateImageDimensions" style="max-width: 100%; max-height: 100%;">
+        <div
+          v-if="activeTab === 'xmp' && metadata && metadata.xmp && metadata.xmp.Regions && metadata.xmp.Regions.length > 0"
+          class="face-overlay"
+          :style="{ width: imageDimensions.width + 'px', height: imageDimensions.height + 'px' }"
+        >
+          <div
+            v-for="(region, index) in metadata.xmp.Regions"
+            :key="index"
+            class="face-box"
+            :style="getFaceBoxStyle(region)"
+          >
+            <span class="face-label">{{ region.Name || 'Unnamed' }}</span>
+          </div>
+        </div>
+      </div>
       <audio
         v-else-if="previewType == 'audio'"
         ref="player"
@@ -64,7 +80,6 @@
         >
           {{ tab.label }}
         </button>
-        <!-- Debug: Show which tabs are available -->
         <div>Debug: Available tabs - {{ availableTabs.map(tab => tab.label).join(', ') }}</div>
       </div>
       <div class="tabs-content">
@@ -135,7 +150,7 @@
               </thead>
               <tbody>
                 <tr v-for="(region, index) in metadata.xmp.Regions" :key="index">
-                  <td>{{ region.Name }}</td>
+                  <td>{{ region.Name || 'Unnamed' }}</td>
                   <td>{{ JSON.stringify(region) }}</td>
                 </tr>
               </tbody>
@@ -196,7 +211,6 @@
 import * as filesApi from "@/api/files.js";
 import url from "@/utils/url.js";
 import throttle from "@/utils/throttle";
-import ExtendedImage from "@/components/files/ExtendedImage.vue";
 import { state, getters, mutations } from "@/store";
 import { getFileExtension } from "@/utils/files";
 import { convertToVTT } from "@/utils/subtitles";
@@ -205,9 +219,7 @@ import moment from "moment";
 
 export default {
   name: "preview",
-  components: {
-    ExtendedImage,
-  },
+  components: {},
   data() {
     return {
       previousLink: "",
@@ -234,6 +246,8 @@ export default {
       metadata: null,
       isResizing: false,
       metadataHeight: 300,
+      imageDimensions: { width: 0, height: 0 },
+      dimensionRetryCount: 0,
     };
   },
   computed: {
@@ -261,7 +275,9 @@ export default {
       return tabs;
     },
     raw() {
-      return filesApi.getDownloadURL(state.req.source, state.req.path, true);
+      const url = filesApi.getDownloadURL(state.req.source, state.req.path, true);
+      console.log("Image src URL:", url);
+      return url;
     },
     isDarkMode() {
       return getters.isDarkMode();
@@ -301,9 +317,11 @@ export default {
       if (!getters.isLoggedIn()) {
         return;
       }
+      this.dimensionRetryCount = 0;
       await this.updatePreview();
       this.toggleNavigation();
       await this.fetchMetadata();
+      await this.updateImageDimensions();
       // Validate activeTab against availableTabs after metadata is fetched
       this.$nextTick(() => {
         const availableTabNames = this.availableTabs.map(tab => tab.name);
@@ -313,6 +331,12 @@ export default {
           console.log("Reset activeTab to 'details' as current tab is not available");
         }
       });
+    },
+    activeTab(newTab) {
+      if (newTab === "xmp") {
+        this.dimensionRetryCount = 0;
+        this.$nextTick(() => this.updateImageDimensions());
+      }
     },
   },
   async mounted() {
@@ -329,10 +353,12 @@ export default {
       url: state.req.url,
     });
     await this.fetchMetadata();
+    await this.updateImageDimensions();
     document.addEventListener("mousemove", this.resizeMetadata);
     document.addEventListener("mouseup", this.stopResize);
     document.addEventListener("touchmove", this.resizeMetadata);
     document.addEventListener("touchend", this.stopResize);
+    window.addEventListener("resize", this.updateImageDimensions);
   },
   beforeUnmount() {
     window.removeEventListener("keydown", this.key);
@@ -340,6 +366,7 @@ export default {
     document.removeEventListener("mouseup", this.stopResize);
     document.removeEventListener("touchmove", this.resizeMetadata);
     document.removeEventListener("touchend", this.stopResize);
+    window.removeEventListener("resize", this.updateImageDimensions);
   },
   methods: {
     selectTab(tabName) {
@@ -361,6 +388,67 @@ export default {
         this.metadata = { exif: {}, iptc: {}, xmp: {} };
       }
     },
+    async updateImageDimensions() {
+      if (this.previewType !== "image" || !this.$refs.image) {
+        console.log("No image or ref, skipping dimension update");
+        return;
+      }
+      await this.$nextTick();
+      const imgElement = this.$refs.image;
+      if (!imgElement) {
+        console.error("No image element found");
+        if (this.dimensionRetryCount < 5) {
+          this.dimensionRetryCount++;
+          console.log(`Retrying dimension update (${this.dimensionRetryCount}/5)`);
+          setTimeout(() => this.updateImageDimensions(), 500);
+        }
+        return;
+      }
+      console.log("Found image element:", imgElement.tagName, imgElement);
+      if (imgElement.complete || imgElement.readyState === 4) {
+        const width = imgElement.clientWidth || imgElement.offsetWidth || imgElement.getBoundingClientRect().width;
+        const height = imgElement.clientHeight || imgElement.offsetHeight || imgElement.getBoundingClientRect().height;
+        this.imageDimensions = { width, height };
+        console.log("Image dimensions:", this.imageDimensions);
+      } else {
+        console.log("Image not loaded, waiting for load event");
+        imgElement.addEventListener(
+          "load",
+          () => {
+            const width = imgElement.clientWidth || imgElement.offsetWidth || imgElement.getBoundingClientRect().width;
+            const height = imgElement.clientHeight || imgElement.offsetHeight || imgElement.getBoundingClientRect().height;
+            this.imageDimensions = { width, height };
+            console.log("Image dimensions (loaded):", this.imageDimensions);
+          },
+          { once: true }
+        );
+      }
+    },
+    getFaceBoxStyle(region) {
+      if (!region.ALGArea || !this.imageDimensions.width || !this.imageDimensions.height) {
+        console.log("Missing ALGArea or image dimensions, using fallback style");
+        return {
+          left: "10px",
+          top: `${10 + 60 * this.metadata.xmp.Regions.indexOf(region)}px`, // Stack vertically
+          width: "100px",
+          height: "100px",
+        };
+      }
+      const { X, Y, W, H } = region.ALGArea;
+      const imgWidth = this.imageDimensions.width;
+      const imgHeight = this.imageDimensions.height;
+      const pixelWidth = W * imgWidth;
+      const pixelHeight = H * imgHeight;
+      const pixelX = X * imgWidth - pixelWidth / 2; // X is center
+      const pixelY = Y * imgHeight - pixelHeight / 2; // Y is center
+      console.log("Face box for", region.Name || "Unnamed", { pixelX, pixelY, pixelWidth, pixelHeight });
+      return {
+        left: `${pixelX}px`,
+        top: `${pixelY}px`,
+        width: `${pixelWidth}px`,
+        height: `${pixelHeight}px`,
+      };
+    },
     startResize(event) {
       this.isResizing = true;
       document.body.style.userSelect = "none";
@@ -376,6 +464,8 @@ export default {
       const minHeight = 50;
       const maxHeight = window.innerHeight * 0.8;
       this.metadataHeight = Math.min(Math.max(newHeight, minHeight), maxHeight);
+      this.dimensionRetryCount = 0;
+      this.updateImageDimensions();
     },
     stopResize() {
       this.isResizing = false;
@@ -506,6 +596,8 @@ export default {
     },
     toggleSize() {
       this.fullSize = !this.fullSize;
+      this.dimensionRetryCount = 0;
+      this.$nextTick(() => this.updateImageDimensions());
     },
     toggleNavigation: throttle(function () {
       this.showNav = true;
@@ -547,7 +639,7 @@ export default {
   position: absolute;
   top: 0;
   left: 0;
-  
+
   .header-controls {
     position: absolute;
     top: 10px;
@@ -568,6 +660,44 @@ export default {
     &.full-height {
       height: 100%;
     }
+
+    .image-container {
+      position: relative;
+      display: inline-block;
+      max-width: 100%;
+      max-height: 100%;
+      overflow: hidden;
+    }
+
+    .face-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      pointer-events: none;
+      background: rgba(0, 0, 0, 0.1); /* Light background for debugging */
+    }
+
+    .face-box {
+      position: absolute;
+      border: 2px solid var(--accent);
+      box-sizing: border-box;
+      min-width: 50px;
+      min-height: 50px;
+      background: rgba(66, 185, 131, 0.2); /* Semi-transparent for visibility */
+    }
+
+    .face-label {
+      position: absolute;
+      top: -28px;
+      left: 0;
+      background: rgba(0, 0, 0, 0.8);
+      color: #fff;
+      padding: 4px 8px;
+      font-size: 14px;
+      white-space: nowrap;
+      border-radius: 3px;
+      z-index: 10;
+    }
   }
 }
 
@@ -581,7 +711,7 @@ export default {
   border-top: 1px solid var(--dark-theme-2);
   padding: 1rem;
   overflow-y: auto;
-  
+
   .resize-handle {
     position: absolute;
     top: 0;
@@ -591,12 +721,12 @@ export default {
     cursor: ns-resize;
     background: transparent;
   }
-  
+
   .tabs-header {
     display: flex;
     justify-content: center;
     margin-bottom: 1rem;
-    
+
     button {
       background: none;
       border: none;
@@ -606,18 +736,18 @@ export default {
       cursor: pointer;
       opacity: 0.6;
       transition: opacity 0.2s ease-in-out;
-      
+
       &:hover {
         opacity: 1;
       }
-      
+
       &.active {
         opacity: 1;
         border-bottom: 2px solid var(--accent);
       }
     }
   }
-  
+
   .tab-pane {
     display: block;
     opacity: 1;
@@ -626,7 +756,7 @@ export default {
       color: var(--accent);
       text-align: center;
     }
-    
+
     ul {
       list-style-type: none;
       padding: 0;
@@ -640,7 +770,8 @@ export default {
       table {
         width: 100%;
         border-collapse: collapse;
-        td, th {
+        td,
+        th {
           padding: 8px;
           border-bottom: 1px solid var(--dark-theme-2);
           text-align: left;
@@ -671,7 +802,7 @@ export default {
   i {
     font-size: 36px;
   }
-  
+
   &:hover {
     background: rgba(0, 0, 0, 0.7);
   }
