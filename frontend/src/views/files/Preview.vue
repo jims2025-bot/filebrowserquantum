@@ -1,3 +1,4 @@
+```vue
 <template>
   <div id="previewer" @mousemove="toggleNavigation" @touchstart="toggleNavigation">
     <div class="preview" :class="{ 'full-height': !isMetadataVisible }">
@@ -453,8 +454,8 @@ export default {
           top: `${10 + 60 * this.metadata.xmp.Regions.indexOf(region)}px`,
           width: "100px",
           height: "100px",
-          border: "2px solid var(--accent-green)",
-          background: "rgba(66, 185, 131, 0.2)",
+          border: "2px solid var(--accent-blue)",
+          background: "rgba(0, 0, 255, 0.2)",
         };
       }
       const { X, Y, W, H } = region.ALGArea;
@@ -464,8 +465,17 @@ export default {
       const pixelHeight = H * imgHeight;
       const pixelX = X * imgWidth - pixelWidth / 2; // X is center
       const pixelY = Y * imgHeight - pixelHeight / 2; // Y is center
-      const borderColor = region.NameAssignType === 'auto' ? 'var(--accent-yellow)' : 'var(--accent-green)';
-      const backgroundColor = region.NameAssignType === 'auto' ? 'rgba(255, 255, 0, 0.2)' : 'rgba(66, 185, 131, 0.2)';
+      let borderColor, backgroundColor;
+      if (region.NameAssignType === 'auto') {
+        borderColor = 'var(--accent-yellow)';
+        backgroundColor = 'rgba(255, 255, 0, 0.2)';
+      } else if (region.NameAssignType === 'manual') {
+        borderColor = 'var(--accent-green)';
+        backgroundColor = 'rgba(66, 185, 131, 0.2)';
+      } else {
+        borderColor = 'var(--accent-blue)';
+        backgroundColor = 'rgba(0, 0, 255, 0.2)';
+      }
       console.log("Face box for", region.Name || "Unnamed", {
         X, Y, W, H,
         pixelX, pixelY, pixelWidth, pixelHeight,
@@ -660,6 +670,7 @@ export default {
   --dark-theme-2: #242424;
   --accent-green: #42b983;
   --accent-yellow: #ffff00;
+  --accent-blue: #0000ff;
 }
 
 #previewer {
