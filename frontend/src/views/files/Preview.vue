@@ -2,11 +2,11 @@
   <div id="previewer" @mousemove="toggleNavigation" @touchstart="toggleNavigation">
     <div class="preview" :class="{ 'full-height': !isMetadataVisible }">
       <div class="image-container" v-if="previewType == 'image'">
-        <img ref="image" :src="raw" @load="updateImageDimensions" style="max-width: 100%; max-height: 100%;">
+        <img ref="image" :src="raw" @load="updateImageDimensions" class="preview-image">
         <div
           v-if="activeTab === 'xmp' && metadata && metadata.xmp && metadata.xmp.Regions && metadata.xmp.Regions.length > 0"
           class="face-overlay"
-          :style="{ width: imageDimensions.width + 'px', height: imageDimensions.height + 'px' }"
+          :style="{ width: imageDimensions.width + 'px', height: imageDimensions.height + 'px', top: imageOffset.top + 'px', left: imageOffset.left + 'px' }"
         >
           <div
             v-for="(region, index) in metadata.xmp.Regions"
@@ -247,6 +247,7 @@ export default {
       isResizing: false,
       metadataHeight: 300,
       imageDimensions: { width: 0, height: 0 },
+      imageOffset: { top: 0, left: 0 },
       dimensionRetryCount: 0,
     };
   },
@@ -311,6 +312,9 @@ export default {
       console.log("isMetadataVisible:", visible);
       return visible;
     },
+    previewMaxHeight() {
+      return this.isMetadataVisible ? `calc(100vh - ${this.metadataHeight}px)` : '100vh';
+    },
   },
   watch: {
     async req() {
@@ -322,7 +326,6 @@ export default {
       this.toggleNavigation();
       await this.fetchMetadata();
       await this.updateImageDimensions();
-      // Validate activeTab against availableTabs after metadata is fetched
       this.$nextTick(() => {
         const availableTabNames = this.availableTabs.map(tab => tab.name);
         console.log("Validating activeTab:", this.activeTab, "Available:", availableTabNames);
@@ -337,6 +340,9 @@ export default {
         this.dimensionRetryCount = 0;
         this.$nextTick(() => this.updateImageDimensions());
       }
+    },
+    isMetadataVisible() {
+      this.$nextTick(() => this.updateImageDimensions());
     },
   },
   async mounted() {
@@ -406,19 +412,34 @@ export default {
       }
       console.log("Found image element:", imgElement.tagName, imgElement);
       if (imgElement.complete || imgElement.readyState === 4) {
-        const width = imgElement.clientWidth || imgElement.offsetWidth || imgElement.getBoundingClientRect().width;
-        const height = imgElement.clientHeight || imgElement.offsetHeight || imgElement.getBoundingClientRect().height;
+        const rect = imgElement.getBoundingClientRect();
+        const width = rect.width;
+        const height = rect.height;
         this.imageDimensions = { width, height };
+        this.imageOffset = { top: rect.top, left: rect.left };
         console.log("Image dimensions:", this.imageDimensions);
+        console.log("Image offset:", this.imageOffset);
+        console.log("Image natural size:", { width: imgElement.naturalWidth, height: imgElement.naturalHeight });
       } else {
         console.log("Image not loaded, waiting for load event");
         imgElement.addEventListener(
           "load",
           () => {
-            const width = imgElement.clientWidth || imgElement.offsetWidth || imgElement.getBoundingClientRect().width;
-            const height = imgElement.clientHeight || imgElement.offsetHeight || imgElement.getBoundingClientRect().height;
+            const rect = imgElement.getBoundingClientRect();
+            const width = rect.width;
+            const height = rect.height;
             this.imageDimensions = { width, height };
+            this.imageOffset = { top: rect.top, left: rect.left };
             console.log("Image dimensions (loaded):", this.imageDimensions);
+            console.log("Image offset (loaded):", this.imageOffset);
+            console.log("Image natural size:", { width: imgElement.naturalWidth, height: imgElement.naturalHeight });
+          },
+          { once: true }
+        );
+        imgElement.addEventListener(
+          "error",
+          () => {
+            console.error("Image failed to load:", this.raw);
           },
           { once: true }
         );
@@ -439,8 +460,8 @@ export default {
       const imgHeight = this.imageDimensions.height;
       const pixelWidth = W * imgWidth;
       const pixelHeight = H * imgHeight;
-      const pixelX = X * imgWidth - pixelWidth / 2; // X is center
-      const pixelY = Y * imgHeight - pixelHeight / 2; // Y is center
+      const pixelX = X * imgWidth; // Assume X is left edge
+      const pixelY = Y * imgHeight; // Assume Y is top edge
       console.log("Face box for", region.Name || "Unnamed", { pixelX, pixelY, pixelWidth, pixelHeight });
       return {
         left: `${pixelX}px`,
@@ -461,11 +482,11 @@ export default {
       if (!this.isResizing) return;
       const clientY = event.touches ? event.touches[0].clientY : event.clientY;
       const newHeight = window.innerHeight - clientY;
-      const minHeight = 50;
+      const minHeight = 100;
       const maxHeight = window.innerHeight * 0.8;
       this.metadataHeight = Math.min(Math.max(newHeight, minHeight), maxHeight);
       this.dimensionRetryCount = 0;
-      this.updateImageDimensions();
+      this.$nextTick(() => this.updateImageDimensions());
     },
     stopResize() {
       this.isResizing = false;
@@ -631,151 +652,155 @@ export default {
 #previewer {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: 100vh;
   width: 100%;
-  align-items: center;
-  justify-content: center;
   background: var(--dark-theme-1);
   position: absolute;
   top: 0;
   left: 0;
+  overflow-y: auto;
+}
 
-  .header-controls {
-    position: absolute;
-    top: 10px;
-    left: 20px;
-    z-index: 20;
-    color: #fff;
-    font-size: 14px;
+.preview {
+  width: 100%;
+  flex-grow: 1;
+  flex-shrink: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-height: v-bind(previewMaxHeight);
+  overflow: hidden;
+
+  &.full-height {
+    max-height: 100vh;
   }
 
-  .preview {
-    width: 100%;
-    height: auto;
-    flex-grow: 1;
+  .image-container {
+    position: relative;
     display: flex;
-    align-items: center;
     justify-content: center;
+    align-items: center;
+    width: 100%;
+    height: 100%;
+  }
 
-    &.full-height {
-      height: 100%;
-    }
+  .preview-image {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    display: block;
+  }
 
-    .image-container {
-      position: relative;
-      display: inline-block;
-      max-width: 100%;
-      max-height: 100%;
-      overflow: hidden;
-    }
+  .face-overlay {
+    position: absolute;
+    pointer-events: none;
+    background: rgba(0, 0, 0, 0.1);
+  }
 
-    .face-overlay {
-      position: absolute;
-      top: 0;
-      left: 0;
-      pointer-events: none;
-      background: rgba(0, 0, 0, 0.1); /* Light background for debugging */
-    }
+  .face-box {
+    position: absolute;
+    border: 2px solid var(--accent);
+    box-sizing: border-box;
+    min-width: 50px;
+    min-height: 50px;
+    background: rgba(66, 185, 131, 0.2);
+  }
 
-    .face-box {
-      position: absolute;
-      border: 2px solid var(--accent);
-      box-sizing: border-box;
-      min-width: 50px;
-      min-height: 50px;
-      background: rgba(66, 185, 131, 0.2); /* Semi-transparent for visibility */
-    }
-
-    .face-label {
-      position: absolute;
-      top: -28px;
-      left: 0;
-      background: rgba(0, 0, 0, 0.8);
-      color: #fff;
-      padding: 4px 8px;
-      font-size: 14px;
-      white-space: nowrap;
-      border-radius: 3px;
-      z-index: 10;
-    }
+  .face-label {
+    position: absolute;
+    top: -28px;
+    left: 0;
+    background: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    padding: 4px 8px;
+    font-size: 14px;
+    white-space: nowrap;
+    border-radius: 3px;
+    z-index: 10;
   }
 }
 
 .metadata-container {
   position: relative;
   width: 100%;
-  min-height: 50px;
-  max-height: 80%;
+  min-height: 100px;
+  max-height: 80vh;
   background: var(--dark-theme-1);
   color: #fff;
   border-top: 1px solid var(--dark-theme-2);
   padding: 1rem;
   overflow-y: auto;
+  flex-shrink: 0;
+}
 
-  .resize-handle {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 10px;
-    cursor: ns-resize;
-    background: transparent;
+.resize-handle {
+  position: absolute;
+  top: -10px;
+  left: 0;
+  width: 100%;
+  height: 10px;
+  cursor: ns-resize;
+  background: transparent;
+}
+
+.tabs-header {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1rem;
+
+  button {
+    background: none;
+    border: none;
+    color: #fff;
+    font-weight: bold;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity 0.2s ease-in-out;
+
+    &:hover {
+      opacity: 1;
+    }
+
+    &.active {
+      opacity: 1;
+      border-bottom: 2px solid var(--accent);
+    }
+  }
+}
+
+.tab-pane {
+  display: block;
+  opacity: 1;
+
+  h3 {
+    margin-top: 0;
+    color: var(--accent);
+    text-align: center;
   }
 
-  .tabs-header {
-    display: flex;
-    justify-content: center;
-    margin-bottom: 1rem;
+  ul {
+    list-style-type: none;
+    padding: 0;
 
-    button {
-      background: none;
-      border: none;
-      color: #fff;
-      font-weight: bold;
-      padding: 0.5rem 1rem;
-      cursor: pointer;
-      opacity: 0.6;
-      transition: opacity 0.2s ease-in-out;
-
-      &:hover {
-        opacity: 1;
-      }
-
-      &.active {
-        opacity: 1;
-        border-bottom: 2px solid var(--accent);
-      }
+    li {
+      padding: 0.25rem 0;
     }
   }
 
-  .tab-pane {
+  .metadata-table {
     display: block;
-    opacity: 1;
-    h3 {
-      margin-top: 0;
-      color: var(--accent);
-      text-align: center;
-    }
+    width: 100%;
 
-    ul {
-      list-style-type: none;
-      padding: 0;
-      li {
-        padding: 0.25rem 0;
-      }
-    }
-    .metadata-table {
-      display: block;
+    table {
       width: 100%;
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        td,
-        th {
-          padding: 8px;
-          border-bottom: 1px solid var(--dark-theme-2);
-          text-align: left;
-        }
+      border-collapse: collapse;
+
+      td,
+      th {
+        padding: 8px;
+        border-bottom: 1px solid var(--dark-theme-2);
+        text-align: left;
       }
     }
   }
