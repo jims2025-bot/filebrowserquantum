@@ -7,17 +7,17 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/gtsteffaniak/filebrowser/backend/adapters/fs/fileutils"
-	"github.com/gtsteffaniak/filebrowser/backend/common/settings"
-	"github.com/gtsteffaniak/filebrowser/backend/database/storage"
-	fbhttp "github.com/gtsteffaniak/filebrowser/backend/http"
-	"github.com/gtsteffaniak/filebrowser/backend/indexing"
-	"github.com/gtsteffaniak/filebrowser/backend/preview"
-	"github.com/gtsteffaniak/filebrowser/backend/swagger/docs"
+	"github.com/jims2025-bot/filebrowserquantum/backend/adapters/fs/fileutils"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
+	"github.com/jims2025-bot/filebrowserquantum/backend/database/storage"
+	fbhttp "github.com/jims2025-bot/filebrowserquantum/backend/http"
+	"github.com/jims2025-bot/filebrowserquantum/backend/indexing"
+	"github.com/jims2025-bot/filebrowserquantum/backend/preview"
+	"github.com/jims2025-bot/filebrowserquantum/backend/swagger/docs"
 	"github.com/gtsteffaniak/go-logger/logger"
 	"github.com/swaggo/swag"
 
-	"github.com/gtsteffaniak/filebrowser/backend/common/version"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/version"
 )
 
 var store *storage.Storage

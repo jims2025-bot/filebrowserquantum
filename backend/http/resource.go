@@ -11,13 +11,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gtsteffaniak/filebrowser/backend/adapters/fs/files"
-	"github.com/gtsteffaniak/filebrowser/backend/common/errors"
-	"github.com/gtsteffaniak/filebrowser/backend/common/settings"
-	"github.com/gtsteffaniak/filebrowser/backend/common/utils"
-	"github.com/gtsteffaniak/filebrowser/backend/indexing"
-	"github.com/gtsteffaniak/filebrowser/backend/indexing/iteminfo"
-	"github.com/gtsteffaniak/filebrowser/backend/preview"
+	"github.com/jims2025-bot/filebrowserquantum/backend/adapters/fs/files"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/errors"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/utils"
+	"github.com/jims2025-bot/filebrowserquantum/backend/indexing"
+	"github.com/jims2025-bot/filebrowserquantum/backend/indexing/iteminfo"
+	"github.com/jims2025-bot/filebrowserquantum/backend/preview"
 	"github.com/gtsteffaniak/go-logger/logger"
 )
 

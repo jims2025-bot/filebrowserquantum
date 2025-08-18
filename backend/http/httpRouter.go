@@ -11,9 +11,9 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/gtsteffaniak/filebrowser/backend/common/settings"
-	"github.com/gtsteffaniak/filebrowser/backend/common/version"
-	"github.com/gtsteffaniak/filebrowser/backend/database/storage"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/version"
+	"github.com/jims2025-bot/filebrowserquantum/backend/database/storage"
 	"github.com/gtsteffaniak/go-logger/logger"
 	// http-swagger middleware
 )
@@ -37,9 +37,9 @@ func (d dirFS) Open(name string) (fs.File, error) {
 }
 
 var (
-	store   *storage.Storage
-	config  *settings.Settings
-	assetFs fs.FS
+	store    *storage.Storage
+	config   *settings.Settings
+	assetFs  fs.FS
 )
 
 func StartHttp(ctx context.Context, storage *storage.Storage, shutdownComplete chan struct{}) {
@@ -127,6 +127,10 @@ func StartHttp(ctx context.Context, storage *storage.Storage, shutdownComplete c
 	api.HandleFunc("GET /onlyoffice/getToken", withUser(onlyofficeGetTokenHandler))
 
 	api.HandleFunc("GET /search", withUser(searchHandler))
+
+	// New Metadata Route!
+	api.HandleFunc("GET /metadata", withUser(getMetadataHandler))
+
 	apiPath := config.Server.BaseURL + "api"
 	router.Handle(apiPath+"/", http.StripPrefix(apiPath, api))
 
@@ -169,7 +173,7 @@ func StartHttp(ctx context.Context, storage *storage.Storage, shutdownComplete c
 
 			// Build the full URL with host and port
 			fullURL := fmt.Sprintf("%s://localhost%s%s", scheme, port, config.Server.BaseURL)
-			logger.Infof("Running at               : %s", fullURL)
+			logger.Infof("Running at              : %s", fullURL)
 
 			// Create a TLS listener and serve
 			listener, err := tls.Listen("tcp", srv.Addr, tlsConfig)
@@ -188,7 +192,7 @@ func StartHttp(ctx context.Context, storage *storage.Storage, shutdownComplete c
 
 			// Build the full URL with host and port
 			fullURL := fmt.Sprintf("%s://localhost%s%s", scheme, port, config.Server.BaseURL)
-			logger.Infof("Running at               : %s", fullURL)
+			logger.Infof("Running at              : %s", fullURL)
 
 			// Start HTTP server
 			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

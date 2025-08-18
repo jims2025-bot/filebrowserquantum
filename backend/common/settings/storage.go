@@ -1,7 +1,7 @@
 package settings
 
 import (
-	"github.com/gtsteffaniak/filebrowser/backend/common/errors"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/errors"
 )
 
 // StorageBackend is a settings storage backend.

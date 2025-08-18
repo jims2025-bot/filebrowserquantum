@@ -8,10 +8,10 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/gtsteffaniak/filebrowser/backend/common/errors"
-	"github.com/gtsteffaniak/filebrowser/backend/common/settings"
-	"github.com/gtsteffaniak/filebrowser/backend/database/storage"
-	"github.com/gtsteffaniak/filebrowser/backend/database/users"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/errors"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
+	"github.com/jims2025-bot/filebrowserquantum/backend/database/storage"
+	"github.com/jims2025-bot/filebrowserquantum/backend/database/users"
 )
 
 type UserRequest struct {

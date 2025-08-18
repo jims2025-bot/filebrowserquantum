@@ -9,7 +9,7 @@ import (
 	"net/http"
 
 	jwt "github.com/golang-jwt/jwt/v4"
-	"github.com/gtsteffaniak/filebrowser/backend/common/settings"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
 )
 
 type officePreviewResponse struct {

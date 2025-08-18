@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gtsteffaniak/filebrowser/backend/common/settings"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
 )
 
 var AllFiletypeOptions = []string{

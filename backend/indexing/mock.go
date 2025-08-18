@@ -4,8 +4,8 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/gtsteffaniak/filebrowser/backend/common/utils"
-	"github.com/gtsteffaniak/filebrowser/backend/indexing/iteminfo"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/utils"
+	"github.com/jims2025-bot/filebrowserquantum/backend/indexing/iteminfo"
 )
 
 func (idx *Index) CreateMockData(numDirs, numFilesPerDir int) {

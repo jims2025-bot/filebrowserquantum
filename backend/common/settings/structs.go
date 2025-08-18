@@ -1,7 +1,7 @@
 package settings
 
 import (
-	"github.com/gtsteffaniak/filebrowser/backend/database/users"
+	"github.com/jims2025-bot/filebrowserquantum/backend/database/users"
 )
 
 type AllowedMethods string

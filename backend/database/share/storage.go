@@ -3,7 +3,7 @@ package share
 import (
 	"time"
 
-	"github.com/gtsteffaniak/filebrowser/backend/common/errors"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/errors"
 )
 
 // StorageBackend is the interface to implement for a share storage.

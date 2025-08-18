@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gtsteffaniak/filebrowser/backend/indexing/iteminfo"
+	"github.com/jims2025-bot/filebrowserquantum/backend/indexing/iteminfo"
 	"github.com/gtsteffaniak/go-logger/logger"
 )
 

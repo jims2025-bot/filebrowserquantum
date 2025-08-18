@@ -5,7 +5,7 @@ import (
 
 	"math/rand"
 
-	"github.com/gtsteffaniak/filebrowser/backend/indexing/iteminfo"
+	"github.com/jims2025-bot/filebrowserquantum/backend/indexing/iteminfo"
 )
 
 func CreateMockData(numDirs, numFilesPerDir int) iteminfo.FileInfo {

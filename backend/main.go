@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/gtsteffaniak/filebrowser/backend/cmd"
+	"github.com/jims2025-bot/filebrowserquantum/backend/cmd"
 )
 
 func main() {

@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/gtsteffaniak/filebrowser/backend/database/users"
+	"github.com/jims2025-bot/filebrowserquantum/backend/database/users"
 )
 
 var (

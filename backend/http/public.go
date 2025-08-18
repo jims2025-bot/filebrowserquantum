@@ -7,14 +7,14 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/gtsteffaniak/filebrowser/backend/adapters/fs/files"
-	"github.com/gtsteffaniak/filebrowser/backend/common/settings"
-	"github.com/gtsteffaniak/filebrowser/backend/common/utils"
-	"github.com/gtsteffaniak/filebrowser/backend/database/users"
-	"github.com/gtsteffaniak/filebrowser/backend/indexing/iteminfo"
+	"github.com/jims2025-bot/filebrowserquantum/backend/adapters/fs/files"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/utils"
+	"github.com/jims2025-bot/filebrowserquantum/backend/database/users"
+	"github.com/jims2025-bot/filebrowserquantum/backend/indexing/iteminfo"
 	"github.com/gtsteffaniak/go-logger/logger"
 
-	_ "github.com/gtsteffaniak/filebrowser/backend/swagger/docs"
+	_ "github.com/jims2025-bot/filebrowserquantum/backend/swagger/docs"
 )
 
 // rawHandler serves the raw content of a file, multiple files, or directory in various formats.

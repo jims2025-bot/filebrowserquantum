@@ -3,8 +3,8 @@ package indexing
 import (
 	"testing"
 
-	"github.com/gtsteffaniak/filebrowser/backend/common/settings"
-	"github.com/gtsteffaniak/filebrowser/backend/indexing/iteminfo"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
+	"github.com/jims2025-bot/filebrowserquantum/backend/indexing/iteminfo"
 	"github.com/stretchr/testify/assert"
 )
 

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/gtsteffaniak/filebrowser/backend/events"
+	"github.com/jims2025-bot/filebrowserquantum/backend/events"
 	"github.com/gtsteffaniak/go-logger/logger"
 )
 

@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gtsteffaniak/filebrowser/backend/common/utils"
-	"github.com/gtsteffaniak/filebrowser/backend/indexing/iteminfo"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/utils"
+	"github.com/jims2025-bot/filebrowserquantum/backend/indexing/iteminfo"
 	"github.com/gtsteffaniak/go-cache/cache"
 )
 

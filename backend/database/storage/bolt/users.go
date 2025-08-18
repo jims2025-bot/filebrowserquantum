@@ -8,12 +8,12 @@ import (
 
 	storm "github.com/asdine/storm/v3"
 
-	"github.com/gtsteffaniak/filebrowser/backend/adapters/fs/files"
-	"github.com/gtsteffaniak/filebrowser/backend/auth"
-	"github.com/gtsteffaniak/filebrowser/backend/common/errors"
-	"github.com/gtsteffaniak/filebrowser/backend/common/settings"
-	"github.com/gtsteffaniak/filebrowser/backend/common/utils"
-	"github.com/gtsteffaniak/filebrowser/backend/database/users"
+	"github.com/jims2025-bot/filebrowserquantum/backend/adapters/fs/files"
+	"github.com/jims2025-bot/filebrowserquantum/backend/auth"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/errors"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/utils"
+	"github.com/jims2025-bot/filebrowserquantum/backend/database/users"
 	"github.com/gtsteffaniak/go-logger/logger"
 )
 

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/gtsteffaniak/filebrowser/backend/common/settings"
-	"github.com/gtsteffaniak/filebrowser/backend/common/version"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/version"
 )
 
 var templateRenderer *TemplateRenderer

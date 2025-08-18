@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/gtsteffaniak/filebrowser/backend/auth"
+	"github.com/jims2025-bot/filebrowserquantum/backend/auth"
 	"github.com/gtsteffaniak/go-logger/logger"
 )
 

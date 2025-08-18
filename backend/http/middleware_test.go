@@ -8,13 +8,13 @@ import (
 	"time"
 
 	storm "github.com/asdine/storm/v3"
-	"github.com/gtsteffaniak/filebrowser/backend/common/settings"
-	"github.com/gtsteffaniak/filebrowser/backend/common/utils"
-	"github.com/gtsteffaniak/filebrowser/backend/database/share"
-	"github.com/gtsteffaniak/filebrowser/backend/database/storage"
-	"github.com/gtsteffaniak/filebrowser/backend/database/storage/bolt"
-	"github.com/gtsteffaniak/filebrowser/backend/database/users"
-	"github.com/gtsteffaniak/filebrowser/backend/indexing/iteminfo"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/utils"
+	"github.com/jims2025-bot/filebrowserquantum/backend/database/share"
+	"github.com/jims2025-bot/filebrowserquantum/backend/database/storage"
+	"github.com/jims2025-bot/filebrowserquantum/backend/database/storage/bolt"
+	"github.com/jims2025-bot/filebrowserquantum/backend/database/users"
+	"github.com/jims2025-bot/filebrowserquantum/backend/indexing/iteminfo"
 )
 
 func setupTestEnv(t *testing.T) {

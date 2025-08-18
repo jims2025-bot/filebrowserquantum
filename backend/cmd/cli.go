@@ -10,11 +10,11 @@ import (
 	"strings"
 
 	"github.com/goccy/go-yaml"
-	"github.com/gtsteffaniak/filebrowser/backend/common/settings"
-	"github.com/gtsteffaniak/filebrowser/backend/common/utils"
-	"github.com/gtsteffaniak/filebrowser/backend/common/version"
-	"github.com/gtsteffaniak/filebrowser/backend/database/storage"
-	"github.com/gtsteffaniak/filebrowser/backend/database/users"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/utils"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/version"
+	"github.com/jims2025-bot/filebrowserquantum/backend/database/storage"
+	"github.com/jims2025-bot/filebrowserquantum/backend/database/users"
 	"github.com/gtsteffaniak/go-logger/logger"
 )
 

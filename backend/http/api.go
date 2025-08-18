@@ -7,8 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gtsteffaniak/filebrowser/backend/auth"
-	"github.com/gtsteffaniak/filebrowser/backend/database/users"
+	"github.com/jims2025-bot/filebrowserquantum/backend/auth"
+	"github.com/jims2025-bot/filebrowserquantum/backend/database/users"
+    "github.com/jims2025-bot/filebrowserquantum/backend/adapters/fs/files"	
+	"github.com/jims2025-bot/filebrowserquantum/backend/indexing"
 )
 
 // createApiKeyHandler creates an API key for the user.
@@ -46,10 +48,10 @@ func createApiKeyHandler(w http.ResponseWriter, r *http.Request, d *requestConte
 	}
 	// Parse permissions from the query parameter
 	permissions := users.Permissions{
-		Api:    strings.Contains(permissionsStr, "api") && d.user.Permissions.Api,
-		Admin:  strings.Contains(permissionsStr, "admin") && d.user.Permissions.Admin,
-		Modify: strings.Contains(permissionsStr, "modify") && d.user.Permissions.Modify,
-		Share:  strings.Contains(permissionsStr, "share") && d.user.Permissions.Share,
+		Api:      strings.Contains(permissionsStr, "api") && d.user.Permissions.Api,
+		Admin:    strings.Contains(permissionsStr, "admin") && d.user.Permissions.Admin,
+		Modify:   strings.Contains(permissionsStr, "modify") && d.user.Permissions.Modify,
+		Share:    strings.Contains(permissionsStr, "share") && d.user.Permissions.Share,
 	}
 
 	// Convert the duration string to an int64
@@ -110,10 +112,10 @@ func deleteApiKeyHandler(w http.ResponseWriter, r *http.Request, d *requestConte
 }
 
 type AuthTokenMin struct {
-	Key         string            `json:"key"`
-	Name        string            `json:"name"`
-	Created     int64             `json:"created"`
-	Expires     int64             `json:"expires"`
+	Key         string          `json:"key"`
+	Name        string          `json:"name"`
+	Created     int64           `json:"created"`
+	Expires     int64           `json:"expires"`
 	Permissions users.Permissions `json:"Permissions"`
 }
 
@@ -160,4 +162,47 @@ func listApiKeysHandler(w http.ResponseWriter, r *http.Request, d *requestContex
 	}
 
 	return renderJSON(w, r, modifiedList)
+}
+
+// getMetadataHandler fetches metadata for a file.
+// @Summary Get file metadata
+// @Description Fetches EXIF, IPTC, and XMP metadata for a given file.
+// @Tags Files
+// @Accept json
+// @Produce json
+// @Param source query string true "Name of the storage source"
+// @Param path query string true "Path to the file"
+// @Success 200 {object} map[string]interface{} "File metadata"
+// @Failure 400 {object} map[string]string "Bad request"
+// @Failure 404 {object} map[string]string "Not found"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Router /api/metadata [get]
+func getMetadataHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
+	// Get query parameters for source and path
+	source := r.URL.Query().Get("source")
+	path := r.URL.Query().Get("path")
+
+	if source == "" || path == "" {
+		return http.StatusBadRequest, fmt.Errorf("source and path are required")
+	}
+
+	// Get the index for the specified source
+	idx := indexing.GetIndex(source)
+	if idx == nil {
+		return http.StatusNotFound, fmt.Errorf("source '%s' not found", source)
+	}
+
+	// Get the real file path from the indexed path
+	realPath, _, err := idx.GetRealPath(path)
+	if err != nil {
+		return http.StatusNotFound, fmt.Errorf("file not found: %w", err)
+	}
+
+	// Call the function to get the metadata
+	metadata, err := files.GetMetadata(realPath)
+	if err != nil {
+		return http.StatusInternalServerError, fmt.Errorf("could not get metadata: %w", err)
+	}
+
+	return renderJSON(w, r, metadata)
 }

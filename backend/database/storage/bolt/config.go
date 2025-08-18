@@ -2,7 +2,7 @@ package bolt
 
 import (
 	storm "github.com/asdine/storm/v3"
-	"github.com/gtsteffaniak/filebrowser/backend/common/settings"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
 )
 
 type settingsBackend struct {

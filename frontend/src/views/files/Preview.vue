@@ -80,7 +80,24 @@
 
         <div v-if="activeTab === 'exif'" class="tab-pane">
           <h3>EXIF Metadata</h3>
-          <p>This tab will display EXIF metadata once implemented in the backend.</p>
+          <div v-if="metadata && Object.keys(metadata.exif).length > 0" class="metadata-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Tag</th>
+                  <th>Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(value, key) in metadata.exif" :key="key">
+                  <td>{{ key }}</td>
+                  <td>{{ value }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p v-else-if="metadata && Object.keys(metadata.exif).length === 0">No EXIF data found for this file.</p>
+          <p v-else>Loading EXIF metadata...</p>
         </div>
 
         <div v-if="activeTab === 'iptc'" class="tab-pane">
@@ -126,7 +143,7 @@
   </div>
 </template>
 <script>
-import { filesApi } from "@/api";
+import * as filesApi from "@/api/files.js";
 import url from "@/utils/url.js";
 import throttle from "@/utils/throttle";
 import ExtendedImage from "@/components/files/ExtendedImage.vue";
@@ -251,7 +268,6 @@ export default {
     // START OF NEW UNMOUNT LOGIC FOR RESIZING
     document.removeEventListener('mousemove', this.resizeMetadata);
     document.removeEventListener('mouseup', this.stopResize);
-    document.removeEventListener('touchmove', this.resizeMetadata);
     document.removeEventListener('touchend', this.stopResize);
     // END OF NEW UNMOUNT LOGIC FOR RESIZING
   },
@@ -261,24 +277,21 @@ export default {
       this.activeTab = tabName;
     },
     async fetchMetadata() {
+      // Set metadata to null initially to show "Loading..."
+      this.metadata = null;
       // Check if the file is an image before trying to fetch metadata
       if (this.previewType !== 'image') {
-        this.metadata = null;
         return;
       }
       
-      // TODO: Replace this with your actual API call.
-      // This is a placeholder to show the structure.
-      // You should call your new /api/metadata endpoint here.
-      // Example:
-      // try {
-      //   const res = await filesApi.fetchMetadata(state.req.source, state.req.path);
-      //   this.metadata = res.data;
-      // } catch (error) {
-      //   console.error("Failed to fetch metadata:", error);
-      //   this.metadata = null;
-      // }
-      console.log('Fetching metadata for:', state.req.path);
+      // Call the new metadata API endpoint
+      try {
+        const res = await filesApi.fetchMetadata(state.req.source, state.req.path);
+        this.metadata = res.data;
+      } catch (error) {
+        console.error("Failed to fetch metadata:", error);
+        this.metadata = { exif: {}, iptc: {}, xmp: {} }; // Set empty objects on error
+      }
     },
     // Unified start resize function for mouse and touch
     startResize(event) {
@@ -559,6 +572,18 @@ export default {
       li {
         padding: 0.25rem 0;
       }
+    }
+    .metadata-table {
+        width: 100%;
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            td, th {
+                padding: 8px;
+                border-bottom: 1px solid var(--dark-theme-2);
+                text-align: left;
+            }
+        }
     }
   }
 }

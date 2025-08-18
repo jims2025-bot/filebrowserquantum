@@ -6,28 +6,128 @@ import (
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/hex"
+	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"hash"
 	"io"
-
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
-	"github.com/gtsteffaniak/filebrowser/backend/adapters/fs/fileutils"
-	"github.com/gtsteffaniak/filebrowser/backend/common/errors"
-	"github.com/gtsteffaniak/filebrowser/backend/common/settings"
-	"github.com/gtsteffaniak/filebrowser/backend/common/utils"
-	"github.com/gtsteffaniak/filebrowser/backend/indexing"
-	"github.com/gtsteffaniak/filebrowser/backend/indexing/iteminfo"
+	"github.com/jims2025-bot/filebrowserquantum/backend/adapters/fs/fileutils"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/errors"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/utils"
+	"github.com/jims2025-bot/filebrowserquantum/backend/indexing"
+	"github.com/jims2025-bot/filebrowserquantum/backend/indexing/iteminfo"
 	"github.com/gtsteffaniak/go-cache/cache"
 	"github.com/gtsteffaniak/go-logger/logger"
 )
 
+// Structs for parsing the relevant parts of XMP
+type xmp struct {
+	XMLName xml.Name `xml:"xmpmeta"`
+	Regions regions  `xml:"RDF>Description>Regions"`
+}
+
+type regions struct {
+	RegionList rdfBag `xml:"RegionList>Bag"`
+}
+
+type rdfBag struct {
+	Items []rdfLi `xml:"li"`
+}
+
+type rdfLi struct {
+	Name           string `xml:"Name"`
+	Type           string `xml:"Type"`
+	NameAssignType string `xml:"NameAssignType"`
+	ALGArea        area   `xml:"ALGArea"`
+}
+
+type area struct {
+	H float64 `xml:"h"`
+	W float64 `xml:"w"`
+	X float64 `xml:"x"`
+	Y float64 `xml:"y"`
+}
+
 var OnlyOfficeCache = cache.NewCache(48 * time.Hour)
+
+// GetMetadata fetches EXIF, IPTC, and XMP metadata for a given file path using exiftool.
+func GetMetadata(filePath string) (map[string]interface{}, error) {
+	// Step 1: Get general metadata as JSON
+	cmd := exec.Command("exiftool", "-j", "-EXIF:All", "-IPTC:All", "-s", "-G", filePath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		logger.Errorf("Error executing exiftool for %s: %v\nOutput: %s", filePath, err, string(output))
+		return nil, fmt.Errorf("could not get general metadata: %w", err)
+	}
+
+	var metadataArray []map[string]interface{}
+	if err := json.Unmarshal(output, &metadataArray); err != nil {
+		logger.Errorf("Error unmarshaling exiftool JSON output for %s: %v", filePath, err)
+		return nil, fmt.Errorf("could not parse JSON metadata output: %w", err)
+	}
+
+	if len(metadataArray) == 0 {
+		return nil, fmt.Errorf("no metadata found for file")
+	}
+
+	fullMetadata := metadataArray[0]
+	exifData := make(map[string]interface{})
+	iptcData := make(map[string]interface{})
+	xmpData := make(map[string]interface{})
+
+	for key, value := range fullMetadata {
+		parts := strings.SplitN(key, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		group := parts[0]
+		tag := parts[1]
+
+		switch group {
+		case "EXIF":
+			exifData[tag] = value
+		case "IPTC":
+			iptcData[tag] = value
+		case "XMP":
+			xmpData[tag] = value
+		}
+	}
+
+	// Step 2: Get specific structured XMP metadata (e.g., face regions) as XML
+	cmdXMP := exec.Command("exiftool", "-b", "-XMP", filePath)
+	xmpOutput, err := cmdXMP.CombinedOutput()
+	if err != nil {
+		logger.Errorf("Error reading raw XMP for %s: %v\nOutput: %s", filePath, err, string(xmpOutput))
+		// We don't return an error here, as we still have the general metadata.
+		// We just log it and move on.
+	} else {
+		var xmpDataParsed xmp
+		if err := xml.Unmarshal(xmpOutput, &xmpDataParsed); err != nil {
+			logger.Errorf("Error parsing XMP XML for %s: %v", filePath, err)
+		} else {
+			// Add the structured data to the xmpData map
+			if len(xmpDataParsed.Regions.RegionList.Items) > 0 {
+				xmpData["Regions"] = xmpDataParsed.Regions.RegionList.Items
+			}
+		}
+	}
+
+	// Step 3: Combine and return
+	return map[string]interface{}{
+		"exif": exifData,
+		"iptc": iptcData,
+		"xmp":  xmpData,
+	}, nil
+}
 
 func FileInfoFaster(opts iteminfo.FileOptions) (iteminfo.ExtendedFileInfo, error) {
 	response := iteminfo.ExtendedFileInfo{}

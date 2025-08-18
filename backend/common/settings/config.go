@@ -11,8 +11,8 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"github.com/goccy/go-yaml"
-	"github.com/gtsteffaniak/filebrowser/backend/common/version"
-	"github.com/gtsteffaniak/filebrowser/backend/database/users"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/version"
+	"github.com/jims2025-bot/filebrowserquantum/backend/database/users"
 	"github.com/gtsteffaniak/go-logger/logger"
 )
 
@@ -32,7 +32,7 @@ func Initialize(configFile string) {
 		errmsg := "The provided config file failed validation. "
 		errmsg += "If you are seeing this on a config that worked previeously, "
 		errmsg += "please review your config for typos and invalid keys which are no longer supported. "
-		errmsg += "visit https://github.com/gtsteffaniak/filebrowser/wiki/Full-Config-Example for more information."
+		errmsg += "visit https://github.com/jims2025-bot/filebrowserquantum/wiki/Full-Config-Example for more information."
 		logger.Error(errmsg)
 		time.Sleep(5 * time.Second) // allow sleep time before exiting to give docker/kubernetes time before restarting
 		logger.Fatal(err.Error())
@@ -49,11 +49,11 @@ func setupFrontend() {
 		Config.Frontend.ExternalLinks = append(Config.Frontend.ExternalLinks, ExternalLink{
 			Text:  fmt.Sprintf("(%v)", version.Version),
 			Title: version.CommitSHA,
-			Url:   "https://github.com/gtsteffaniak/filebrowser/releases/",
+			Url:   "https://github.com/jims2025-bot/filebrowserquantum/releases/",
 		})
 		Config.Frontend.ExternalLinks = append(Config.Frontend.ExternalLinks, ExternalLink{
 			Text: "Help",
-			Url:  "https://github.com/gtsteffaniak/filebrowser/wiki",
+			Url:  "https://github.com/jims2025-bot/filebrowserquantum/wiki",
 		})
 	}
 }
