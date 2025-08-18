@@ -453,6 +453,8 @@ export default {
           top: `${10 + 60 * this.metadata.xmp.Regions.indexOf(region)}px`,
           width: "100px",
           height: "100px",
+          border: "2px solid var(--accent-green)",
+          background: "rgba(66, 185, 131, 0.2)",
         };
       }
       const { X, Y, W, H } = region.ALGArea;
@@ -462,16 +464,22 @@ export default {
       const pixelHeight = H * imgHeight;
       const pixelX = X * imgWidth - pixelWidth / 2; // X is center
       const pixelY = Y * imgHeight - pixelHeight / 2; // Y is center
+      const borderColor = region.NameAssignType === 'auto' ? 'var(--accent-yellow)' : 'var(--accent-green)';
+      const backgroundColor = region.NameAssignType === 'auto' ? 'rgba(255, 255, 0, 0.2)' : 'rgba(66, 185, 131, 0.2)';
       console.log("Face box for", region.Name || "Unnamed", {
         X, Y, W, H,
         pixelX, pixelY, pixelWidth, pixelHeight,
-        imageWidth: imgWidth, imageHeight: imgHeight
+        imageWidth: imgWidth, imageHeight: imgHeight,
+        NameAssignType: region.NameAssignType,
+        borderColor, backgroundColor
       });
       return {
         left: `${pixelX}px`,
         top: `${pixelY}px`,
         width: `${pixelWidth}px`,
         height: `${pixelHeight}px`,
+        border: `2px solid ${borderColor}`,
+        background: backgroundColor,
       };
     },
     startResize(event) {
@@ -650,7 +658,8 @@ export default {
 :root {
   --dark-theme-1: #1a1a1a;
   --dark-theme-2: #242424;
-  --accent: #42b983;
+  --accent-green: #42b983;
+  --accent-yellow: #ffff00;
 }
 
 #previewer {
@@ -703,11 +712,9 @@ export default {
 
   .face-box {
     position: absolute;
-    border: 2px solid var(--accent);
     box-sizing: border-box;
     min-width: 50px;
     min-height: 50px;
-    background: rgba(66, 185, 131, 0.2);
   }
 
   .face-label {
@@ -768,7 +775,7 @@ export default {
 
     &.active {
       opacity: 1;
-      border-bottom: 2px solid var(--accent);
+      border-bottom: 2px solid var(--accent-green);
     }
   }
 }
@@ -779,7 +786,7 @@ export default {
 
   h3 {
     margin-top: 0;
-    color: var(--accent);
+    color: var(--accent-green);
     text-align: center;
   }
 
