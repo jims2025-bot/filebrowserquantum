@@ -1,7 +1,7 @@
 version: "3.8"
 services:
   filebrowser:
-    image: jims2025-bot/filebrowserquantum:v3.0.0-jimmeta.1
+    image: jims2025-bot/filebrowserquantum:v3.0.1-jimmeta.1
     container_name: FBQuantum_JimMeta
     networks:
       shared_bridge:
