@@ -75,10 +75,10 @@ COPY --from=base --chown=filebrowser:1000 /app/backend/config.media.yaml ./confi
 COPY --from=nbuild --chown=filebrowser:1000 /app/dist/ ./http/dist/
 
 # Sanity checks
-RUN [ "filebrowser", "version" ]
-RUN [ "ffmpeg", "-version" ]
-RUN [ "ffprobe", "-version" ]
-RUN [ "exiftool", "-ver" ]
+RUN ["./filebrowser", "version"]
+RUN ["ffmpeg", "-version"]
+RUN ["ffprobe", "-version"]
+RUN ["exiftool", "-ver"]
 
 USER root
 EXPOSE 80
