@@ -1,7 +1,7 @@
 <template>
   <div id="previewer" @mousemove="toggleNavigation" @touchstart="toggleNavigation">
     <div class="preview" :class="{ 'full-height': !isMetadataVisible }">
-      <ExtendedImage v-if="previewType == 'image'" :src="raw"> </ExtendedImage>
+      <ExtendedImage v-if="previewType == 'image'" :src="raw"></ExtendedImage>
       <audio
         v-else-if="previewType == 'audio'"
         ref="player"
@@ -27,7 +27,6 @@
           :default="index === 0"
         />
       </video>
-
       <object v-else-if="previewType == 'pdf'" class="pdf" :data="raw"></object>
       <div v-else class="info">
         <div class="title">
@@ -58,13 +57,15 @@
       <div class="resize-handle" @mousedown="startResize" @touchstart.stop="startResize"></div>
       <div class="tabs-header">
         <button
-          v-for="tab in tabs"
+          v-for="tab in availableTabs"
           :key="tab.name"
           :class="{ active: activeTab === tab.name }"
           @click="selectTab(tab.name)"
         >
           {{ tab.label }}
         </button>
+        <!-- Debug: Show which tabs are available -->
+        <div>Debug: Available tabs - {{ availableTabs.map(tab => tab.label).join(', ') }}</div>
       </div>
       <div class="tabs-content">
         <div v-if="activeTab === 'details'" class="tab-pane">
@@ -102,12 +103,60 @@
 
         <div v-if="activeTab === 'iptc'" class="tab-pane">
           <h3>IPTC Metadata</h3>
-          <p>This tab will display IPTC metadata once implemented in the backend.</p>
+          <div v-if="metadata && Object.keys(metadata.iptc).length > 0" class="metadata-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Tag</th>
+                  <th>Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(value, key) in metadata.iptc" :key="key">
+                  <td>{{ key }}</td>
+                  <td>{{ value }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p v-else-if="metadata && Object.keys(metadata.iptc).length === 0">No IPTC data found for this file.</p>
+          <p v-else>Loading IPTC metadata...</p>
         </div>
 
         <div v-if="activeTab === 'xmp'" class="tab-pane">
           <h3>XMP Metadata</h3>
-          <p>This tab will display XMP metadata once implemented in the backend.</p>
+          <div v-if="metadata && metadata.xmp && Object.keys(metadata.xmp).length > 0" class="metadata-table">
+            <table v-if="metadata.xmp.Regions && metadata.xmp.Regions.length > 0">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Details</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(region, index) in metadata.xmp.Regions" :key="index">
+                  <td>{{ region.Name }}</td>
+                  <td>{{ JSON.stringify(region) }}</td>
+                </tr>
+              </tbody>
+            </table>
+            <table v-else>
+              <thead>
+                <tr>
+                  <th>Key</th>
+                  <th>Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(value, key) in metadata.xmp" :key="key">
+                  <td>{{ key }}</td>
+                  <td>{{ JSON.stringify(value) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p v-else-if="metadata && (!metadata.xmp || Object.keys(metadata.xmp).length === 0)">No XMP data found for this file.</p>
+          <p v-else>Loading XMP metadata...</p>
         </div>
 
         <div v-if="activeTab === 'map'" class="tab-pane">
@@ -142,6 +191,7 @@
     <link rel="prefetch" :href="nextRaw" />
   </div>
 </template>
+
 <script>
 import * as filesApi from "@/api/files.js";
 import url from "@/utils/url.js";
@@ -173,19 +223,17 @@ export default {
       nextRaw: "",
       currentPrompt: null,
       subtitlesList: [],
-      // START OF NEW DATA PROPERTIES
       activeTab: "details",
       tabs: [
         { name: "details", label: "Details" },
         { name: "exif", label: "EXIF" },
         { name: "iptc", label: "IPTC" },
-        { name: "xmp", "label": "XMP" },
-        { name: "map", "label": "Map" },
+        { name: "xmp", label: "XMP" },
+        { name: "map", label: "Map" },
       ],
       metadata: null,
       isResizing: false,
-      metadataHeight: 300, // Default height in pixels
-      // END OF NEW DATA PROPERTIES
+      metadataHeight: 300,
     };
   },
   computed: {
@@ -193,9 +241,24 @@ export default {
       return getters.isSidebarVisible();
     },
     previewType() {
-      return getters.previewType();
-	  console.log("Preview type:", type);
-	  return type
+      const type = getters.previewType();
+      console.log("Preview type:", type);
+      return type;
+    },
+    availableTabs() {
+      if (!this.metadata) return [{ name: "details", label: "Details" }];
+      const tabs = [{ name: "details", label: "Details" }];
+      if (this.metadata.exif && Object.keys(this.metadata.exif).length > 0) {
+        tabs.push({ name: "exif", label: "EXIF" });
+      }
+      if (this.metadata.iptc && Object.keys(this.metadata.iptc).length > 0) {
+        tabs.push({ name: "iptc", label: "IPTC" });
+      }
+      if (this.metadata.xmp && Object.keys(this.metadata.xmp).length > 0) {
+        tabs.push({ name: "xmp", label: "XMP" });
+      }
+      console.log("Available tabs:", tabs); // Debug
+      return tabs;
     },
     raw() {
       return filesApi.getDownloadURL(state.req.source, state.req.path, true);
@@ -223,9 +286,9 @@ export default {
     },
     formattedModifiedDate() {
       if (!this.req || !this.req.modified) {
-        return '';
+        return "";
       }
-      return moment(this.req.modified).format('LL');
+      return moment(this.req.modified).format("LL");
     },
     isMetadataVisible() {
       const visible = getters.isMetadataVisible();
@@ -240,10 +303,8 @@ export default {
       }
       this.updatePreview();
       this.toggleNavigation();
-      // START OF NEW WATCHER LOGIC
-      this.activeTab = "details"; // Reset to the first tab when the file changes
-      this.fetchMetadata(); // Fetch metadata for the new file
-      // END OF NEW WATCHER LOGIC
+      this.activeTab = "details";
+      this.fetchMetadata();
     },
   },
   async mounted() {
@@ -259,60 +320,49 @@ export default {
       source: state.req.source,
       url: state.req.url,
     });
-    // START OF NEW MOUNTED LOGIC FOR RESIZING
-    this.fetchMetadata(); // Fetch metadata on initial mount
-    document.addEventListener('mousemove', this.resizeMetadata);
-    document.addEventListener('mouseup', this.stopResize);
-    document.addEventListener('touchmove', this.resizeMetadata);
-    document.addEventListener('touchend', this.stopResize);
-    // END OF NEW MOUNTED LOGIC FOR RESIZING
+    this.fetchMetadata();
+    document.addEventListener("mousemove", this.resizeMetadata);
+    document.addEventListener("mouseup", this.stopResize);
+    document.addEventListener("touchmove", this.resizeMetadata);
+    document.addEventListener("touchend", this.stopResize);
   },
   beforeUnmount() {
     window.removeEventListener("keydown", this.key);
-    // START OF NEW UNMOUNT LOGIC FOR RESIZING
-    document.removeEventListener('mousemove', this.resizeMetadata);
-    document.removeEventListener('mouseup', this.stopResize);
-    document.removeEventListener('touchend', this.stopResize);
-    // END OF NEW UNMOUNT LOGIC FOR RESIZING
+    document.removeEventListener("mousemove", this.resizeMetadata);
+    document.removeEventListener("mouseup", this.stopResize);
+    document.removeEventListener("touchmove", this.resizeMetadata);
+    document.removeEventListener("touchend", this.stopResize);
   },
   methods: {
-    // START OF NEW METHODS
     selectTab(tabName) {
       this.activeTab = tabName;
     },
     async fetchMetadata() {
-      // Set metadata to null initially to show "Loading..."
       this.metadata = null;
-      // Check if the file is an image before trying to fetch metadata
-      if (this.previewType !== 'image') {
-	    console.log("Not an image, skipping metadata fetch");
+      if (this.previewType !== "image") {
+        console.log("Not an image, skipping metadata fetch");
         return;
       }
-      
-      // Call the new metadata API endpoint
       try {
         const res = await filesApi.fetchMetadata(state.req.source, state.req.path);
-		console.log("Full API response:", res);
-		console.log("Metadata response:", res.data); // Debug the response
-        this.metadata = res;
+        console.log("Full API response:", res);
+        this.metadata = res.data || res;
+        console.log("Assigned metadata:", this.metadata);
       } catch (error) {
         console.error("Failed to fetch metadata:", error);
-        this.metadata = { exif: {}, iptc: {}, xmp: {} }; // Set empty objects on error
+        this.metadata = { exif: {}, iptc: {}, xmp: {} };
       }
     },
-    // Unified start resize function for mouse and touch
     startResize(event) {
       this.isResizing = true;
-      document.body.style.userSelect = 'none';
-      document.body.style.cursor = 'ns-resize';
-      // To prevent mobile touch from scrolling the page
-      if (event.type === 'touchstart') {
+      document.body.style.userSelect = "none";
+      document.body.style.cursor = "ns-resize";
+      if (event.type === "touchstart") {
         event.preventDefault();
       }
     },
     resizeMetadata(event) {
       if (!this.isResizing) return;
-      // Get the correct vertical position from mouse or touch event
       const clientY = event.touches ? event.touches[0].clientY : event.clientY;
       const newHeight = window.innerHeight - clientY;
       const minHeight = 50;
@@ -321,10 +371,9 @@ export default {
     },
     stopResize() {
       this.isResizing = false;
-      document.body.style.userSelect = '';
-      document.body.style.cursor = '';
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
     },
-    // END OF NEW METHODS
     async subtitles() {
       if (!state.req.subtitles || state.req.subtitles.length === 0) {
         return [];
@@ -337,11 +386,9 @@ export default {
           subtitleFile = "/files" + subtitleFile;
         }
         const ext = getFileExtension(subtitleFile);
-        const resp = await filesApi.fetchFiles(subtitleFile, true); // Fetch .srt file
+        const resp = await filesApi.fetchFiles(subtitleFile, true);
         let vttContent = resp.content;
-        // Convert SRT to VTT (assuming srt2vtt() does this)
         vttContent = convertToVTT(ext, resp.content);
-        // Create a virtual file (Blob) and get a URL for it
         const blob = new Blob([vttContent], { type: "text/vtt" });
         const vttURL = URL.createObjectURL(blob);
         subs.push({
@@ -378,9 +425,7 @@ export default {
       if (getters.currentPromptName() != null) {
         return;
       }
-
       const { key } = event;
-
       switch (key) {
         case "ArrowRight":
           if (this.hasNext) {
@@ -392,7 +437,8 @@ export default {
             this.prev();
           }
           break;
-        case ("Escape", "Backspace"):
+        case "Escape":
+        case "Backspace":
           this.close();
           break;
       }
@@ -410,7 +456,6 @@ export default {
       this.previousLink = "";
       this.nextLink = "";
       const path = state.req.path;
-
       let directoryPath = path.substring(0, path.lastIndexOf("/"));
       if (directoryPath == "") {
         directoryPath = "/";
@@ -456,18 +501,16 @@ export default {
     },
     toggleNavigation: throttle(function () {
       this.showNav = true;
-
       if (this.navTimeout) {
         clearTimeout(this.navTimeout);
       }
-
       this.navTimeout = setTimeout(() => {
         this.showNav = false || this.hoverNav;
         this.navTimeout = null;
       }, 1500);
     }, 100),
     close() {
-      mutations.replaceRequest({}); // Reset request data
+      mutations.replaceRequest({});
       let uri = url.removeLastDir(state.route.path) + "/";
       this.$router.push({ path: uri });
     },
@@ -477,6 +520,7 @@ export default {
   },
 };
 </script>
+
 <style lang="scss">
 :root {
   --dark-theme-1: #1a1a1a;
@@ -567,6 +611,8 @@ export default {
   }
   
   .tab-pane {
+    display: block;
+    opacity: 1;
     h3 {
       margin-top: 0;
       color: var(--accent);
@@ -581,21 +627,21 @@ export default {
       }
     }
     .metadata-table {
+      display: block;
+      width: 100%;
+      table {
         width: 100%;
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            td, th {
-                padding: 8px;
-                border-bottom: 1px solid var(--dark-theme-2);
-                text-align: left;
-            }
+        border-collapse: collapse;
+        td, th {
+          padding: 8px;
+          border-bottom: 1px solid var(--dark-theme-2);
+          text-align: left;
         }
+      }
     }
   }
 }
 
-// Styling for the navigation buttons
 .nav-button {
   position: absolute;
   top: 50%;
