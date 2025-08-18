@@ -450,7 +450,7 @@ export default {
         console.log("Missing ALGArea or image dimensions, using fallback style");
         return {
           left: "10px",
-          top: `${10 + 60 * this.metadata.xmp.Regions.indexOf(region)}px`, // Stack vertically
+          top: `${10 + 60 * this.metadata.xmp.Regions.indexOf(region)}px`,
           width: "100px",
           height: "100px",
         };
@@ -460,9 +460,13 @@ export default {
       const imgHeight = this.imageDimensions.height;
       const pixelWidth = W * imgWidth;
       const pixelHeight = H * imgHeight;
-      const pixelX = X * imgWidth; // Assume X is left edge
-      const pixelY = Y * imgHeight; // Assume Y is top edge
-      console.log("Face box for", region.Name || "Unnamed", { pixelX, pixelY, pixelWidth, pixelHeight });
+      const pixelX = X * imgWidth - pixelWidth / 2; // X is center
+      const pixelY = Y * imgHeight - pixelHeight / 2; // Y is center
+      console.log("Face box for", region.Name || "Unnamed", {
+        X, Y, W, H,
+        pixelX, pixelY, pixelWidth, pixelHeight,
+        imageWidth: imgWidth, imageHeight: imgHeight
+      });
       return {
         left: `${pixelX}px`,
         top: `${pixelY}px`,
