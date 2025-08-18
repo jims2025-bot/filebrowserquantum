@@ -184,7 +184,7 @@ export default {
       ],
       metadata: null,
       isResizing: false,
-      metadataHeight: 250, // Default height in pixels
+      metadataHeight: 300, // Default height in pixels
       // END OF NEW DATA PROPERTIES
     };
   },
@@ -194,6 +194,8 @@ export default {
     },
     previewType() {
       return getters.previewType();
+	  console.log("Preview type:", type);
+	  return type
     },
     raw() {
       return filesApi.getDownloadURL(state.req.source, state.req.path, true);
@@ -226,7 +228,9 @@ export default {
       return moment(this.req.modified).format('LL');
     },
     isMetadataVisible() {
-      return getters.isMetadataVisible();
+      const visible = getters.isMetadataVisible();
+      console.log("isMetadataVisible:", visible);
+      return visible;
     },
   },
   watch: {
@@ -281,13 +285,16 @@ export default {
       this.metadata = null;
       // Check if the file is an image before trying to fetch metadata
       if (this.previewType !== 'image') {
+	    console.log("Not an image, skipping metadata fetch");
         return;
       }
       
       // Call the new metadata API endpoint
       try {
         const res = await filesApi.fetchMetadata(state.req.source, state.req.path);
-        this.metadata = res.data;
+		console.log("Full API response:", res);
+		console.log("Metadata response:", res.data); // Debug the response
+        this.metadata = res;
       } catch (error) {
         console.error("Failed to fetch metadata:", error);
         this.metadata = { exif: {}, iptc: {}, xmp: {} }; // Set empty objects on error
