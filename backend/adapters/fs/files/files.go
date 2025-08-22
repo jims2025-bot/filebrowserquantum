@@ -32,23 +32,27 @@ import (
 // Structs for parsing the relevant parts of XMP
 type xmp struct {
 	XMLName xml.Name `xml:"xmpmeta"`
-	Regions regions  `xml:"RDF>Description>Regions"`
+	RDF     rdf      `xml:"RDF>Description"`
+}
+
+
+type rdf struct {
+	Regions regions `xml:"Regions>RegionList>Bag"`
 }
 
 type regions struct {
-	RegionList rdfBag `xml:"RegionList>Bag"`
-}
-
-type rdfBag struct {
 	Items []rdfLi `xml:"li"`
 }
 
 type rdfLi struct {
-	Name           string `xml:"Name"`
-	Type           string `xml:"Type"`
-	NameAssignType string `xml:"NameAssignType"`
-	ALGArea        area   `xml:"ALGArea"`
+	Name           string      `xml:"Name"`
+	Type           string      `xml:"Type"`
+	NameAssignType string      `xml:"NameAssignType"`
+	DLYArea        area        `xml:"DLYArea"`  // ACDSee uses DLYArea
+	ALGArea        area        `xml:"ALGArea"`  // Standard ALGArea
 }
+
+
 
 type area struct {
 	H float64 `xml:"h"`
@@ -114,9 +118,58 @@ func GetMetadata(filePath string) (map[string]interface{}, error) {
 		if err := xml.Unmarshal(xmpOutput, &xmpDataParsed); err != nil {
 			logger.Errorf("Error parsing XMP XML for %s: %v", filePath, err)
 		} else {
+			// Process and normalize the region data
+			processedRegions := make([]map[string]interface{}, 0)
+			
+			// Check if we have any regions to process
+			if xmpDataParsed.RDF.Regions.Items != nil {
+				for _, region := range xmpDataParsed.RDF.Regions.Items {
+					processedRegion := map[string]interface{}{
+						"Name":           region.Name,
+						"Type":           region.Type,
+						"NameAssignType": region.NameAssignType, // This can be empty
+					}
+
+					// Check for coordinates in either DLYArea (ACDSee) or ALGArea (standard)
+					var areaData area
+					hasValidArea := false
+					
+					// Prefer DLYArea (ACDSee format) - check if coordinates are valid
+					if region.DLYArea.X > 0 && region.DLYArea.Y > 0 && 
+					   region.DLYArea.W > 0 && region.DLYArea.H > 0 {
+						areaData = region.DLYArea
+						hasValidArea = true
+						logger.Debugf("Using DLYArea coordinates for %s: X=%f, Y=%f, W=%f, H=%f", 
+							region.Name, areaData.X, areaData.Y, areaData.W, areaData.H)
+					} else if region.ALGArea.X > 0 && region.ALGArea.Y > 0 && 
+					          region.ALGArea.W > 0 && region.ALGArea.H > 0 {
+						// Fall back to ALGArea (standard format)
+						areaData = region.ALGArea
+						hasValidArea = true
+						logger.Debugf("Using ALGArea coordinates for %s: X=%f, Y=%f, W=%f, H=%f", 
+							region.Name, areaData.X, areaData.Y, areaData.W, areaData.H)
+					}
+
+					if hasValidArea {
+						processedRegion["ALGArea"] = map[string]float64{
+							"X": areaData.X,
+							"Y": areaData.Y,
+							"W": areaData.W,
+							"H": areaData.H,
+						}
+						processedRegions = append(processedRegions, processedRegion)
+					} else {
+						logger.Debugf("Skipping region with invalid coordinates in %s: Name=%s", filePath, region.Name)
+					}
+				}
+			}
+
 			// Add the structured data to the xmpData map
-			if len(xmpDataParsed.Regions.RegionList.Items) > 0 {
-				xmpData["Regions"] = xmpDataParsed.Regions.RegionList.Items
+			if len(processedRegions) > 0 {
+				xmpData["Regions"] = processedRegions
+				logger.Debugf("Found %d valid regions in XMP for %s", len(processedRegions), filePath)
+			} else {
+				logger.Debugf("No valid regions found in XMP for %s", filePath)
 			}
 		}
 	}

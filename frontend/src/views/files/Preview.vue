@@ -1,4 +1,3 @@
-```vue
 <template>
   <div id="previewer" @mousemove="toggleNavigation" @touchstart="toggleNavigation">
     <div class="preview" :class="{ 'full-height': !isMetadataVisible }">
@@ -446,9 +445,18 @@ export default {
         );
       }
     },
+	
+	
     getFaceBoxStyle(region) {
-      if (!region.ALGArea || !this.imageDimensions.width || !this.imageDimensions.height) {
-        console.log("Missing ALGArea or image dimensions, using fallback style");
+      // Check if we have valid ALGArea data
+      if (!region.ALGArea || 
+          region.ALGArea.X === undefined || 
+          region.ALGArea.Y === undefined || 
+          region.ALGArea.W === undefined || 
+          region.ALGArea.H === undefined ||
+          !this.imageDimensions.width || 
+          !this.imageDimensions.height) {
+        console.log("Missing or invalid ALGArea or image dimensions, using fallback style");
         return {
           left: "10px",
           top: `${10 + 60 * this.metadata.xmp.Regions.indexOf(region)}px`,
@@ -458,31 +466,55 @@ export default {
           background: "rgba(0, 0, 255, 0.2)",
         };
       }
+
       const { X, Y, W, H } = region.ALGArea;
+      
+      // Validate coordinates are numbers and within reasonable bounds
+      if (typeof X !== 'number' || typeof Y !== 'number' || 
+          typeof W !== 'number' || typeof H !== 'number' ||
+          X < 0 || Y < 0 || W <= 0 || H <= 0 ||
+          X > 1 || Y > 1 || W > 1 || H > 1) {
+        console.log("Invalid ALGArea coordinates, using fallback style", { X, Y, W, H });
+        return {
+          left: "10px",
+          top: `${10 + 60 * this.metadata.xmp.Regions.indexOf(region)}px`,
+          width: "100px",
+          height: "100px",
+          border: "2px solid var(--accent-blue)",
+          background: "rgba(0, 0, 255, 0.2)",
+        };
+      }
+
       const imgWidth = this.imageDimensions.width;
       const imgHeight = this.imageDimensions.height;
       const pixelWidth = W * imgWidth;
       const pixelHeight = H * imgHeight;
       const pixelX = X * imgWidth - pixelWidth / 2; // X is center
       const pixelY = Y * imgHeight - pixelHeight / 2; // Y is center
+      
       let borderColor, backgroundColor;
-      if (region.NameAssignType === 'auto') {
+      
+      // Handle NameAssignType - even if it's empty or null
+      const nameAssignType = region.NameAssignType || '';
+      if (nameAssignType === 'auto') {
         borderColor = 'var(--accent-yellow)';
         backgroundColor = 'rgba(255, 255, 0, 0.2)';
-      } else if (region.NameAssignType === 'manual') {
+      } else if (nameAssignType === 'manual') {
         borderColor = 'var(--accent-green)';
         backgroundColor = 'rgba(66, 185, 131, 0.2)';
       } else {
         borderColor = 'var(--accent-blue)';
         backgroundColor = 'rgba(0, 0, 255, 0.2)';
       }
+      
       console.log("Face box for", region.Name || "Unnamed", {
         X, Y, W, H,
         pixelX, pixelY, pixelWidth, pixelHeight,
         imageWidth: imgWidth, imageHeight: imgHeight,
-        NameAssignType: region.NameAssignType,
+        NameAssignType: nameAssignType,
         borderColor, backgroundColor
       });
+      
       return {
         left: `${pixelX}px`,
         top: `${pixelY}px`,
@@ -492,6 +524,9 @@ export default {
         background: backgroundColor,
       };
     },
+	
+	
+	
     startResize(event) {
       this.isResizing = true;
       document.body.style.userSelect = "none";
