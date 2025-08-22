@@ -3,14 +3,17 @@ package http
 import (
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+	"log"
 
 	"github.com/jims2025-bot/filebrowserquantum/backend/auth"
 	"github.com/jims2025-bot/filebrowserquantum/backend/database/users"
     "github.com/jims2025-bot/filebrowserquantum/backend/adapters/fs/files"	
 	"github.com/jims2025-bot/filebrowserquantum/backend/indexing"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
 )
 
 // createApiKeyHandler creates an API key for the user.
@@ -178,13 +181,29 @@ func listApiKeysHandler(w http.ResponseWriter, r *http.Request, d *requestContex
 // @Failure 500 {object} map[string]string "Internal server error"
 // @Router /api/metadata [get]
 func getMetadataHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
-	// Get query parameters for source and path
+    // Initialize logger with a prefix for clarity
+	log.SetPrefix("[getMetadataHandler] ")
+
+	// Get query parameters for source and path	
 	source := r.URL.Query().Get("source")
 	path := r.URL.Query().Get("path")
-
+	
+   // Log query parameters for debugging
+	log.Printf("Query parameters: source=%s, path=%s", source, path)	
+	
 	if source == "" || path == "" {
 		return http.StatusBadRequest, fmt.Errorf("source and path are required")
 	}
+
+    // Get user scope for the source
+    userScope := "/"
+    if d.user.Username != "publicUser" {
+        var err error
+        userScope, err = settings.GetScopeFromSourceName(d.user.Scopes, source)
+        if err != nil && d.share == nil {
+            return http.StatusForbidden, fmt.Errorf("source %s is not available for user %s", source, d.user.Username)
+        }
+    }
 
 	// Get the index for the specified source
 	idx := indexing.GetIndex(source)
@@ -192,11 +211,17 @@ func getMetadataHandler(w http.ResponseWriter, r *http.Request, d *requestContex
 		return http.StatusNotFound, fmt.Errorf("source '%s' not found", source)
 	}
 
+    // Combine user scope with requested path
+    scopedPath := filepath.Join(userScope, path)
+    log.Printf("Resolving scoped path: %s", scopedPath)
+
 	// Get the real file path from the indexed path
-	realPath, _, err := idx.GetRealPath(path)
+	realPath, _, err := idx.GetRealPath(scopedPath)
 	if err != nil {
 		return http.StatusNotFound, fmt.Errorf("file not found: %w", err)
 	}
+
+    log.Printf("Real path resolved: %s", realPath)
 
 	// Call the function to get the metadata
 	metadata, err := files.GetMetadata(realPath)
