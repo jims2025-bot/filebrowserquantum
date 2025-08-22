@@ -446,6 +446,10 @@ export default {
       }
     },
 	
+	triggerHeaderVisibility() {
+  // Emit an event that the header component can listen to
+  this.$root.$emit('show-header-temporarily');
+   },
 	
     getFaceBoxStyle(region) {
       // Check if we have valid ALGArea data
@@ -677,16 +681,20 @@ export default {
       this.dimensionRetryCount = 0;
       this.$nextTick(() => this.updateImageDimensions());
     },
-    toggleNavigation: throttle(function () {
-      this.showNav = true;
-      if (this.navTimeout) {
-        clearTimeout(this.navTimeout);
-      }
-      this.navTimeout = setTimeout(() => {
-        this.showNav = false || this.hoverNav;
-        this.navTimeout = null;
-      }, 1500);
-    }, 100),
+toggleNavigation: throttle(function () {
+  this.showNav = true;
+  if (this.navTimeout) {
+    clearTimeout(this.navTimeout);
+  }
+  this.navTimeout = setTimeout(() => {
+    this.showNav = false || this.hoverNav;
+    this.navTimeout = null;
+  }, 1500);
+  
+  // Trigger header visibility
+  this.triggerHeaderVisibility();
+}, 100),
+	
     close() {
       mutations.replaceRequest({});
       let uri = url.removeLastDir(state.route.path) + "/";

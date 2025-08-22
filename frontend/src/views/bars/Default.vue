@@ -1,5 +1,5 @@
 <template>
-  <header v-if="!isOnlyOffice" :class="['flexbar', { 'dark-mode-header': isDarkMode }]">
+  <header v-if="!isOnlyOffice" :class="['flexbar', { 'dark-mode-header': isDarkMode, 'header-hidden': !showHeader }]">
     <action
       v-if="!isShare"
       icon="close_back"
@@ -49,6 +49,8 @@ export default {
   data() {
     return {
       viewModes: ["list", "compact", "normal", "gallery"],
+      showHeader: true,
+      headerTimeout: null,
     };
   },
   computed: {
@@ -146,6 +148,49 @@ export default {
         router.go(-1);
       }
     },
+    showHeaderTemporarily() {
+      this.showHeader = true;
+      
+      // Clear any existing timeout
+      if (this.headerTimeout) {
+        clearTimeout(this.headerTimeout);
+      }
+      
+      // Hide header after 3 seconds
+      this.headerTimeout = setTimeout(() => {
+        this.showHeader = false;
+      }, 3000);
+    },
+  },
+  mounted() {
+    // Set up event listeners for mouse movement and clicks
+    document.addEventListener('mousemove', this.showHeaderTemporarily);
+    document.addEventListener('click', this.showHeaderTemporarily);
+    
+    // Start the timer to hide the header
+    this.showHeaderTemporarily();
+  },
+  beforeUnmount() {
+    // Clean up event listeners
+    document.removeEventListener('mousemove', this.showHeaderTemporarily);
+    document.removeEventListener('click', this.showHeaderTemporarily);
+    
+    // Clear timeout
+    if (this.headerTimeout) {
+      clearTimeout(this.headerTimeout);
+    }
   },
 };
 </script>
+
+<style scoped>
+.header-hidden {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+header {
+  transition: opacity 0.3s ease;
+}
+</style>
