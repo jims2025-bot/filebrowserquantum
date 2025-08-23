@@ -1,22 +1,23 @@
 version: "3.8"
 services:
   filebrowser:
-    image: jims2025-bot/filebrowserquantum:v3.0.1-jimmeta.1
+    image: ghcr.io/jims2025-bot/filebrowserquantum:v3.0.6-jimmeta.1
     container_name: FBQuantum_JimMeta
     networks:
       shared_bridge:
-        ipv4_address: 172.22.0.101
+        ipv4_address: 172.22.0.101  # Make sure this doesn't conflict with your other FileBrowser container
     ports:
-      - "3671:80"
+      - "3671:80"  # Change the port so it doesn't conflict with your other instance
     volumes:
-      # Your photo library
-      - /srv/dev-disk-by-uuid-90be2239-3de1-4f60-a6f1-a1f95cd93876/PERSONAL-CRYPT/PHOTOS/zScannedAlbums:/srv
+      - /srv/dev-disk-by-uuid-90be2239-3de1-4f60-a6f1-a1f95cd93876/PERSONAL-CRYPT/PHOTOS:/srv
     environment:
       - FB_BASEURL=/albums
       - FB_ROOT=/srv
+      - TZ=America/New_York
     restart: unless-stopped
 
 networks:
   shared_bridge:
     external: true
     name: shared_bridge
+

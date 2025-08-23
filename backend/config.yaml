@@ -5,7 +5,7 @@ server:
     - levels: "info|warning|error"
   sources:
     # Change this line
-    - path: "E:/PERSONAL/PHOTOS/zScannedAlbums"
+    - path: "E:/PERSONAL/PHOTOS"
 userDefaults:
   preview:
     image: true
