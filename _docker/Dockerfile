@@ -8,8 +8,6 @@ WORKDIR /app
 
 # Copy go.mod and go.sum from repo root
 COPY ./go.mod ./go.sum ./
-
-# Download dependencies
 RUN go mod download
 
 # Copy backend source
@@ -28,11 +26,11 @@ RUN go build -ldflags="-w -s \
 FROM node:slim AS nbuild
 WORKDIR /app
 
-# Copy package.json first for caching
+# Install frontend deps
 COPY ./frontend/package.json ./
 RUN npm install --maxsockets 1
 
-# Copy frontend source and build
+# Build frontend
 COPY ./frontend/ ./
 RUN npm run build-docker
 
@@ -41,7 +39,7 @@ RUN npm run build-docker
 # -------------------------
 FROM alpine:latest
 
-# Install necessary packages and ffmpeg
+# Install necessary packages and ffmpeg safely
 RUN apk add --no-cache ca-certificates mailcap tzdata exiftool curl xz && \
     ARCH=$(uname -m) && \
     case "$ARCH" in \
@@ -51,7 +49,8 @@ RUN apk add --no-cache ca-certificates mailcap tzdata exiftool curl xz && \
       *)        echo "Unsupported architecture: $ARCH" && exit 1 ;; \
     esac && \
     mkdir -p /tmp/ffmpeg && \
-    curl -L "$URL" | tar -xJ -C /tmp/ffmpeg && \
+    curl --retry 5 --retry-delay 3 -L "$URL" -o /tmp/ffmpeg/ffmpeg.tar.xz && \
+    tar -xJf /tmp/ffmpeg/ffmpeg.tar.xz -C /tmp/ffmpeg && \
     mv /tmp/ffmpeg/ffmpeg-*/ffmpeg /usr/local/bin/ && \
     mv /tmp/ffmpeg/ffmpeg-*/ffprobe /usr/local/bin/ && \
     chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe && \
@@ -80,6 +79,7 @@ RUN ["ffmpeg", "-version"]
 RUN ["ffprobe", "-version"]
 RUN ["exiftool", "-ver"]
 
+# Switch to root to expose and run
 USER root
 EXPOSE 80
 ENTRYPOINT [ "./filebrowser" ]
