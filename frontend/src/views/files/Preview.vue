@@ -2,9 +2,20 @@
   <div id="previewer" @mousemove="toggleNavigation" @touchstart="toggleNavigation">
     <div class="preview" :class="{ 'full-height': !isMetadataVisible }">
       <div class="image-container" v-if="previewType == 'image'">
-        <img ref="image" :src="raw" @load="updateImageDimensions" class="preview-image">
+        <img 
+          ref="image" 
+          :src="raw" 
+          @load="updateImageDimensions" 
+          class="preview-image"
+          :style="imageStyle"
+          @wheel="handleWheel"
+          @mousedown="startPan"
+          @touchstart="handleTouchStart"
+          @touchmove="handleTouchMove"
+          @touchend="handleTouchEnd"
+        >
         <div
-          v-if="activeTab === 'xmp' && metadata && metadata.xmp && metadata.xmp.Regions && metadata.xmp.Regions.length > 0"
+          v-if="activeTab === 'xmp' && metadata && metadata.xmp && metadata.xmp.Regions && metadata.xmp.Regions.length > 0 && isMetadataVisible"
           class="face-overlay"
           :style="{ width: imageDimensions.width + 'px', height: imageDimensions.height + 'px', top: imageOffset.top + 'px', left: imageOffset.left + 'px' }"
         >
@@ -249,6 +260,15 @@ export default {
       imageDimensions: { width: 0, height: 0 },
       imageOffset: { top: 0, left: 0 },
       dimensionRetryCount: 0,
+      // Zoom and pan state
+      zoomLevel: 1,
+      panPosition: { x: 0, y: 0 },
+      isPanning: false,
+      lastPanPosition: { x: 0, y: 0 },
+      // Touch state for pinch-to-zoom
+      touchStartDistance: 0,
+      touchStartZoom: 1,
+      isTouching: false,
     };
   },
   computed: {
@@ -315,6 +335,18 @@ export default {
     previewMaxHeight() {
       return this.isMetadataVisible ? `calc(100vh - ${this.metadataHeight}px)` : '100vh';
     },
+    // Computed style for the image based on zoom and pan
+    imageStyle() {
+      if (this.isMetadataVisible || this.previewType !== 'image') {
+        return {};
+      }
+      
+      return {
+        transform: `translate(${this.panPosition.x}px, ${this.panPosition.y}px) scale(${this.zoomLevel})`,
+        transformOrigin: 'center center',
+        cursor: this.isPanning ? 'grabbing' : 'grab'
+      };
+    },
   },
   watch: {
     async req() {
@@ -341,7 +373,11 @@ export default {
         this.$nextTick(() => this.updateImageDimensions());
       }
     },
-    isMetadataVisible() {
+    isMetadataVisible(newValue) {
+      if (newValue) {
+        // Reset zoom and pan when metadata becomes visible
+        this.resetZoomAndPan();
+      }
       this.$nextTick(() => this.updateImageDimensions());
     },
   },
@@ -365,6 +401,9 @@ export default {
     document.addEventListener("touchmove", this.resizeMetadata);
     document.addEventListener("touchend", this.stopResize);
     window.addEventListener("resize", this.updateImageDimensions);
+    // Add event listeners for panning
+    document.addEventListener("mousemove", this.handlePan);
+    document.addEventListener("mouseup", this.stopPan);
   },
   beforeUnmount() {
     window.removeEventListener("keydown", this.key);
@@ -373,6 +412,9 @@ export default {
     document.removeEventListener("touchmove", this.resizeMetadata);
     document.removeEventListener("touchend", this.stopResize);
     window.removeEventListener("resize", this.updateImageDimensions);
+    // Remove event listeners for panning
+    document.removeEventListener("mousemove", this.handlePan);
+    document.removeEventListener("mouseup", this.stopPan);
   },
   methods: {
     selectTab(tabName) {
@@ -445,12 +487,12 @@ export default {
         );
       }
     },
-	
-	triggerHeaderVisibility() {
-  // Emit an event that the header component can listen to
-  this.$root.$emit('show-header-temporarily');
-   },
-	
+    
+    triggerHeaderVisibility() {
+      // Emit an event that the header component can listen to
+      this.$root.$emit('show-header-temporarily');
+    },
+    
     getFaceBoxStyle(region) {
       // Check if we have valid ALGArea data
       if (!region.ALGArea || 
@@ -528,9 +570,122 @@ export default {
         background: backgroundColor,
       };
     },
-	
-	
-	
+    
+    // Zoom and pan methods
+    handleWheel(event) {
+      if (this.isMetadataVisible || this.previewType !== 'image') return;
+      
+      event.preventDefault();
+      
+      // Calculate zoom factor
+      const zoomFactor = event.deltaY > 0 ? 0.9 : 1.1;
+      const newZoom = Math.max(0.1, Math.min(5, this.zoomLevel * zoomFactor));
+      
+      // Calculate mouse position relative to image
+      const rect = this.$refs.image.getBoundingClientRect();
+      const mouseX = event.clientX - rect.left;
+      const mouseY = event.clientY - rect.top;
+      
+      // Calculate the position relative to the image center
+      const imageCenterX = rect.width / 2;
+      const imageCenterY = rect.height / 2;
+      
+      // Adjust pan position to zoom toward mouse position
+      const zoomChange = newZoom - this.zoomLevel;
+      this.panPosition.x -= (mouseX - imageCenterX - this.panPosition.x) * (zoomChange / this.zoomLevel);
+      this.panPosition.y -= (mouseY - imageCenterY - this.panPosition.y) * (zoomChange / this.zoomLevel);
+      
+      this.zoomLevel = newZoom;
+    },
+    
+    startPan(event) {
+      if (this.isMetadataVisible || this.previewType !== 'image') return;
+      
+      this.isPanning = true;
+      this.lastPanPosition = { x: event.clientX, y: event.clientY };
+    },
+    
+    handlePan(event) {
+      if (!this.isPanning || this.isMetadataVisible || this.previewType !== 'image') return;
+      
+      const deltaX = event.clientX - this.lastPanPosition.x;
+      const deltaY = event.clientY - this.lastPanPosition.y;
+      
+      this.panPosition.x += deltaX;
+      this.panPosition.y += deltaY;
+      
+      this.lastPanPosition = { x: event.clientX, y: event.clientY };
+    },
+    
+    stopPan() {
+      this.isPanning = false;
+    },
+    
+    handleTouchStart(event) {
+      if (this.isMetadataVisible || this.previewType !== 'image') return;
+      
+      if (event.touches.length === 1) {
+        // Single touch - start panning
+        this.isTouching = true;
+        this.lastPanPosition = { x: event.touches[0].clientX, y: event.touches[0].clientY };
+      } else if (event.touches.length === 2) {
+        // Two touches - start pinch to zoom
+        this.isTouching = true;
+        this.touchStartZoom = this.zoomLevel;
+        this.touchStartDistance = this.getTouchDistance(event.touches);
+      }
+    },
+    
+    handleTouchMove(event) {
+      if (!this.isTouching || this.isMetadataVisible || this.previewType !== 'image') return;
+      
+      if (event.touches.length === 1) {
+        // Single touch - panning
+        const deltaX = event.touches[0].clientX - this.lastPanPosition.x;
+        const deltaY = event.touches[0].clientY - this.lastPanPosition.y;
+        
+        this.panPosition.x += deltaX;
+        this.panPosition.y += deltaY;
+        
+        this.lastPanPosition = { x: event.touches[0].clientX, y: event.touches[0].clientY };
+      } else if (event.touches.length === 2) {
+        // Two touches - pinch to zoom
+        event.preventDefault();
+        
+        const currentDistance = this.getTouchDistance(event.touches);
+        const zoomFactor = currentDistance / this.touchStartDistance;
+        this.zoomLevel = Math.max(0.1, Math.min(5, this.touchStartZoom * zoomFactor));
+        
+        // Calculate midpoint for centering zoom
+        const midX = (event.touches[0].clientX + event.touches[1].clientX) / 2;
+        const midY = (event.touches[0].clientY + event.touches[1].clientY) / 2;
+        
+        const rect = this.$refs.image.getBoundingClientRect();
+        const imageCenterX = rect.width / 2;
+        const imageCenterY = rect.height / 2;
+        
+        // Adjust pan position based on zoom
+        const zoomChange = this.zoomLevel - this.touchStartZoom;
+        this.panPosition.x -= (midX - rect.left - imageCenterX - this.panPosition.x) * (zoomChange / this.touchStartZoom);
+        this.panPosition.y -= (midY - rect.top - imageCenterY - this.panPosition.y) * (zoomChange / this.touchStartZoom);
+      }
+    },
+    
+    handleTouchEnd(event) {
+      this.isTouching = false;
+    },
+    
+    getTouchDistance(touches) {
+      const dx = touches[0].clientX - touches[1].clientX;
+      const dy = touches[0].clientY - touches[1].clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    },
+    
+    resetZoomAndPan() {
+      this.zoomLevel = 1;
+      this.panPosition = { x: 0, y: 0 };
+    },
+    
     startResize(event) {
       this.isResizing = true;
       document.body.style.userSelect = "none";
@@ -694,7 +849,7 @@ toggleNavigation: throttle(function () {
   // Trigger header visibility
   this.triggerHeaderVisibility();
 }, 100),
-	
+    
     close() {
       mutations.replaceRequest({});
       let uri = url.removeLastDir(state.route.path) + "/";
@@ -749,6 +904,7 @@ toggleNavigation: throttle(function () {
     align-items: center;
     width: 100%;
     height: 100%;
+    overflow: hidden;
   }
 
   .preview-image {
@@ -756,6 +912,7 @@ toggleNavigation: throttle(function () {
     max-height: 100%;
     object-fit: contain;
     display: block;
+    transition: transform 0.1s ease-out;
   }
 
   .face-overlay {
@@ -812,102 +969,105 @@ toggleNavigation: throttle(function () {
   display: flex;
   justify-content: center;
   margin-bottom: 1rem;
+  border-bottom: 1px solid var(--dark-theme-2);
+  padding-bottom: 0.5rem;
 
   button {
     background: none;
     border: none;
     color: #fff;
-    font-weight: bold;
     padding: 0.5rem 1rem;
+    margin: 0 0.25rem;
     cursor: pointer;
-    opacity: 0.6;
-    transition: opacity 0.2s ease-in-out;
+    border-radius: 4px;
+    transition: background-color 0.2s;
 
     &:hover {
-      opacity: 1;
+      background: rgba(255, 255, 255, 0.1);
     }
 
     &.active {
-      opacity: 1;
-      border-bottom: 2px solid var(--accent-green);
+      background: var(--accent-green);
+      color: #000;
     }
   }
 }
 
-.tab-pane {
-  display: block;
-  opacity: 1;
-
-  h3 {
-    margin-top: 0;
-    color: var(--accent-green);
-    text-align: center;
-  }
-
-  ul {
-    list-style-type: none;
-    padding: 0;
-
-    li {
-      padding: 0.25rem 0;
+.tabs-content {
+  .tab-pane {
+    h3 {
+      margin-top: 0;
+      color: var(--accent-green);
     }
-  }
 
-  .metadata-table {
-    display: block;
-    width: 100%;
+    .metadata-table {
+      max-height: 300px;
+      overflow-y: auto;
 
-    table {
-      width: 100%;
-      border-collapse: collapse;
+      table {
+        width: 100%;
+        border-collapse: collapse;
 
-      td,
-      th {
-        padding: 8px;
-        border-bottom: 1px solid var(--dark-theme-2);
-        text-align: left;
+        th, td {
+          padding: 0.5rem;
+          border: 1px solid var(--dark-theme-2);
+          text-align: left;
+        }
+
+        th {
+          background: rgba(255, 255, 255, 0.05);
+        }
       }
     }
   }
 }
 
 .nav-button {
-  position: absolute;
+  position: fixed;
   top: 50%;
   transform: translateY(-50%);
-  z-index: 10;
-  background: rgba(0, 0, 0, 0.4);
-  color: #fff;
+  background: rgba(0, 0, 0, 0.5);
+  color: white;
   border: none;
   border-radius: 50%;
-  cursor: pointer;
-  height: 40px;
-  width: 40px;
+  width: 50px;
+  height: 50px;
   display: flex;
   align-items: center;
   justify-content: center;
-  opacity: 1;
-  transition: opacity 0.3s ease;
+  cursor: pointer;
+  z-index: 100;
+  transition: opacity 0.3s;
 
-  i {
-    font-size: 36px;
+  &.nav-button-prev {
+    left: 20px;
   }
 
-  &:hover {
-    background: rgba(0, 0, 0, 0.7);
+  &.nav-button-next {
+    right: 20px;
   }
 
   &.hidden {
     opacity: 0;
     pointer-events: none;
   }
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.8);
+  }
 }
 
-.nav-button-prev {
-  left: 20px;
-}
+.info {
+  text-align: center;
+  color: #fff;
 
-.nav-button-next {
-  right: 20px;
+  .title {
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .button {
+    margin: 0 0.5rem;
+  }
 }
 </style>
