@@ -1,7 +1,7 @@
 <template>
   <div id="previewer" @mousemove="toggleNavigation" @touchstart="toggleNavigation">
-    <div class="preview" :class="{ 'full-height': !isMetadataVisible }"
-	                     :style="{ maxHeight: previewMaxHeight }">>
+    <!-- Preview Section -->
+    <div class="preview" :class="{ 'full-height': !isMetadataVisible }" :style="{ maxHeight: previewMaxHeight }">
       <div class="image-container" v-if="previewType == 'image'">
         <img 
           ref="image" 
@@ -19,7 +19,7 @@
           v-if="activeTab === 'xmp' && metadata && metadata.xmp && metadata.xmp.Regions && metadata.xmp.Regions.length > 0 && isMetadataVisible"
           class="face-overlay"
           :style="{ width: imageDimensions.width + 'px', height: imageDimensions.height + 'px', top: imageOffset.top + 'px', left: imageOffset.left + 'px' }"
-        >		
+        >
           <div
             v-for="(region, index) in metadata.xmp.Regions"
             :key="index"
@@ -30,6 +30,7 @@
           </div>
         </div>
       </div>
+
       <audio
         v-else-if="previewType == 'audio'"
         ref="player"
@@ -38,6 +39,7 @@
         :autoplay="autoPlay"
         @play="autoPlay = true"
       ></audio>
+
       <video
         v-else-if="previewType == 'video'"
         ref="player"
@@ -55,7 +57,9 @@
           :default="index === 0"
         />
       </video>
+
       <object v-else-if="previewType == 'pdf'" class="pdf" :data="raw"></object>
+
       <div v-else class="info">
         <div class="title">
           <i class="material-icons">feedback</i>
@@ -81,19 +85,27 @@
       </div>
     </div>
 
+    <!-- Metadata Section -->
     <div class="metadata-container" v-if="isMetadataVisible" :style="{ height: metadataHeight + 'px' }">
       <div class="resize-handle" @mousedown="startResize" @touchstart.stop="startResize"></div>
+
+      <!-- Tabs Header -->
       <div class="tabs-header">
         <button
           v-for="tab in availableTabs"
           :key="tab.name"
-          :class="{ active: activeTab === tab.name }"
+          :class="[
+			{ active: activeTab === tab.name },
+			{ 'tab-empty': isTabEmpty(tab.name) }
+		  ]"
           @click="selectTab(tab.name)"
         >
           {{ tab.label }}
         </button>
         <div>Debug: Available tabs - {{ availableTabs.map(tab => tab.label).join(', ') }}</div>
       </div>
+
+      <!-- Tabs Content -->
       <div class="tabs-content">
         <div v-if="activeTab === 'details'" class="tab-pane">
           <h3>File Details</h3>
@@ -128,35 +140,44 @@
           <p v-else>Loading EXIF metadata...</p>
         </div>
 
-<div v-if="activeTab === 'iptc'" class="tab-pane">
-  <h3>IPTC Metadata</h3>
-  <div v-if="metadata && Object.keys(metadata.iptc).length > 0" class="metadata-table">
-    <table>
-      <thead>
-        <tr>
-          <th>Tag</th>
-          <th>Value</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="(value, key) in metadata.iptc" :key="key">
-          <td>{{ key }}</td>
-          <td>{{ value }}</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-  <p v-else-if="metadata && Object.keys(metadata.iptc).length === 0">No IPTC data found for this file.</p>
-  <p v-else>Loading IPTC metadata...</p>
+        <div v-if="activeTab === 'iptc'" class="tab-pane">
+          <h3>IPTC Metadata</h3>
+          <div v-if="metadata && Object.keys(metadata.iptc).length > 0" class="metadata-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Tag</th>
+                  <th>Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(value, key) in metadata.iptc" :key="key">
+                  <td>{{ key }}</td>
+                  <td>{{ value }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p v-else-if="metadata && Object.keys(metadata.iptc).length === 0">No IPTC data found for this file.</p>
+          <p v-else>Loading IPTC metadata...</p>
 
-  <!-- Photoshop Instructions Edit Button -->
-  <div style="margin-top: 1rem;">
-    <strong>Photoshop Instructions:</strong>
-    <span v-if="photoshopInstructions">{{ photoshopInstructions }}</span>
-    <span v-else>No instructions</span>
-    <button @click="openInstructionsModal" class="button button--flat">Edit</button>
-  </div>
-</div>
+          <!-- Inline Photoshop Instructions Modal -->
+          <div style="margin-top: 1rem;">
+            <strong>Photoshop Instructions:</strong>
+            <span v-if="photoshopInstructions">{{ photoshopInstructions }}</span>
+            <span v-else>No instructions</span>
+            <button @click="openInstructionsModal" class="button button--flat">Edit</button>
+
+            <div v-if="showInstructionsModal" class="inline-modal">
+              <textarea v-model="photoshopInstructions" rows="10"></textarea>
+              <div style="margin-top:0.5rem; text-align:right">
+                <button @click="saveInstructions" class="button button--flat">Save</button>
+                <button @click="showInstructionsModal = false" class="button button--flat">Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div v-if="activeTab === 'xmp'" class="tab-pane">
           <h3>XMP Metadata</h3>
           <div v-if="metadata && metadata.xmp && Object.keys(metadata.xmp).length > 0" class="metadata-table">
@@ -199,6 +220,8 @@
         </div>
       </div>
     </div>
+
+    <!-- Navigation Buttons -->
     <button
       @click="prev"
       @mouseover="hoverNav = true"
@@ -224,20 +247,8 @@
     <link rel="prefetch" :href="previousRaw" />
     <link rel="prefetch" :href="nextRaw" />
   </div>
-  <teleport to="body">
-    <div v-if="showInstructionsModal" class="modal-overlay">
-      <div class="modal-content">
-         <h3>Edit Photoshop Instructions</h3>
-         <textarea v-model="photoshopInstructions" rows="5" style="width:100%"></textarea>
-         <div style="margin-top:1rem; text-align:right">
-         <button @click="saveInstructions" class="button button--flat">Save</button>
-         <button @click="showInstructionsModal = false" class="button button--flat">Cancel</button>
-       </div>
-      </div>
-   </div>
-  </teleport>
-
 </template>
+
 
 <script>
 import * as filesApi from "@/api/files.js";
@@ -303,21 +314,16 @@ export default {
       console.log("Preview type:", type);
       return type;
     },
-    availableTabs() {
-      if (!this.metadata) return [{ name: "details", label: "Details" }];
-      const tabs = [{ name: "details", label: "Details" }];
-      if (this.metadata.exif && Object.keys(this.metadata.exif).length > 0) {
-        tabs.push({ name: "exif", label: "EXIF" });
-      }
-      if (this.metadata.iptc && Object.keys(this.metadata.iptc).length > 0) {
-        tabs.push({ name: "iptc", label: "IPTC" });
-      }
-      if (this.metadata.xmp && Object.keys(this.metadata.xmp).length > 0) {
-        tabs.push({ name: "xmp", label: "XMP" });
-      }
-      console.log("Available tabs:", tabs);
-      return tabs;
-    },
+	availableTabs() {
+		const tabs = [
+		{ name: "details", label: "Details" },
+		{ name: "exif", label: "EXIF" },
+		{ name: "iptc", label: "IPTC" },
+		{ name: "xmp", label: "XMP" },
+		{ name: "map", label: "Map" },
+		];
+		return tabs;
+	},
     raw() {
       const url = filesApi.getDownloadURL(state.req.source, state.req.path, true);
       console.log("Image src URL:", url);
@@ -403,6 +409,11 @@ export default {
       }
       this.$nextTick(() => this.updateImageDimensions());
     },
+     photoshopInstructions(newVal) {
+		if (this.metadata && this.metadata.xmp) {
+		this.metadata.xmp['photoshop:Instructions'] = newVal;
+		}
+   	  }
   },
   async mounted() {
     window.addEventListener("keydown", this.key);
@@ -453,6 +464,9 @@ export default {
         const res = await filesApi.fetchMetadata(state.req.source, state.req.path);
         console.log("Full API response:", res);
         this.metadata = res.data || res;
+		if (!this.metadata.xmp) {
+			this.metadata.xmp = {};
+		}
 		this.parsePhotoshopInstructions(); // <-- parse instructions here
         console.log("Assigned metadata:", this.metadata);
       } catch (error) {
@@ -512,6 +526,14 @@ export default {
       }
     },
     
+	isTabEmpty(tabName) {
+		if (!this.metadata) return false;
+		if (tabName === 'exif') return !this.metadata.exif || Object.keys(this.metadata.exif).length === 0;
+		if (tabName === 'iptc') return !this.metadata.iptc || Object.keys(this.metadata.iptc).length === 0;
+		if (tabName === 'xmp') return !this.metadata.xmp || Object.keys(this.metadata.xmp).length === 0;
+		return false;
+	},
+  
     triggerHeaderVisibility() {
       // Emit an event that the header component can listen to
       this.$root.$emit('show-header-temporarily');
@@ -607,12 +629,18 @@ export default {
       this.showInstructionsModal = true;
     },
   
-    saveInstructions() {
-       // Update XMP metadata locally
-      if (!this.metadata.xmp) this.metadata.xmp = {};
-      this.metadata.xmp['photoshop:Instructions'] = this.photoshopInstructions;
+  async saveInstructions() {
+    try {
+      await filesApi.updateXMPInstructions(
+        state.req.source,
+        state.req.path,
+        this.photoshopInstructions
+      );
       this.showInstructionsModal = false;
-    },
+    } catch (err) {
+      console.error(err);
+    }
+  },
 	
     
     // Zoom and pan methods
@@ -985,24 +1013,22 @@ toggleNavigation: throttle(function () {
   }
 }
 
-
-.modal-overlay {
-  position: fixed;
-  top:0; left:0; width:100%; height:100%;
-  background: rgba(0,0,0,0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 9999;
+.inline-modal {
+  position: relative;      /* instead of fixed */
+  margin-top: 1rem;        /* spacing from above content */
+  padding: 1rem;
+  border: 1px solid #ccc;
+  background: #fff;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  width: 100%;
+  max-width: 100%;
+  z-index: 10;             /* relative stacking within container */
 }
 
-.modal-content {
-  background: var(--dark-theme-1);
-  padding: 2rem;
-  border-radius: 8px;
-  color: #fff;
-  width: 500px;
-  max-width: 90%;
+.inline-modal textarea {
+  width: 100%;             // Fill modal width
+  box-sizing: border-box;  // Include padding in width
 }
 
 .metadata-container {
@@ -1053,11 +1079,24 @@ toggleNavigation: throttle(function () {
       background: var(--accent-green);
       color: #000;
     }
+
+    &.tab-empty {
+      background: #ffcccc; // light red for empty tabs
+      color: #000;
+    }
+
+    // Ensure active overrides empty
+    &.active.tab-empty {
+      background: var(--accent-green);
+      color: #000;
+    }
   }
 }
 
 .tabs-content {
   .tab-pane {
+    position:relative;
+	
     h3 {
       margin-top: 0;
       color: var(--accent-green);

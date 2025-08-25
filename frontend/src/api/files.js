@@ -273,3 +273,38 @@ export async function fetchMetadata(source, path) {
     throw err;
   }
 }
+
+
+/**
+ * Update the Photoshop XMP instructions for a file.
+ * @param {string} source - The file source
+ * @param {string} path - The file path
+ * @param {string} instructions - The new instructions text
+ */
+export async function updateXMPInstructions(source, path, instructions) {
+  try {
+    const apiPath = getApiPath('api/resources', {
+      path: encodeURIComponent(path),
+      source: source,
+    });
+
+    const res = await fetchURL(apiPath, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Auth': state.jwt
+      },
+      body: JSON.stringify({ photoshopInstructions: instructions })
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(errorText || `HTTP error! status: ${res.status}`);
+    }
+
+    return await res.json();
+  } catch (err) {
+    notify.showError(err.message || 'Error updating XMP instructions');
+    throw err;
+  }
+}
