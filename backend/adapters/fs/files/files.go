@@ -1,6 +1,7 @@
 package files
 
 import (
+    "bytes"
 	"crypto/md5"
 	"crypto/sha1"
 	"crypto/sha256"
@@ -17,7 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
+	"unicode/utf8"	
 
 	"github.com/jims2025-bot/filebrowserquantum/backend/adapters/fs/fileutils"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/errors"
@@ -35,7 +36,6 @@ type xmp struct {
 	RDF     rdf      `xml:"RDF>Description"`
 }
 
-
 type rdf struct {
 	Regions regions `xml:"Regions>RegionList>Bag"`
 }
@@ -45,14 +45,12 @@ type regions struct {
 }
 
 type rdfLi struct {
-	Name           string      `xml:"Name"`
-	Type           string      `xml:"Type"`
-	NameAssignType string      `xml:"NameAssignType"`
-	DLYArea        area        `xml:"DLYArea"`  // ACDSee uses DLYArea
-	ALGArea        area        `xml:"ALGArea"`  // Standard ALGArea
+	Name           string `xml:"Name"`
+	Type           string `xml:"Type"`
+	NameAssignType string `xml:"NameAssignType"`
+	DLYArea        area   `xml:"DLYArea"` // ACDSee uses DLYArea
+	ALGArea        area   `xml:"ALGArea"` // Standard ALGArea
 }
-
-
 
 type area struct {
 	H float64 `xml:"h"`
@@ -111,8 +109,7 @@ func GetMetadata(filePath string) (map[string]interface{}, error) {
 	xmpOutput, err := cmdXMP.CombinedOutput()
 	if err != nil {
 		logger.Errorf("Error reading raw XMP for %s: %v\nOutput: %s", filePath, err, string(xmpOutput))
-		// We don't return an error here, as we still have the general metadata.
-		// We just log it and move on.
+		// Do not return error, just log
 	} else {
 		var xmpDataParsed xmp
 		if err := xml.Unmarshal(xmpOutput, &xmpDataParsed); err != nil {
@@ -120,36 +117,26 @@ func GetMetadata(filePath string) (map[string]interface{}, error) {
 		} else {
 			// Process and normalize the region data
 			processedRegions := make([]map[string]interface{}, 0)
-			
-			// Check if we have any regions to process
 			if xmpDataParsed.RDF.Regions.Items != nil {
 				for _, region := range xmpDataParsed.RDF.Regions.Items {
 					processedRegion := map[string]interface{}{
 						"Name":           region.Name,
 						"Type":           region.Type,
-						"NameAssignType": region.NameAssignType, // This can be empty
+						"NameAssignType": region.NameAssignType,
 					}
-
-					// Check for coordinates in either DLYArea (ACDSee) or ALGArea (standard)
 					var areaData area
 					hasValidArea := false
-					
-					// Prefer DLYArea (ACDSee format) - check if coordinates are valid
-					if region.DLYArea.X > 0 && region.DLYArea.Y > 0 && 
-					   region.DLYArea.W > 0 && region.DLYArea.H > 0 {
+					if region.DLYArea.X > 0 && region.DLYArea.Y > 0 &&
+						region.DLYArea.W > 0 && region.DLYArea.H > 0 {
 						areaData = region.DLYArea
 						hasValidArea = true
-						logger.Debugf("Using DLYArea coordinates for %s: X=%f, Y=%f, W=%f, H=%f", 
-							region.Name, areaData.X, areaData.Y, areaData.W, areaData.H)
-					} else if region.ALGArea.X > 0 && region.ALGArea.Y > 0 && 
-					          region.ALGArea.W > 0 && region.ALGArea.H > 0 {
-						// Fall back to ALGArea (standard format)
+						logger.Debugf("Using DLYArea coordinates for %s", region.Name)
+					} else if region.ALGArea.X > 0 && region.ALGArea.Y > 0 &&
+						region.ALGArea.W > 0 && region.ALGArea.H > 0 {
 						areaData = region.ALGArea
 						hasValidArea = true
-						logger.Debugf("Using ALGArea coordinates for %s: X=%f, Y=%f, W=%f, H=%f", 
-							region.Name, areaData.X, areaData.Y, areaData.W, areaData.H)
+						logger.Debugf("Using ALGArea coordinates for %s", region.Name)
 					}
-
 					if hasValidArea {
 						processedRegion["ALGArea"] = map[string]float64{
 							"X": areaData.X,
@@ -158,18 +145,12 @@ func GetMetadata(filePath string) (map[string]interface{}, error) {
 							"H": areaData.H,
 						}
 						processedRegions = append(processedRegions, processedRegion)
-					} else {
-						logger.Debugf("Skipping region with invalid coordinates in %s: Name=%s", filePath, region.Name)
 					}
 				}
 			}
-
-			// Add the structured data to the xmpData map
 			if len(processedRegions) > 0 {
 				xmpData["Regions"] = processedRegions
 				logger.Debugf("Found %d valid regions in XMP for %s", len(processedRegions), filePath)
-			} else {
-				logger.Debugf("No valid regions found in XMP for %s", filePath)
 			}
 		}
 	}
@@ -180,6 +161,45 @@ func GetMetadata(filePath string) (map[string]interface{}, error) {
 		"iptc": iptcData,
 		"xmp":  xmpData,
 	}, nil
+}
+
+// WriteXMPInstructions writes the given instructions string into the XMP Photoshop:Instructions field
+// of the specified file using exiftool.
+func WriteXMPInstructions(filePath, instructions string) error {
+	cmd := exec.Command("exiftool",
+		"-overwrite_original",
+		fmt.Sprintf("-XMP-photoshop:Instructions=%s", instructions),
+		filePath,
+	)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		logger.Errorf("Error writing XMP Instructions to %s: %v\nOutput: %s", filePath, err, string(output))
+		return fmt.Errorf("could not write XMP Instructions: %w", err)
+	}
+
+	logger.Debugf("Successfully wrote XMP Instructions to %s", filePath)
+	return nil
+}
+
+// GetXMPInstructions retrieves the XMP Photoshop:Instructions field from the file
+func GetXMPInstructions(filePath string) (string, error) {
+	cmd := exec.Command("exiftool", "-s", "-s", "-s", "-XMP-photoshop:Instructions", filePath)
+
+	var out bytes.Buffer
+	cmd.Stdout = &out
+
+	if err := cmd.Run(); err != nil {
+		logger.Errorf("Error reading XMP Instructions from %s: %v", filePath, err)
+		return "", fmt.Errorf("could not read XMP Instructions: %w", err)
+	}
+
+	instructions := out.String()
+	if instructions == "" {
+		return "", nil // no field present
+	}
+
+	return instructions, nil
 }
 
 func FileInfoFaster(opts iteminfo.FileOptions) (iteminfo.ExtendedFileInfo, error) {
@@ -196,25 +216,6 @@ func FileInfoFaster(opts iteminfo.FileOptions) (iteminfo.ExtendedFileInfo, error
 		return response, err
 	}
 	opts.IsDir = isDir
-	// TODO: whats the best way to save trips to disk here?
-	// disabled using cache because its not clear if this is helping or hurting
-	// check if the file exists in the index
-	//info, exists := index.GetReducedMetadata(opts.Path, opts.IsDir)
-	//if exists {
-	//	err := RefreshFileInfo(opts)
-	//	if err != nil {
-	//		return info, err
-	//	}
-	//	if opts.Content {
-	//		content := ""
-	//		content, err = getContent(opts.Path)
-	//		if err != nil {
-	//			return info, err
-	//		}
-	//		info.Content = content
-	//	}
-	//	return info, nil
-	//}
 	err = index.RefreshFileInfo(opts)
 	if err != nil {
 		return response, err
@@ -224,21 +225,20 @@ func FileInfoFaster(opts iteminfo.FileOptions) (iteminfo.ExtendedFileInfo, error
 		return response, fmt.Errorf("could not get metadata for path: %v", opts.Path)
 	}
 	if opts.Content && strings.HasPrefix(info.Type, "text") {
-		if info.Size < 20*1024*1024 { // 20 megabytes in bytes
+		if info.Size < 20*1024*1024 {
 			content, err := getContent(realPath)
 			if err != nil {
 				logger.Debugf("could not get content for file: "+info.Path, info.Name, err)
 				return response, err
 			}
 			response.Content = content
-		} else {
-			logger.Debug("skipping large text file contents (20MB limit): "+info.Path, info.Name)
 		}
 	}
 	response.FileInfo = *info
 	response.RealPath = realPath
 	response.Source = opts.Source
-	if settings.Config.Integrations.OnlyOffice.Secret != "" && info.Type != "directory" && iteminfo.IsOnlyOffice(info.Name) {
+	if settings.Config.Integrations.OnlyOffice.Secret != "" &&
+		info.Type != "directory" && iteminfo.IsOnlyOffice(info.Name) {
 		response.OnlyOfficeId = generateOfficeId(realPath)
 	}
 	if strings.HasPrefix(info.Type, "video") {
@@ -261,8 +261,6 @@ func generateOfficeId(realPath string) string {
 	return key
 }
 
-// Checksum checksums a given File for a given User, using a specific
-// algorithm. The checksums data is saved on File object.
 func GetChecksum(fullPath, algo string) (map[string]string, error) {
 	subs := map[string]string{}
 	reader, err := os.Open(fullPath)
@@ -277,12 +275,10 @@ func GetChecksum(fullPath, algo string) (map[string]string, error) {
 		"sha256": sha256.New(),
 		"sha512": sha512.New(),
 	}
-
 	h, ok := hashFuncs[algo]
 	if !ok {
 		return subs, errors.ErrInvalidOption
 	}
-
 	_, err = io.Copy(h, reader)
 	if err != nil {
 		return subs, err
@@ -323,11 +319,7 @@ func MoveResource(sourceIndex, destIndex, realsrc, realdst string) error {
 	}
 	refreshSourceDir := idxSrc.MakeIndexPath(filepath.Dir(realsrc))
 	refreshDestDir := idxDst.MakeIndexPath(filepath.Dir(realdst))
-	// refresh info for source and dest
-	err = idxSrc.RefreshFileInfo(iteminfo.FileOptions{
-		Path:  refreshSourceDir,
-		IsDir: true,
-	})
+	err = idxSrc.RefreshFileInfo(iteminfo.FileOptions{Path: refreshSourceDir, IsDir: true})
 	if err != nil {
 		return fmt.Errorf("could not refresh index for source: %v", err)
 	}
@@ -362,7 +354,6 @@ func CopyResource(sourceIndex, destIndex, realsrc, realdst string) error {
 		return fmt.Errorf("could not get index: %v ", sourceIndex)
 	}
 	refreshConfig := iteminfo.FileOptions{Path: refreshSourceDir, IsDir: true}
-	// refresh info for source and dest
 	err = index.RefreshFileInfo(refreshConfig)
 	if err != nil {
 		return fmt.Errorf("could not refresh index for source: %v", err)
@@ -372,7 +363,6 @@ func CopyResource(sourceIndex, destIndex, realsrc, realdst string) error {
 	if err != nil {
 		return errors.ErrEmptyKey
 	}
-
 	return nil
 }
 
@@ -382,7 +372,6 @@ func WriteDirectory(opts iteminfo.FileOptions) error {
 		return fmt.Errorf("could not get index: %v ", opts.Source)
 	}
 	realPath, _, _ := idx.GetRealPath(opts.Path)
-	// Ensure the parent directories exist
 	err := os.MkdirAll(realPath, 0775)
 	if err != nil {
 		return err
@@ -401,20 +390,15 @@ func WriteFile(opts iteminfo.FileOptions, in io.Reader) error {
 	}
 	dst, _, _ := idx.GetRealPath(opts.Path)
 	parentDir := filepath.Dir(dst)
-	// Create the directory and all necessary parents
 	err := os.MkdirAll(parentDir, 0775)
 	if err != nil {
 		return err
 	}
-
-	// Open the file for writing (create if it doesn't exist, truncate if it does)
 	file, err := os.OpenFile(dst, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0775)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
-
-	// Copy the contents from the reader to the file
 	_, err = io.Copy(file, in)
 	if err != nil {
 		return err
@@ -424,27 +408,17 @@ func WriteFile(opts iteminfo.FileOptions, in io.Reader) error {
 	return idx.RefreshFileInfo(opts)
 }
 
-// getContent reads and returns the file content if it's UTF-8 readable.
 func getContent(realPath string) (string, error) {
-	// Read the entire file in one go. This is more efficient.
 	content, err := os.ReadFile(realPath)
 	if err != nil {
 		return "", err
 	}
-
-	// Check if the file content is valid UTF-8.
-	// This allows for all characters, including ASCII and emojis.
 	if !utf8.Valid(content) {
-		// File is not valid text (e.g., a binary image), so we reject it.
 		return "", nil
 	}
-
-	// Handle the special case for an empty file, as in your original code.
 	if len(content) == 0 {
 		return "empty-file-x6OlSil", nil
 	}
-
-	// The file is valid, so return its string content.
 	return string(content), nil
 }
 

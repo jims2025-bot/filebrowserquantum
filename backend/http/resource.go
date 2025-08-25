@@ -97,34 +97,18 @@ func resourceGetHandler(w http.ResponseWriter, r *http.Request, d *requestContex
 }
 
 // resourceDeleteHandler deletes a resource at a specified path.
-// @Summary Delete a resource
-// @Description Deletes a resource located at the specified path.
-// @Tags Resources
-// @Accept json
-// @Produce json
-// @Param path query string true "Path to the resource"
-// @Param source query string false "Source name for the desired source, default is used if not provided"
-// @Param source query string false "Name for the desired source, default is used if not provided"
-// @Success 200 "Resource deleted successfully"
-// @Failure 403 {object} map[string]string "Forbidden"
-// @Failure 404 {object} map[string]string "Resource not found"
-// @Failure 500 {object} map[string]string "Internal server error"
-// @Router /api/resources [delete]
 func resourceDeleteHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
-	// TODO source := r.URL.Query().Get("source")
 	encodedPath := r.URL.Query().Get("path")
 	source := r.URL.Query().Get("source")
 	if source == "" {
 		source = config.Server.DefaultSource.Name
 	} else {
 		var err error
-		// decode url encoded source name
 		source, err = url.QueryUnescape(source)
 		if err != nil {
 			return http.StatusBadRequest, fmt.Errorf("invalid source encoding: %v", err)
 		}
 	}
-	// Decode the URL-encoded path
 	path, err := url.QueryUnescape(encodedPath)
 	if err != nil {
 		return http.StatusBadRequest, fmt.Errorf("invalid path encoding: %v", err)
@@ -145,33 +129,15 @@ func resourceDeleteHandler(w http.ResponseWriter, r *http.Request, d *requestCon
 	if err != nil {
 		return errToStatus(err), err
 	}
-
-	// delete thumbnails
 	preview.DelThumbs(r.Context(), fileInfo)
-
 	err = files.DeleteFiles(source, fileInfo.RealPath, filepath.Dir(fileInfo.RealPath))
 	if err != nil {
 		return errToStatus(err), err
 	}
 	return http.StatusOK, nil
-
 }
 
 // resourcePostHandler creates or uploads a new resource.
-// @Summary Create or upload a resource
-// @Description Creates a new resource or uploads a file at the specified path. Supports file uploads and directory creation.
-// @Tags Resources
-// @Accept json
-// @Produce json
-// @Param path query string true "Destination path where to place the files inside the destination source, a directory must end in / to create a directory"
-// @Param source query string false "Name for the desired filebrowser destination source name, default is used if not provided"
-// @Param override query bool false "Override existing file if true"
-// @Success 200 "Resource created successfully"
-// @Failure 403 {object} map[string]string "Forbidden"
-// @Failure 404 {object} map[string]string "Resource not found"
-// @Failure 409 {object} map[string]string "Conflict - Resource already exists"
-// @Failure 500 {object} map[string]string "Internal server error"
-// @Router /api/resources [post]
 func resourcePostHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
 	path := r.URL.Query().Get("path")
 	source := r.URL.Query().Get("source")
@@ -179,7 +145,6 @@ func resourcePostHandler(w http.ResponseWriter, r *http.Request, d *requestConte
 		source = config.Server.DefaultSource.Name
 	} else {
 		var err error
-		// decode url encoded source name
 		source, err = url.QueryUnescape(source)
 		if err != nil {
 			return http.StatusBadRequest, fmt.Errorf("invalid source encoding: %v", err)
@@ -198,7 +163,6 @@ func resourcePostHandler(w http.ResponseWriter, r *http.Request, d *requestConte
 		Modify: d.user.Permissions.Modify,
 		Expand: false,
 	}
-	// Directories creation on POST.
 	if strings.HasSuffix(path, "/") {
 		err = files.WriteDirectory(fileOpts)
 		if err != nil {
@@ -212,44 +176,25 @@ func resourcePostHandler(w http.ResponseWriter, r *http.Request, d *requestConte
 			logger.Debugf("Resource already exists: %v", fileInfo.RealPath)
 			return http.StatusConflict, nil
 		}
-
-		// Permission for overwriting the file
 		if !d.user.Permissions.Modify {
 			return http.StatusForbidden, nil
 		}
-
 		preview.DelThumbs(r.Context(), fileInfo)
 	}
 	err = files.WriteFile(fileOpts, r.Body)
 	if err != nil {
 		return errToStatus(err), err
-
 	}
 	return http.StatusOK, nil
 }
 
 // resourcePutHandler updates an existing file resource.
-// @Summary Update a file resource
-// @Description Updates an existing file at the specified path.
-// @Tags Resources
-// @Accept json
-// @Produce json
-// @Param path query string true "Destination path where to place the files inside the destination source"
-// @Param source query string false "Source name for the desired source, default is used if not provided"
-// @Param source query string false "Name for the desired source, default is used if not provided"
-// @Success 200 "Resource updated successfully"
-// @Failure 403 {object} map[string]string "Forbidden"
-// @Failure 404 {object} map[string]string "Resource not found"
-// @Failure 405 {object} map[string]string "Method not allowed"
-// @Failure 500 {object} map[string]string "Internal server error"
-// @Router /api/resources [put]
 func resourcePutHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
 	source := r.URL.Query().Get("source")
 	if source == "" {
 		source = config.Server.DefaultSource.Name
 	} else {
 		var err error
-		// decode url encoded source name
 		source, err = url.QueryUnescape(source)
 		if err != nil {
 			return http.StatusBadRequest, fmt.Errorf("invalid source encoding: %v", err)
@@ -259,13 +204,10 @@ func resourcePutHandler(w http.ResponseWriter, r *http.Request, d *requestContex
 		return http.StatusForbidden, fmt.Errorf("user is not allowed to create or modify")
 	}
 	encodedPath := r.URL.Query().Get("path")
-
-	// Decode the URL-encoded path
 	path, err := url.QueryUnescape(encodedPath)
 	if err != nil {
 		return http.StatusBadRequest, fmt.Errorf("invalid path encoding: %v", err)
 	}
-	// Only allow PUT for files.
 	if strings.HasSuffix(path, "/") {
 		return http.StatusMethodNotAllowed, nil
 	}
@@ -283,31 +225,13 @@ func resourcePutHandler(w http.ResponseWriter, r *http.Request, d *requestContex
 	return errToStatus(err), err
 }
 
-// resourcePatchHandler performs a patch operation (e.g., move, rename) on a resource.
-// @Summary Patch resource (move/rename)
-// @Description Moves or renames a resource to a new destination.
-// @Tags Resources
-// @Accept json
-// @Produce json
-// @Param from query string true "Path from resource in <source_name>::<index_path> format"
-// @Param destination query string true "Destination path for the resource"
-// @Param action query string true "Action to perform (copy, rename)"
-// @Param overwrite query bool false "Overwrite if destination exists"
-// @Param rename query bool false "Rename if destination exists"
-// @Success 200 "Resource moved/renamed successfully"
-// @Failure 403 {object} map[string]string "Forbidden"
-// @Failure 404 {object} map[string]string "Resource not found"
-// @Failure 409 {object} map[string]string "Conflict - Destination exists"
-// @Failure 500 {object} map[string]string "Internal server error"
-// @Router /api/resources [patch]
+// resourcePatchHandler performs a patch operation (move/rename) on a resource.
 func resourcePatchHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
 	action := r.URL.Query().Get("action")
 	if !d.user.Permissions.Modify {
 		return http.StatusForbidden, fmt.Errorf("user is not allowed to create or modify")
 	}
-
 	encodedFrom := r.URL.Query().Get("from")
-	// Decode the URL-encoded path
 	src, err := url.QueryUnescape(encodedFrom)
 	if err != nil {
 		return http.StatusBadRequest, fmt.Errorf("invalid path encoding: %v", err)
@@ -317,25 +241,21 @@ func resourcePatchHandler(w http.ResponseWriter, r *http.Request, d *requestCont
 	if err != nil {
 		return errToStatus(err), err
 	}
-
 	splitSrc := strings.Split(src, "::")
 	if len(splitSrc) <= 1 {
 		return http.StatusBadRequest, fmt.Errorf("invalid source path: %v", src)
 	}
 	srcIndex := splitSrc[0]
 	src = splitSrc[1]
-
 	splitDst := strings.Split(dst, "::")
 	if len(splitDst) <= 1 {
 		return http.StatusBadRequest, fmt.Errorf("invalid destination path: %v", dst)
 	}
 	dstIndex := splitDst[0]
 	dst = splitDst[1]
-
 	if dst == "/" || src == "/" {
 		return http.StatusForbidden, fmt.Errorf("forbidden: source or destination is attempting to modify root")
 	}
-
 	userscopeDst, err := settings.GetScopeFromSourceName(d.user.Scopes, dstIndex)
 	if err != nil {
 		return http.StatusForbidden, err
@@ -344,24 +264,20 @@ func resourcePatchHandler(w http.ResponseWriter, r *http.Request, d *requestCont
 	if err != nil {
 		return http.StatusForbidden, err
 	}
-
 	idx := indexing.GetIndex(dstIndex)
 	if idx == nil {
 		return http.StatusNotFound, fmt.Errorf("source %s not found", dstIndex)
 	}
-	// check target dir exists
 	parentDir, _, err := idx.GetRealPath(userscopeDst, filepath.Dir(dst))
 	if err != nil {
 		logger.Debugf("Could not get real path for parent dir: %v %v %v", userscopeDst, filepath.Dir(dst), err)
 		return http.StatusNotFound, err
 	}
 	realDest := parentDir + "/" + filepath.Base(dst)
-
 	idx2 := indexing.GetIndex(srcIndex)
 	if idx2 == nil {
 		return http.StatusNotFound, fmt.Errorf("source %s not found", srcIndex)
 	}
-
 	realSrc, isSrcDir, err := idx2.GetRealPath(userscopeSrc, src)
 	if err != nil {
 		return http.StatusNotFound, err
@@ -371,7 +287,6 @@ func resourcePatchHandler(w http.ResponseWriter, r *http.Request, d *requestCont
 	if rename {
 		realDest = addVersionSuffix(realDest)
 	}
-	// Permission for overwriting the file
 	if overwrite && !d.user.Permissions.Modify {
 		return http.StatusForbidden, fmt.Errorf("forbidden: user does not have permission to overwrite file")
 	}
@@ -414,12 +329,9 @@ func patchAction(ctx context.Context, action, src, dst string, d *requestContext
 			Expand:     false,
 			ReadHeader: false,
 		})
-
 		if err != nil {
 			return err
 		}
-
-		// delete thumbnails
 		preview.DelThumbs(ctx, fileInfo)
 		return files.MoveResource(srcIndex, destIndex, src, dst)
 	default:
@@ -433,12 +345,10 @@ func inspectIndex(w http.ResponseWriter, r *http.Request) {
 	if source == "" {
 		source = config.Server.DefaultSource.Name
 	} else {
-		// decode url encoded source name
 		source, _ = url.QueryUnescape(source)
 	}
-	// Decode the URL-encoded path
 	path, _ := url.QueryUnescape(encodedPath)
-	isNotDir := r.URL.Query().Get("isDir") == "false" // default to isDir true
+	isNotDir := r.URL.Query().Get("isDir") == "false"
 	index := indexing.GetIndex(source)
 	if index == nil {
 		http.Error(w, "source not found", http.StatusNotFound)
@@ -459,3 +369,6 @@ func mockData(w http.ResponseWriter, r *http.Request) {
 	mockDir := utils.CreateMockData(NumDirs, numFiles)
 	renderJSON(w, r, mockDir) // nolint:errcheck
 }
+
+
+

@@ -128,8 +128,12 @@ func StartHttp(ctx context.Context, storage *storage.Storage, shutdownComplete c
 
 	api.HandleFunc("GET /search", withUser(searchHandler))
 
-	// New Metadata Route!
+	// Metadata routes
 	api.HandleFunc("GET /metadata", withUser(getMetadataHandler))
+
+    // XMP Instructions routes
+    api.HandleFunc("GET /resources/instructions", withUser(resourceGetInstructionsHandler))
+    api.HandleFunc("POST /resources/instructions", withUser(resourceInstructionsHandler))
 
 	apiPath := config.Server.BaseURL + "api"
 	router.Handle(apiPath+"/", http.StripPrefix(apiPath, api))

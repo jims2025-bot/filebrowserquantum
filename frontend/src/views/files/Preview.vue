@@ -1,6 +1,7 @@
 <template>
   <div id="previewer" @mousemove="toggleNavigation" @touchstart="toggleNavigation">
-    <div class="preview" :class="{ 'full-height': !isMetadataVisible }">
+    <div class="preview" :class="{ 'full-height': !isMetadataVisible }"
+	                     :style="{ maxHeight: previewMaxHeight }">>
       <div class="image-container" v-if="previewType == 'image'">
         <img 
           ref="image" 
@@ -18,7 +19,7 @@
           v-if="activeTab === 'xmp' && metadata && metadata.xmp && metadata.xmp.Regions && metadata.xmp.Regions.length > 0 && isMetadataVisible"
           class="face-overlay"
           :style="{ width: imageDimensions.width + 'px', height: imageDimensions.height + 'px', top: imageOffset.top + 'px', left: imageOffset.left + 'px' }"
-        >
+        >		
           <div
             v-for="(region, index) in metadata.xmp.Regions"
             :key="index"
@@ -127,28 +128,35 @@
           <p v-else>Loading EXIF metadata...</p>
         </div>
 
-        <div v-if="activeTab === 'iptc'" class="tab-pane">
-          <h3>IPTC Metadata</h3>
-          <div v-if="metadata && Object.keys(metadata.iptc).length > 0" class="metadata-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Tag</th>
-                  <th>Value</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(value, key) in metadata.iptc" :key="key">
-                  <td>{{ key }}</td>
-                  <td>{{ value }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p v-else-if="metadata && Object.keys(metadata.iptc).length === 0">No IPTC data found for this file.</p>
-          <p v-else>Loading IPTC metadata...</p>
-        </div>
+<div v-if="activeTab === 'iptc'" class="tab-pane">
+  <h3>IPTC Metadata</h3>
+  <div v-if="metadata && Object.keys(metadata.iptc).length > 0" class="metadata-table">
+    <table>
+      <thead>
+        <tr>
+          <th>Tag</th>
+          <th>Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="(value, key) in metadata.iptc" :key="key">
+          <td>{{ key }}</td>
+          <td>{{ value }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p v-else-if="metadata && Object.keys(metadata.iptc).length === 0">No IPTC data found for this file.</p>
+  <p v-else>Loading IPTC metadata...</p>
 
+  <!-- Photoshop Instructions Edit Button -->
+  <div style="margin-top: 1rem;">
+    <strong>Photoshop Instructions:</strong>
+    <span v-if="photoshopInstructions">{{ photoshopInstructions }}</span>
+    <span v-else>No instructions</span>
+    <button @click="openInstructionsModal" class="button button--flat">Edit</button>
+  </div>
+</div>
         <div v-if="activeTab === 'xmp'" class="tab-pane">
           <h3>XMP Metadata</h3>
           <div v-if="metadata && metadata.xmp && Object.keys(metadata.xmp).length > 0" class="metadata-table">
@@ -216,6 +224,19 @@
     <link rel="prefetch" :href="previousRaw" />
     <link rel="prefetch" :href="nextRaw" />
   </div>
+  <teleport to="body">
+    <div v-if="showInstructionsModal" class="modal-overlay">
+      <div class="modal-content">
+         <h3>Edit Photoshop Instructions</h3>
+         <textarea v-model="photoshopInstructions" rows="5" style="width:100%"></textarea>
+         <div style="margin-top:1rem; text-align:right">
+         <button @click="saveInstructions" class="button button--flat">Save</button>
+         <button @click="showInstructionsModal = false" class="button button--flat">Cancel</button>
+       </div>
+      </div>
+   </div>
+  </teleport>
+
 </template>
 
 <script>
@@ -233,6 +254,8 @@ export default {
   components: {},
   data() {
     return {
+	  photoshopInstructions: '',      // Stores the value for display/edit
+      showInstructionsModal: false,   // Controls modal popup visibility
       previousLink: "",
       nextLink: "",
       listing: null,
@@ -430,6 +453,7 @@ export default {
         const res = await filesApi.fetchMetadata(state.req.source, state.req.path);
         console.log("Full API response:", res);
         this.metadata = res.data || res;
+		this.parsePhotoshopInstructions(); // <-- parse instructions here
         console.log("Assigned metadata:", this.metadata);
       } catch (error) {
         console.error("Failed to fetch metadata:", error);
@@ -570,6 +594,26 @@ export default {
         background: backgroundColor,
       };
     },
+	
+	
+    parsePhotoshopInstructions() {
+      if (this.metadata && this.metadata.xmp) {
+      // Photoshop instructions field may be nested, handle safely
+      this.photoshopInstructions = this.metadata.xmp['photoshop:Instructions'] || '';
+    }
+    },
+  
+    openInstructionsModal() {
+      this.showInstructionsModal = true;
+    },
+  
+    saveInstructions() {
+       // Update XMP metadata locally
+      if (!this.metadata.xmp) this.metadata.xmp = {};
+      this.metadata.xmp['photoshop:Instructions'] = this.photoshopInstructions;
+      this.showInstructionsModal = false;
+    },
+	
     
     // Zoom and pan methods
     handleWheel(event) {
@@ -890,8 +934,7 @@ toggleNavigation: throttle(function () {
   display: flex;
   align-items: center;
   justify-content: center;
-  max-height: v-bind(previewMaxHeight);
-  overflow: hidden;
+  overflow: visible;
 
   &.full-height {
     max-height: 100vh;
@@ -904,7 +947,7 @@ toggleNavigation: throttle(function () {
     align-items: center;
     width: 100%;
     height: 100%;
-    overflow: hidden;
+    overflow: visible;
   }
 
   .preview-image {
@@ -940,6 +983,26 @@ toggleNavigation: throttle(function () {
     border-radius: 3px;
     z-index: 10;
   }
+}
+
+
+.modal-overlay {
+  position: fixed;
+  top:0; left:0; width:100%; height:100%;
+  background: rgba(0,0,0,0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.modal-content {
+  background: var(--dark-theme-1);
+  padding: 2rem;
+  border-radius: 8px;
+  color: #fff;
+  width: 500px;
+  max-width: 90%;
 }
 
 .metadata-container {
