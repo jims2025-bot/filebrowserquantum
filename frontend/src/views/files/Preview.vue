@@ -84,7 +84,7 @@
         </div>
       </div>
     </div>
-
+	
     <!-- Metadata Section -->
     <div class="metadata-container" v-if="isMetadataVisible" :style="{ height: metadataHeight + 'px' }">
       <div class="resize-handle" @mousedown="startResize" @touchstart.stop="startResize"></div>
@@ -161,22 +161,41 @@
           <p v-else-if="metadata && Object.keys(metadata.iptc).length === 0">No IPTC data found for this file.</p>
           <p v-else>Loading IPTC metadata...</p>
 
-          <!-- Inline Photoshop Instructions Modal -->
-          <div style="margin-top: 1rem;">
-            <strong>Photoshop Instructions:</strong>
-            <span v-if="photoshopInstructions">{{ photoshopInstructions }}</span>
-            <span v-else>No instructions</span>
-            <button @click="openInstructionsModal" class="button button--flat">Edit</button>
+			<!-- Photoshop Instructions Section -->
+			<div style="margin-top: 1rem;">
+				<strong>Photoshop Instructions:</strong>
+				<span v-if="photoshopInstructions">{{ photoshopInstructions }}</span>
+				<span v-else>No instructions</span>
+				<button @click="openInstructionsModal" class="button button--flat">Edit</button>
+			</div>
 
-            <div v-if="showInstructionsModal" class="inline-modal">
-              <textarea v-model="photoshopInstructions" rows="10"></textarea>
-              <div style="margin-top:0.5rem; text-align:right">
-                <button @click="saveInstructions" class="button button--flat">Save</button>
-                <button @click="showInstructionsModal = false" class="button button--flat">Cancel</button>
-              </div>
-            </div>
-          </div>
-        </div>
+		<!-- Full-width bottom overlay that covers the metadata-container -->
+		<div
+			v-if="showInstructionsModal && activeTab === 'iptc'" 
+			class="overlay-modal-bottom"
+			:style="{ height: overlayHeight + 'px' }"
+			@keydown.esc="closeInstructionsModal"
+			tabindex="-1"
+		>
+		<div class="overlay-content" role="dialog" aria-modal="true">
+		<h4>Edit Photoshop Instructions</h4>
+
+		<!-- textarea grows to fill space, scrolls internally if content is long -->
+		<textarea
+			v-model="photoshopInstructions"
+			autofocus
+			aria-label="Photoshop instructions editor"
+		></textarea>
+
+		<!-- button row always visible at bottom -->
+		<div class="button-row">
+			<button @click="saveInstructions" class="button button--flat">Save</button>
+			<button @click="closeInstructionsModal" class="button button--flat">Cancel</button>
+		</div>
+		</div>
+		</div>
+			
+			</div> <!--  close IPTC tab-pane -->
 
         <div v-if="activeTab === 'xmp'" class="tab-pane">
           <h3>XMP Metadata</h3>
@@ -306,6 +325,11 @@ export default {
     };
   },
   computed: {
+	overlayHeight() {
+		// metadataHeight comes from component data; keep a sensible min so buttons fit
+		return Math.max(this.metadataHeight || 200, 200);
+	},  
+  
     sidebarShowing() {
       return getters.isSidebarVisible();
     },
@@ -454,6 +478,11 @@ export default {
     selectTab(tabName) {
       this.activeTab = tabName;
     },
+
+	closeInstructionsModal() {
+		this.showInstructionsModal = false;
+	},	
+	
     async fetchMetadata() {
       this.metadata = null;
       if (this.previewType !== "image") {
@@ -524,6 +553,10 @@ export default {
           { once: true }
         );
       }
+    },
+	
+	openInstructionsModal() {
+        this.showInstructionsModal = true;
     },
     
 	isTabEmpty(tabName) {
@@ -619,15 +652,56 @@ export default {
 	
 	
     parsePhotoshopInstructions() {
-      if (this.metadata && this.metadata.xmp) {
-      // Photoshop instructions field may be nested, handle safely
-      this.photoshopInstructions = this.metadata.xmp['photoshop:Instructions'] || '';
+  const m = this.metadata || {};
+  const x = (m.xmp  || {});
+  const i = (m.iptc || {});
+
+  // Common XMP variants
+  const fromXmp =
+    x['photoshop:Instructions'] ??
+    x['Photoshop:Instructions'] ??
+    x['Instructions'] ??
+    this.findInstructionDeep(x);  // catch any nested/key-casing variants
+
+  // IPTC/IIM (2:40) + common shapes from extractors
+  const iptcApp = i.ApplicationRecord || i['Application Record'] || {};
+  const fromIptc =
+    i['SpecialInstructions'] ??
+    i['Special Instructions'] ??
+    i['Instructions'] ??
+    i['2#040'] ??                 // some libs expose IIM tags like this
+    iptcApp['SpecialInstructions'] ??
+    iptcApp['Special Instructions'] ??
+    this.findInstructionDeep(i);  // last-resort deep search
+
+  const val = [fromXmp, fromIptc].find(v => typeof v === 'string' && v.trim());
+  this.photoshopInstructions = val || '';
+
+  // Optional: quick debug to see what keys you actually have
+  if (!this.photoshopInstructions) {
+    console.log('No Instructions found. XMP keys:', Object.keys(x));
+    console.log('No Instructions found. IPTC keys:', Object.keys(i));
+  }
+},
+
+// Recursively search objects/arrays for any key that looks like "instructions"
+findInstructionDeep(obj) {
+  if (!obj || typeof obj !== 'object') return null;
+  for (const [k, v] of Object.entries(obj)) {
+    const keyMatch = /(^|[^a-z])instructions?$/i.test(k) || /special.*instructions/i.test(k);
+    if (keyMatch) {
+      if (typeof v === 'string' && v.trim()) return v;
+      if (v && typeof v === 'object' && typeof v.value === 'string' && v.value.trim()) return v.value;
+      if (Array.isArray(v)) {
+        const s = v.find(x => typeof x === 'string' && x.trim());
+        if (s) return s;
+      }
     }
-    },
-  
-    openInstructionsModal() {
-      this.showInstructionsModal = true;
-    },
+    const nested = this.findInstructionDeep(v);
+    if (nested) return nested;
+  }
+  return null;
+},
   
   async saveInstructions() {
     try {
@@ -954,6 +1028,78 @@ toggleNavigation: throttle(function () {
   left: 0;
   overflow-y: auto;
 }
+
+
+.overlay-modal {
+  position: fixed;           /* stays fixed on screen */
+  top: 0;
+  left: 0;
+  width: 100vw;              /* full screen width */
+  height: 100vh;             /* full screen height */
+  background: rgba(0, 0, 0, 0.6);  /* dimmed background */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 2000;             /* above everything else */
+}
+
+.overlay-content h4 {
+  margin: 0 0 0.5rem;
+}
+
+
+/* overlay sits fixed at the bottom and spans full viewport width */
+.overlay-modal-bottom {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;              /* full width of the viewport */
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  background: rgba(0, 0, 0, 0.45); /* dim background */
+  z-index: 1500;             /* above metadata-container */
+  box-sizing: border-box;
+}
+
+/* content fills the overlay and uses the full width of the screen */
+.overlay-content {
+  width: 100vw;              /* user requested full-screen width */
+  max-width: none;
+  height: 100%;              /* match overlay height (metadataHeight) */
+  background: #fff;
+  padding: 1rem;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+
+/* textarea expands to available vertical space and scrolls internally */
+.overlay-content textarea {
+  flex: 1;
+  min-height: 0;             /* important for flex + overflow in browsers */
+  width: 100%;
+  resize: none;
+  box-sizing: border-box;
+  padding: 0.5rem;
+  font-family: inherit;
+  font-size: 14px;
+  overflow: auto;
+}
+
+/* button row pinned to the bottom of overlay-content (always visible) */
+.button-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+
+
+
+
 
 .preview {
   width: 100%;
