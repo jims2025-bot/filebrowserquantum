@@ -142,6 +142,14 @@
 
         <div v-if="activeTab === 'iptc'" class="tab-pane">
           <h3>IPTC Metadata</h3>
+
+			<!-- Photoshop Instructions Section -->
+			<div style="margin-top: 1rem;">
+				<strong>Photoshop Instructions:&nbsp;</strong>
+				<span v-if="photoshopInstructions">{{ photoshopInstructions }}</span>
+				<button @click="openInstructionsModal" class="button button--flat">Edit</button>
+			</div>
+
           <div v-if="metadata && Object.keys(metadata.iptc).length > 0" class="metadata-table">
             <table>
               <thead>
@@ -160,14 +168,6 @@
           </div>
           <p v-else-if="metadata && Object.keys(metadata.iptc).length === 0">No IPTC data found for this file.</p>
           <p v-else>Loading IPTC metadata...</p>
-
-			<!-- Photoshop Instructions Section -->
-			<div style="margin-top: 1rem;">
-				<strong>Photoshop Instructions:</strong>
-				<span v-if="photoshopInstructions">{{ photoshopInstructions }}</span>
-				<span v-else>No instructions</span>
-				<button @click="openInstructionsModal" class="button button--flat">Edit</button>
-			</div>
 
 		<!-- Full-width bottom overlay that covers the metadata-container -->
 		<div
