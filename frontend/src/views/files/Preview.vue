@@ -102,7 +102,6 @@
         >
           {{ tab.label }}
         </button>
-        <div>Debug: Available tabs - {{ availableTabs.map(tab => tab.label).join(', ') }}</div>
       </div>
 
       <!-- Tabs Content -->
@@ -143,11 +142,17 @@
         <div v-if="activeTab === 'iptc'" class="tab-pane">
           <h3>IPTC Metadata</h3>
 
-			<!-- Photoshop Instructions Section -->
+			<!-- photoshop:Instructions (XMP) Section -->
 			<div style="margin-top: 1rem;">
 				<strong>Photoshop Instructions:&nbsp;</strong>
 				<span v-if="photoshopInstructions">{{ photoshopInstructions }}</span>
-				<button @click="openInstructionsModal" class="button button--flat">Edit</button>
+				<button 
+					v-if="canEditInstructions" 
+					@click="openInstructionsModal" 
+					class="button button--flat"
+				>
+				Edit
+				</button>
 			</div>
 
           <div v-if="metadata && Object.keys(metadata.iptc).length > 0" class="metadata-table">
@@ -183,6 +188,7 @@
 		<!-- textarea grows to fill space, scrolls internally if content is long -->
 		<textarea
 			v-model="photoshopInstructions"
+			:readonly="!canEditInstructions"
 			autofocus
 			aria-label="Photoshop instructions editor"
 		></textarea>
@@ -325,9 +331,14 @@ export default {
     };
   },
   computed: {
+
+	canEditInstructions() {
+		return state.user?.permissions?.modify === true;
+	},
+	
 	overlayHeight() {
 		// metadataHeight comes from component data; keep a sensible min so buttons fit
-		return Math.max(this.metadataHeight || 200, 200);
+		return Math.max(this.metadataHeight || 200, 200);		
 	},  
   
     sidebarShowing() {
@@ -335,7 +346,7 @@ export default {
     },
     previewType() {
       const type = getters.previewType();
-      console.log("Preview type:", type);
+      //console.log("Preview type:", type);
       return type;
     },
 	availableTabs() {
@@ -350,7 +361,7 @@ export default {
 	},
     raw() {
       const url = filesApi.getDownloadURL(state.req.source, state.req.path, true);
-      console.log("Image src URL:", url);
+      //console.log("Image src URL:", url);
       return url;
     },
     isDarkMode() {
@@ -382,7 +393,7 @@ export default {
     },
     isMetadataVisible() {
       const visible = getters.isMetadataVisible();
-      console.log("isMetadataVisible:", visible);
+      //console.log("isMetadataVisible:", visible);
       return visible;
     },
     previewMaxHeight() {
@@ -413,10 +424,10 @@ export default {
       await this.updateImageDimensions();
       this.$nextTick(() => {
         const availableTabNames = this.availableTabs.map(tab => tab.name);
-        console.log("Validating activeTab:", this.activeTab, "Available:", availableTabNames);
+        //console.log("Validating activeTab:", this.activeTab, "Available:", availableTabNames);
         if (!availableTabNames.includes(this.activeTab)) {
           this.activeTab = "details";
-          console.log("Reset activeTab to 'details' as current tab is not available");
+        //  console.log("Reset activeTab to 'details' as current tab is not available");
         }
       });
     },
@@ -452,6 +463,8 @@ export default {
       source: state.req.source,
       url: state.req.url,
     });
+
+	
     await this.fetchMetadata();
     await this.updateImageDimensions();
     document.addEventListener("mousemove", this.resizeMetadata);
@@ -491,13 +504,13 @@ export default {
       }
       try {
         const res = await filesApi.fetchMetadata(state.req.source, state.req.path);
-        console.log("Full API response:", res);
+        //console.log("Full API response:", res);
         this.metadata = res.data || res;
 		if (!this.metadata.xmp) {
 			this.metadata.xmp = {};
 		}
 		this.parsePhotoshopInstructions(); // <-- parse instructions here
-        console.log("Assigned metadata:", this.metadata);
+        //console.log("Assigned metadata:", this.metadata);
       } catch (error) {
         console.error("Failed to fetch metadata:", error);
         this.metadata = { exif: {}, iptc: {}, xmp: {} };
@@ -505,7 +518,7 @@ export default {
     },
     async updateImageDimensions() {
       if (this.previewType !== "image" || !this.$refs.image) {
-        console.log("No image or ref, skipping dimension update");
+        //console.log("No image or ref, skipping dimension update");
         return;
       }
       await this.$nextTick();
@@ -514,21 +527,21 @@ export default {
         console.error("No image element found");
         if (this.dimensionRetryCount < 5) {
           this.dimensionRetryCount++;
-          console.log(`Retrying dimension update (${this.dimensionRetryCount}/5)`);
+          //console.log(`Retrying dimension update (${this.dimensionRetryCount}/5)`);
           setTimeout(() => this.updateImageDimensions(), 500);
         }
         return;
       }
-      console.log("Found image element:", imgElement.tagName, imgElement);
+      //console.log("Found image element:", imgElement.tagName, imgElement);
       if (imgElement.complete || imgElement.readyState === 4) {
         const rect = imgElement.getBoundingClientRect();
         const width = rect.width;
         const height = rect.height;
         this.imageDimensions = { width, height };
         this.imageOffset = { top: rect.top, left: rect.left };
-        console.log("Image dimensions:", this.imageDimensions);
-        console.log("Image offset:", this.imageOffset);
-        console.log("Image natural size:", { width: imgElement.naturalWidth, height: imgElement.naturalHeight });
+        //console.log("Image dimensions:", this.imageDimensions);
+        //console.log("Image offset:", this.imageOffset);
+        //console.log("Image natural size:", { width: imgElement.naturalWidth, height: imgElement.naturalHeight });
       } else {
         console.log("Image not loaded, waiting for load event");
         imgElement.addEventListener(
@@ -539,9 +552,9 @@ export default {
             const height = rect.height;
             this.imageDimensions = { width, height };
             this.imageOffset = { top: rect.top, left: rect.left };
-            console.log("Image dimensions (loaded):", this.imageDimensions);
-            console.log("Image offset (loaded):", this.imageOffset);
-            console.log("Image natural size:", { width: imgElement.naturalWidth, height: imgElement.naturalHeight });
+            //console.log("Image dimensions (loaded):", this.imageDimensions);
+            //console.log("Image offset (loaded):", this.imageOffset);
+            //console.log("Image natural size:", { width: imgElement.naturalWidth, height: imgElement.naturalHeight });
           },
           { once: true }
         );
@@ -555,9 +568,13 @@ export default {
       }
     },
 	
-	openInstructionsModal() {
-        this.showInstructionsModal = true;
-    },
+		openInstructionsModal() {
+		if (!this.canEditInstructions) {
+			console.warn("User not allowed to edit instructions");
+				return;
+			}
+		this.showInstructionsModal = true;
+		},
     
 	isTabEmpty(tabName) {
 		if (!this.metadata) return false;
@@ -581,7 +598,7 @@ export default {
           region.ALGArea.H === undefined ||
           !this.imageDimensions.width || 
           !this.imageDimensions.height) {
-        console.log("Missing or invalid ALGArea or image dimensions, using fallback style");
+        //console.log("Missing or invalid ALGArea or image dimensions, using fallback style");
         return {
           left: "10px",
           top: `${10 + 60 * this.metadata.xmp.Regions.indexOf(region)}px`,
@@ -599,7 +616,7 @@ export default {
           typeof W !== 'number' || typeof H !== 'number' ||
           X < 0 || Y < 0 || W <= 0 || H <= 0 ||
           X > 1 || Y > 1 || W > 1 || H > 1) {
-        console.log("Invalid ALGArea coordinates, using fallback style", { X, Y, W, H });
+        //console.log("Invalid ALGArea coordinates, using fallback style", { X, Y, W, H });
         return {
           left: "10px",
           top: `${10 + 60 * this.metadata.xmp.Regions.indexOf(region)}px`,
@@ -632,13 +649,14 @@ export default {
         backgroundColor = 'rgba(0, 0, 255, 0.2)';
       }
       
-      console.log("Face box for", region.Name || "Unnamed", {
+      /*console.log("Face box for", region.Name || "Unnamed", {
         X, Y, W, H,
         pixelX, pixelY, pixelWidth, pixelHeight,
         imageWidth: imgWidth, imageHeight: imgHeight,
         NameAssignType: nameAssignType,
         borderColor, backgroundColor
       });
+	  */
       
       return {
         left: `${pixelX}px`,
@@ -679,8 +697,8 @@ export default {
 
   // Optional: quick debug to see what keys you actually have
   if (!this.photoshopInstructions) {
-    console.log('No Instructions found. XMP keys:', Object.keys(x));
-    console.log('No Instructions found. IPTC keys:', Object.keys(i));
+    //console.log('No Instructions found. XMP keys:', Object.keys(x));
+    //console.log('No Instructions found. IPTC keys:', Object.keys(i));
   }
 },
 
@@ -703,18 +721,21 @@ findInstructionDeep(obj) {
   return null;
 },
   
-  async saveInstructions() {
-    try {
-      await filesApi.updateXMPInstructions(
-        state.req.source,
-        state.req.path,
-        this.photoshopInstructions
-      );
-      this.showInstructionsModal = false;
-    } catch (err) {
-      console.error(err);
-    }
-  },
+async saveInstructions() {
+  if (!this.canEditInstructions) return; // prevent saving if not an editor
+  try {
+    const metadataPath = this.metadata?.path || state.req.path;
+    await filesApi.updateXMPInstructions(
+      state.req.source,
+      metadataPath,
+      this.photoshopInstructions
+    );
+    this.showInstructionsModal = false;
+    //console.log("Photoshop instructions saved to:", metadataPath);
+  } catch (err) {
+    console.error("Failed to save Photoshop instructions:", err);
+  }
+},
 	
     
     // Zoom and pan methods
@@ -919,7 +940,6 @@ findInstructionDeep(obj) {
           }
           break;
         case "Escape":
-        case "Backspace":
           this.close();
           break;
       }

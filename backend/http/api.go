@@ -288,9 +288,9 @@ func resourceInstructionsHandler(w http.ResponseWriter, r *http.Request, d *requ
 	path := r.URL.Query().Get("path")
 	instructions := r.URL.Query().Get("instructions")
 
-	if source == "" || path == "" || instructions == "" {
-		return http.StatusBadRequest, fmt.Errorf("source, path, and instructions are required")
-	}
+	//if source == "" || path == "" || instructions == "" {
+//		return http.StatusBadRequest, fmt.Errorf("source, path, and instructions are required")
+//	}
 
 	userScope := "/"
 	if d.user.Username != "publicUser" {
@@ -312,13 +312,25 @@ func resourceInstructionsHandler(w http.ResponseWriter, r *http.Request, d *requ
 		return http.StatusNotFound, fmt.Errorf("file not found: %w", err)
 	}
 
+	// Call the updated WriteXMPInstructions function
 	err = files.WriteXMPInstructions(realPath, instructions)
 	if err != nil {
-		return http.StatusInternalServerError, fmt.Errorf("could not write XMP Instructions: %w", err)
+		// Log the error with ExifTool output included in the function
+		log.Printf("Failed to write instructions to %s: %v", realPath, err)
+		return http.StatusInternalServerError, fmt.Errorf("could not write XMP/IPTC Instructions: %w", err)
+	}
+
+	// Optional: Read back the instructions to verify
+	readBack, err := files.GetXMPInstructions(realPath)
+	if err != nil {
+		log.Printf("Warning: Could not verify instructions after write: %v", err)
+	} else {
+		log.Printf("Instructions successfully written and verified: %s", readBack)
 	}
 
 	response := HttpResponse{
-		Message: "XMP Instructions updated successfully",
+		Message: "XMP/IPTC Instructions updated successfully",
 	}
 	return renderJSON(w, r, response)
 }
+

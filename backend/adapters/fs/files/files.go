@@ -18,7 +18,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"	
+	"unicode/utf8"
+    "log"	
 
 	"github.com/jims2025-bot/filebrowserquantum/backend/adapters/fs/fileutils"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/errors"
@@ -163,22 +164,27 @@ func GetMetadata(filePath string) (map[string]interface{}, error) {
 	}, nil
 }
 
-// WriteXMPInstructions writes the given instructions string into the XMP Photoshop:Instructions field
+// WriteXMPInstructions writes the given instructions string into both
+// the XMP Photoshop:Instructions field and the IPTC SpecialInstructions field
 // of the specified file using exiftool.
 func WriteXMPInstructions(filePath, instructions string) error {
+	log.Printf("WriteXMPInstructions called on %s with %s", filePath, instructions)
+
 	cmd := exec.Command("exiftool",
 		"-overwrite_original",
 		fmt.Sprintf("-XMP-photoshop:Instructions=%s", instructions),
+		fmt.Sprintf("-IPTC:SpecialInstructions=%s", instructions),
 		filePath,
 	)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		logger.Errorf("Error writing XMP Instructions to %s: %v\nOutput: %s", filePath, err, string(output))
-		return fmt.Errorf("could not write XMP Instructions: %w", err)
+		log.Printf("Error writing XMP/IPTC Instructions to %s: %v\nOutput: %s", filePath, err, string(output))
+		return fmt.Errorf("could not write XMP/IPTC Instructions: %w", err)
 	}
 
-	logger.Debugf("Successfully wrote XMP Instructions to %s", filePath)
+	log.Printf("Exiftool output: %s", string(output))
+	log.Printf("Successfully wrote XMP/IPTC Instructions to %s", filePath)
 	return nil
 }
 

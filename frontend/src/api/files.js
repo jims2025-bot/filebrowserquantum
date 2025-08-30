@@ -283,18 +283,18 @@ export async function fetchMetadata(source, path) {
  */
 export async function updateXMPInstructions(source, path, instructions) {
   try {
-    const apiPath = getApiPath('api/resources', {
-      path: encodeURIComponent(path),
+    const apiPath = getApiPath('api/resources/instructions', {
+      path: path,          // already encoded inside getApiPath
       source: source,
+      instructions: instructions
     });
 
     const res = await fetchURL(apiPath, {
-      method: 'PATCH',
+      method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-Auth': state.jwt
-      },
-      body: JSON.stringify({ photoshopInstructions: instructions })
+      }
     });
 
     if (!res.ok) {

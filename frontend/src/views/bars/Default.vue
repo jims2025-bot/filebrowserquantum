@@ -25,12 +25,15 @@
       label="Metadata"
       @action="toggleMetadata"
     />
-    <action
+	<!--
+	<action
       v-if="!isShare && isPreviewView"
-      :icon="iconName"
+      :icon="iconName"	  
       :disabled="noItems"
       @click="toggleOverflow"
     />
+	-->
+
   </header>
 </template>
 
