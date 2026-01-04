@@ -824,12 +824,28 @@ export default {
       const width = W * 100;
       const height = H * 100;
 
+      // Handle NameAssignType - even if it's empty or null
+      let borderColor, backgroundColor;
+      const nameAssignType = region.NameAssignType || '';
+      
+      if (nameAssignType === 'auto') {
+        borderColor = 'var(--accent-yellow)';
+        backgroundColor = 'rgba(255, 255, 0, 0.2)';
+      } else if (nameAssignType === 'manual') {
+        borderColor = 'var(--accent-green)';
+        backgroundColor = 'rgba(66, 185, 131, 0.2)';
+      } else {
+        borderColor = 'var(--accent-blue)';
+        backgroundColor = 'rgba(0, 0, 255, 0.2)';
+      }
+
       return {
           left: `${left}%`,
           top: `${top}%`,
           width: `${width}%`,
           height: `${height}%`,
-          border: "2px solid yellow",
+          border: `2px solid ${borderColor}`,
+          background: backgroundColor,
           boxShadow: "0 0 4px rgba(0,0,0,0.5)",
           position: "absolute",
           pointerEvents: "auto" // Allow clicking the box itself if needed later
@@ -853,6 +869,17 @@ export default {
            return true; 
         }
       });
+      
+      // Force initial center after a small tick to ensure dimensions are ready
+      setTimeout(() => {
+          if (this.panzoomInstance && this.$refs.panzoomContent) {
+              // This library's autocenter might need a nudge if the image loaded late
+              // But 'autocenter: true' should usually handle it. 
+              // We can manually trigger a zoom/move if needed.
+              // this.panzoomInstance.moveTo(0, 0); // panzoom uses 0,0 as top-left of container usually.
+              // Let's rely on the library's autocenter but ensure the container is sized.
+          }
+      }, 100);
     },
       
 
@@ -1242,15 +1269,17 @@ toggleNavigation: throttle(function () {
 
   .face-label {
     position: absolute;
-    top: -28px;
+    top: -40px; /* Adjusted for larger font */
     left: 0;
     background: rgba(0, 0, 0, 0.8);
     color: #fff;
-    padding: 4px 8px;
-    font-size: 14px;
+    padding: 8px 12px;
+    font-size: 24px; /* Significantly larger */
+    font-weight: bold;
     white-space: nowrap;
-    border-radius: 3px;
+    border-radius: 4px;
     z-index: 10;
+    pointer-events: none; /* Ensure it doesn't block interactions */
   }
 }
 
