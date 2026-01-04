@@ -3,31 +3,28 @@
     <!-- Preview Section -->
     <div class="preview" :class="{ 'full-height': !isMetadataVisible }" :style="{ maxHeight: previewMaxHeight }">
       <div class="image-container" v-if="previewType == 'image'">
-        <img 
-          ref="image" 
-          :src="raw" 
-          @load="updateImageDimensions" 
-          class="preview-image"
-          :style="imageStyle"
-          @wheel="handleWheel"
-          @mousedown="startPan"
-          @touchstart="handleTouchStart"
-          @touchmove="handleTouchMove"
-          @touchend="handleTouchEnd"
-        >
-        <div
-          v-if="activeTab === 'xmp' && metadata && metadata.xmp && metadata.xmp.Regions && metadata.xmp.Regions.length > 0 && isMetadataVisible"
-          class="face-overlay"
-          :style="{ width: imageDimensions.width + 'px', height: imageDimensions.height + 'px', top: imageOffset.top + 'px', left: imageOffset.left + 'px' }"
-        >
-          <div
-            v-for="(region, index) in metadata.xmp.Regions"
-            :key="index"
-            class="face-box"
-            :style="getFaceBoxStyle(region)"
-          >
-            <span class="face-label">{{ region.Name || 'Unnamed' }}</span>
-          </div>
+        <div ref="panzoomContent" class="panzoom-content" style="position: relative; display: inline-block;">
+            <img 
+              ref="image" 
+              :src="raw" 
+              @load="updateImageDimensions" 
+              class="preview-image"
+              style="display: block; max-width: 100%; max-height: 100%;"
+            >
+            <div
+              v-if="activeTab === 'xmp' && metadata && metadata.xmp && metadata.xmp.Regions && metadata.xmp.Regions.length > 0 && isMetadataVisible"
+              class="face-overlay"
+              style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;"
+            >
+              <div
+                v-for="(region, index) in metadata.xmp.Regions"
+                :key="index"
+                class="face-box"
+                :style="getFaceBoxStyle(region)"
+              >
+                <span class="face-label">{{ region.Name || 'Unnamed' }}</span>
+              </div>
+            </div>
         </div>
       </div>
 
@@ -90,17 +87,29 @@
       <div class="resize-handle" @mousedown="startResize" @touchstart.stop="startResize"></div>
 
       <!-- Tabs Header -->
-      <div class="tabs-header">
-        <button
-          v-for="tab in availableTabs"
-          :key="tab.name"
-          :class="[
-			{ active: activeTab === tab.name },
-			{ 'tab-empty': isTabEmpty(tab.name) }
-		  ]"
-          @click="selectTab(tab.name)"
+      <div class="tabs-header" style="display: flex; align-items: center; justify-content: space-between; padding-right: 10px;">
+        <div class="tabs-buttons">
+            <button
+            v-for="tab in availableTabs"
+            :key="tab.name"
+            :class="[
+                { active: activeTab === tab.name },
+                { 'tab-empty': isTabEmpty(tab.name) }
+            ]"
+            @click="selectTab(tab.name)"
+            >
+            {{ tab.label }}
+            </button>
+        </div>
+        
+        <!-- Toggle Height Button -->
+        <button 
+          @click="toggleMetadataHeight" 
+          class="button button--flat" 
+          :title="isMetadataExpanded ? 'Collapse' : 'Expand'"
+          style="padding: 0 10px;"
         >
-          {{ tab.label }}
+          <i class="material-icons">{{ isMetadataExpanded ? 'expand_more' : 'expand_less' }}</i>
         </button>
       </div>
 
@@ -241,7 +250,42 @@
 
         <div v-if="activeTab === 'map'" class="tab-pane">
           <h3>Map Location</h3>
-          <p>This tab will display a map of the image's location once implemented in the backend and frontend.</p>
+          <div v-if="gpsCoordinates">
+            <div style="display: flex; align-items: center; margin-bottom: 1rem;">
+              <p style="margin: 0; margin-right: 10px;">
+                <strong>Coordinates:</strong> {{ gpsCoordinates.lat.toFixed(6) }}, {{ gpsCoordinates.lon.toFixed(6) }}
+              </p>
+              <button 
+                @click="copyCoordinates" 
+                class="button button--flat" 
+                title="Copy coordinates"
+                aria-label="Copy coordinates"
+                style="padding: 0; min-width: 36px; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;"
+              >
+                <i class="material-icons" style="font-size: 18px;">content_copy</i>
+              </button>
+            </div>
+
+            <div class="map-container">
+              <iframe 
+                width="100%" 
+                height="400" 
+                frameborder="0" 
+                scrolling="no" 
+                marginheight="0" 
+                marginwidth="0" 
+                :src="`https://www.openstreetmap.org/export/embed.html?bbox=${gpsCoordinates.lon-0.01}%2C${gpsCoordinates.lat-0.01}%2C${gpsCoordinates.lon+0.01}%2C${gpsCoordinates.lat+0.01}&amp;layer=mapnik&amp;marker=${gpsCoordinates.lat}%2C${gpsCoordinates.lon}`"
+                style="border: 1px solid black"
+              ></iframe>
+              <br/>
+              <small>
+                <a :href="`https://www.openstreetmap.org/?mlat=${gpsCoordinates.lat}&amp;mlon=${gpsCoordinates.lon}#map=16/${gpsCoordinates.lat}/${gpsCoordinates.lon}`" target="_blank">
+                  View Larger Map
+                </a>
+              </small>
+            </div>
+          </div>
+          <p v-else>No GPS data found for this image.</p>
         </div>
       </div>
     </div>
@@ -284,6 +328,7 @@ import { getFileExtension } from "@/utils/files";
 import { convertToVTT } from "@/utils/subtitles";
 import { getTypeInfo } from "@/utils/mimetype";
 import moment from "moment";
+import panzoom from "panzoom"; // Import panzoom
 
 export default {
   name: "preview",
@@ -319,19 +364,11 @@ export default {
       imageDimensions: { width: 0, height: 0 },
       imageOffset: { top: 0, left: 0 },
       dimensionRetryCount: 0,
-      // Zoom and pan state
-      zoomLevel: 1,
-      panPosition: { x: 0, y: 0 },
-      isPanning: false,
-      lastPanPosition: { x: 0, y: 0 },
-      // Touch state for pinch-to-zoom
-      touchStartDistance: 0,
-      touchStartZoom: 1,
-      isTouching: false,
+      panzoomInstance: null, // Store panzoom instance
+      isMetadataExpanded: false,
     };
   },
   computed: {
-
 	canEditInstructions() {
 		return state.user?.permissions?.modify === true;
 	},
@@ -399,17 +436,115 @@ export default {
     previewMaxHeight() {
       return this.isMetadataVisible ? `calc(100vh - ${this.metadataHeight}px)` : '100vh';
     },
-    // Computed style for the image based on zoom and pan
-    imageStyle() {
-      if (this.isMetadataVisible || this.previewType !== 'image') {
-        return {};
+    gpsCoordinates() {
+      if (!this.metadata || !this.metadata.exif) return null;
+
+      const exif = this.metadata.exif;
+      const lat = exif.GPSLatitude;
+      const latRef = exif.GPSLatitudeRef;
+      const lon = exif.GPSLongitude;
+      const lonRef = exif.GPSLongitudeRef;
+
+      // Handle simple decimal case (if backend converts it already)
+      if (typeof lat === 'number' && typeof lon === 'number') {
+         return { lat, lon };
+      }
+
+      // Handle Array DMS format
+      if (Array.isArray(lat) && Array.isArray(lon) && latRef && lonRef) {
+        const convertDMS = (dms, ref) => {
+          let degrees = dms[0];
+          let minutes = dms[1];
+          let seconds = dms[2];
+          
+          let dd = degrees + minutes / 60 + seconds / 3600;
+
+          if (ref === "S" || ref === "W") {
+            dd = dd * -1;
+          }
+          return dd;
+        };
+
+        return {
+          lat: convertDMS(lat, latRef),
+          lon: convertDMS(lon, lonRef),
+        };
       }
       
-      return {
-        transform: `translate(${this.panPosition.x}px, ${this.panPosition.y}px) scale(${this.zoomLevel})`,
-        transformOrigin: 'center center',
-        cursor: this.isPanning ? 'grabbing' : 'grab'
+      // Handle string format: "40 deg 42' 46.00" N" or "83 deg 3' 57.60" West"
+      // Relaxed Regex: allows optional seconds, handles "West" full word
+      // Handle string format: "40 deg 42' 46.00" N" or "83 deg 3' 57.60" West"
+      // Relaxed Regex: allows optional seconds, handles "West" full word, optional direction char at end
+      const dmsRegex = /([\d\.]+)\s*deg\s*([\d\.]+)'?\s*([\d\.]*)"?\s*([NESW])?/i;
+      
+      const parseDmsString = (val, externalRef) => {
+        if (typeof val !== 'string') return null;
+        const match = val.match(dmsRegex);
+        
+        let dd = 0;
+        let refFromRegex = '';
+
+        if (match) {
+            let d = parseFloat(match[1]);
+            let m = parseFloat(match[2]);
+            let s = match[3] ? parseFloat(match[3]) : 0;
+            refFromRegex = match[4] ? match[4].toUpperCase() : ''; 
+            
+            dd = d + m / 60 + s / 3600;
+        } else {
+             // Fallback: try to just extract numbers if regex failed
+             // e.g. "33.123" string
+             const simpleFloat = parseFloat(val);
+             if (!isNaN(simpleFloat)) {
+                 dd = simpleFloat;
+             } else {
+                 return null;
+             }
+        }
+
+        // Determine direction:
+        // Priority: 1. Regex capture, 2. External Ref variable, 3. String content search
+        const isWest = (refFromRegex === 'W') 
+                    || (externalRef === 'W' || externalRef === 'West') 
+                    || val.toUpperCase().includes("WEST");
+                    
+        const isSouth = (refFromRegex === 'S') 
+                     || (externalRef === 'S' || externalRef === 'South') 
+                     || val.toUpperCase().includes("SOUTH");
+
+        if (isWest || isSouth) {
+            dd = -Math.abs(dd);
+        }
+
+        return dd;
       };
+
+      // Try parsing both as strings, passing the external refs
+      const latParsed = parseDmsString(lat, latRef);
+      const lonParsed = parseDmsString(lon, lonRef);
+
+      if (latParsed !== null && lonParsed !== null) {
+          return { lat: latParsed, lon: lonParsed };
+      }
+
+      // Handle simple stringified number "40.123" without DMS formatting
+      const latNum = parseFloat(lat);
+      const lonNum = parseFloat(lon);
+      if (!isNaN(latNum) && !isNaN(lonNum) && (typeof lat === 'string' || typeof lat === 'number')) {
+         // Check refs
+         let finalLat = latNum;
+         let finalLon = lonNum;
+         
+         const latStr = String(lat).toUpperCase();
+         const lonStr = String(lon).toUpperCase();
+
+         if (latRef === 'S' || latRef === 'South' || latStr.includes("S")) finalLat = -Math.abs(latNum);
+         if (lonRef === 'W' || lonRef === 'West' || lonStr.includes("W") || lonStr.includes("WEST")) finalLon = -Math.abs(lonNum);
+         
+         return { lat: finalLat, lon: finalLon };
+      }
+      
+      return null;
     },
   },
   watch: {
@@ -417,6 +552,9 @@ export default {
       if (!getters.isLoggedIn()) {
         return;
       }
+      // Reset panzoom on new file
+      this.disposePanzoom();
+      
       this.dimensionRetryCount = 0;
       await this.updatePreview();
       this.toggleNavigation();
@@ -439,8 +577,13 @@ export default {
     },
     isMetadataVisible(newValue) {
       if (newValue) {
-        // Reset zoom and pan when metadata becomes visible
-        this.resetZoomAndPan();
+        // Reset panzoom when metadata becomes visible
+        if (this.panzoomInstance) {
+          // You might choose to pause or dispose here
+          // For now, let's reset transform
+          this.panzoomInstance.moveTo(0, 0);
+          this.panzoomInstance.zoomAbs(0, 0, 1);
+        }
       }
       this.$nextTick(() => this.updateImageDimensions());
     },
@@ -472,9 +615,6 @@ export default {
     document.addEventListener("touchmove", this.resizeMetadata);
     document.addEventListener("touchend", this.stopResize);
     window.addEventListener("resize", this.updateImageDimensions);
-    // Add event listeners for panning
-    document.addEventListener("mousemove", this.handlePan);
-    document.addEventListener("mouseup", this.stopPan);
   },
   beforeUnmount() {
     window.removeEventListener("keydown", this.key);
@@ -483,11 +623,21 @@ export default {
     document.removeEventListener("touchmove", this.resizeMetadata);
     document.removeEventListener("touchend", this.stopResize);
     window.removeEventListener("resize", this.updateImageDimensions);
-    // Remove event listeners for panning
-    document.removeEventListener("mousemove", this.handlePan);
-    document.removeEventListener("mouseup", this.stopPan);
+    
+    this.disposePanzoom();
   },
   methods: {
+    toggleMetadataHeight() {
+        this.isMetadataExpanded = !this.isMetadataExpanded;
+        this.metadataHeight = this.isMetadataExpanded ? 600 : 300;
+    },
+
+    disposePanzoom() {
+      if (this.panzoomInstance) {
+        this.panzoomInstance.dispose();
+        this.panzoomInstance = null;
+      }
+    },
     selectTab(tabName) {
       this.activeTab = tabName;
     },
@@ -534,27 +684,13 @@ export default {
       }
       //console.log("Found image element:", imgElement.tagName, imgElement);
       if (imgElement.complete || imgElement.readyState === 4) {
-        const rect = imgElement.getBoundingClientRect();
-        const width = rect.width;
-        const height = rect.height;
-        this.imageDimensions = { width, height };
-        this.imageOffset = { top: rect.top, left: rect.left };
-        //console.log("Image dimensions:", this.imageDimensions);
-        //console.log("Image offset:", this.imageOffset);
-        //console.log("Image natural size:", { width: imgElement.naturalWidth, height: imgElement.naturalHeight });
+        this.setupImage(imgElement);
       } else {
         console.log("Image not loaded, waiting for load event");
         imgElement.addEventListener(
           "load",
           () => {
-            const rect = imgElement.getBoundingClientRect();
-            const width = rect.width;
-            const height = rect.height;
-            this.imageDimensions = { width, height };
-            this.imageOffset = { top: rect.top, left: rect.left };
-            //console.log("Image dimensions (loaded):", this.imageDimensions);
-            //console.log("Image offset (loaded):", this.imageOffset);
-            //console.log("Image natural size:", { width: imgElement.naturalWidth, height: imgElement.naturalHeight });
+           this.setupImage(imgElement);
           },
           { once: true }
         );
@@ -567,7 +703,27 @@ export default {
         );
       }
     },
+    setupImage(imgElement) {
+        const rect = imgElement.getBoundingClientRect();
+        const width = rect.width;
+        const height = rect.height;
+        this.imageDimensions = { width, height };
+        this.imageOffset = { top: rect.top, left: rect.left };
+        
+        // Initialize panzoom here once image is laid out
+        this.initPanzoom();
+    },
 	
+    copyCoordinates() {
+        if (!this.gpsCoordinates) return;
+        const text = `${this.gpsCoordinates.lat.toFixed(6)}, ${this.gpsCoordinates.lon.toFixed(6)}`;
+        navigator.clipboard.writeText(text).then(() => {
+            this.$showSuccess(this.$t('Copied to clipboard'));
+        }, (err) => {
+            console.error('Async: Could not copy text: ', err);
+        });
+    },
+
 		openInstructionsModal() {
 		if (!this.canEditInstructions) {
 			console.warn("User not allowed to edit instructions");
@@ -595,78 +751,63 @@ export default {
           region.ALGArea.X === undefined || 
           region.ALGArea.Y === undefined || 
           region.ALGArea.W === undefined || 
-          region.ALGArea.H === undefined ||
-          !this.imageDimensions.width || 
-          !this.imageDimensions.height) {
-        //console.log("Missing or invalid ALGArea or image dimensions, using fallback style");
+          region.ALGArea.H === undefined) {
         return {
           left: "10px",
-          top: `${10 + 60 * this.metadata.xmp.Regions.indexOf(region)}px`,
+          top: "10px",
           width: "100px",
           height: "100px",
           border: "2px solid var(--accent-blue)",
           background: "rgba(0, 0, 255, 0.2)",
+          position: "absolute"
         };
       }
 
       const { X, Y, W, H } = region.ALGArea;
       
-      // Validate coordinates are numbers and within reasonable bounds
-      if (typeof X !== 'number' || typeof Y !== 'number' || 
-          typeof W !== 'number' || typeof H !== 'number' ||
-          X < 0 || Y < 0 || W <= 0 || H <= 0 ||
-          X > 1 || Y > 1 || W > 1 || H > 1) {
-        //console.log("Invalid ALGArea coordinates, using fallback style", { X, Y, W, H });
-        return {
-          left: "10px",
-          top: `${10 + 60 * this.metadata.xmp.Regions.indexOf(region)}px`,
-          width: "100px",
-          height: "100px",
-          border: "2px solid var(--accent-blue)",
-          background: "rgba(0, 0, 255, 0.2)",
-        };
-      }
+      // Calculate percentages based on center X/Y
+      // Left = (CenterX - Width/2) * 100%
+      // Top = (CenterY - Height/2) * 100%
+      // Width = W * 100%
+      // Height = H * 100%
+      
+      const left = (X - W / 2) * 100;
+      const top = (Y - H / 2) * 100;
+      const width = W * 100;
+      const height = H * 100;
 
-      const imgWidth = this.imageDimensions.width;
-      const imgHeight = this.imageDimensions.height;
-      const pixelWidth = W * imgWidth;
-      const pixelHeight = H * imgHeight;
-      const pixelX = X * imgWidth - pixelWidth / 2; // X is center
-      const pixelY = Y * imgHeight - pixelHeight / 2; // Y is center
-      
-      let borderColor, backgroundColor;
-      
-      // Handle NameAssignType - even if it's empty or null
-      const nameAssignType = region.NameAssignType || '';
-      if (nameAssignType === 'auto') {
-        borderColor = 'var(--accent-yellow)';
-        backgroundColor = 'rgba(255, 255, 0, 0.2)';
-      } else if (nameAssignType === 'manual') {
-        borderColor = 'var(--accent-green)';
-        backgroundColor = 'rgba(66, 185, 131, 0.2)';
-      } else {
-        borderColor = 'var(--accent-blue)';
-        backgroundColor = 'rgba(0, 0, 255, 0.2)';
-      }
-      
-      /*console.log("Face box for", region.Name || "Unnamed", {
-        X, Y, W, H,
-        pixelX, pixelY, pixelWidth, pixelHeight,
-        imageWidth: imgWidth, imageHeight: imgHeight,
-        NameAssignType: nameAssignType,
-        borderColor, backgroundColor
-      });
-	  */
-      
       return {
-        left: `${pixelX}px`,
-        top: `${pixelY}px`,
-        width: `${pixelWidth}px`,
-        height: `${pixelHeight}px`,
-        border: `2px solid ${borderColor}`,
-        background: backgroundColor,
+          left: `${left}%`,
+          top: `${top}%`,
+          width: `${width}%`,
+          height: `${height}%`,
+          border: "2px solid yellow",
+          boxShadow: "0 0 4px rgba(0,0,0,0.5)",
+          position: "absolute",
+          pointerEvents: "auto" // Allow clicking the box itself if needed later
       };
     },
+    
+    // ... helper ...
+    initPanzoom() {
+      // Target the wrapper content instead of the image directy
+      if (this.previewType !== 'image' || !this.$refs.panzoomContent) return;
+      
+      this.disposePanzoom(); 
+      
+      this.panzoomInstance = panzoom(this.$refs.panzoomContent, {
+        maxZoom: 5,
+        minZoom: 0.1,
+        bounds: true,
+        boundsPadding: 0.1,
+        autocenter: true, 
+        onTouch: function() {
+           return true; 
+        }
+      });
+    },
+      
+
 	
 	
     parsePhotoshopInstructions() {
@@ -738,121 +879,8 @@ async saveInstructions() {
 },
 	
     
-    // Zoom and pan methods
-    handleWheel(event) {
-      if (this.isMetadataVisible || this.previewType !== 'image') return;
-      
-      event.preventDefault();
-      
-      // Calculate zoom factor
-      const zoomFactor = event.deltaY > 0 ? 0.9 : 1.1;
-      const newZoom = Math.max(0.1, Math.min(5, this.zoomLevel * zoomFactor));
-      
-      // Calculate mouse position relative to image
-      const rect = this.$refs.image.getBoundingClientRect();
-      const mouseX = event.clientX - rect.left;
-      const mouseY = event.clientY - rect.top;
-      
-      // Calculate the position relative to the image center
-      const imageCenterX = rect.width / 2;
-      const imageCenterY = rect.height / 2;
-      
-      // Adjust pan position to zoom toward mouse position
-      const zoomChange = newZoom - this.zoomLevel;
-      this.panPosition.x -= (mouseX - imageCenterX - this.panPosition.x) * (zoomChange / this.zoomLevel);
-      this.panPosition.y -= (mouseY - imageCenterY - this.panPosition.y) * (zoomChange / this.zoomLevel);
-      
-      this.zoomLevel = newZoom;
-    },
-    
-    startPan(event) {
-      if (this.isMetadataVisible || this.previewType !== 'image') return;
-      
-      this.isPanning = true;
-      this.lastPanPosition = { x: event.clientX, y: event.clientY };
-    },
-    
-    handlePan(event) {
-      if (!this.isPanning || this.isMetadataVisible || this.previewType !== 'image') return;
-      
-      const deltaX = event.clientX - this.lastPanPosition.x;
-      const deltaY = event.clientY - this.lastPanPosition.y;
-      
-      this.panPosition.x += deltaX;
-      this.panPosition.y += deltaY;
-      
-      this.lastPanPosition = { x: event.clientX, y: event.clientY };
-    },
-    
-    stopPan() {
-      this.isPanning = false;
-    },
-    
-    handleTouchStart(event) {
-      if (this.isMetadataVisible || this.previewType !== 'image') return;
-      
-      if (event.touches.length === 1) {
-        // Single touch - start panning
-        this.isTouching = true;
-        this.lastPanPosition = { x: event.touches[0].clientX, y: event.touches[0].clientY };
-      } else if (event.touches.length === 2) {
-        // Two touches - start pinch to zoom
-        this.isTouching = true;
-        this.touchStartZoom = this.zoomLevel;
-        this.touchStartDistance = this.getTouchDistance(event.touches);
-      }
-    },
-    
-    handleTouchMove(event) {
-      if (!this.isTouching || this.isMetadataVisible || this.previewType !== 'image') return;
-      
-      if (event.touches.length === 1) {
-        // Single touch - panning
-        const deltaX = event.touches[0].clientX - this.lastPanPosition.x;
-        const deltaY = event.touches[0].clientY - this.lastPanPosition.y;
-        
-        this.panPosition.x += deltaX;
-        this.panPosition.y += deltaY;
-        
-        this.lastPanPosition = { x: event.touches[0].clientX, y: event.touches[0].clientY };
-      } else if (event.touches.length === 2) {
-        // Two touches - pinch to zoom
-        event.preventDefault();
-        
-        const currentDistance = this.getTouchDistance(event.touches);
-        const zoomFactor = currentDistance / this.touchStartDistance;
-        this.zoomLevel = Math.max(0.1, Math.min(5, this.touchStartZoom * zoomFactor));
-        
-        // Calculate midpoint for centering zoom
-        const midX = (event.touches[0].clientX + event.touches[1].clientX) / 2;
-        const midY = (event.touches[0].clientY + event.touches[1].clientY) / 2;
-        
-        const rect = this.$refs.image.getBoundingClientRect();
-        const imageCenterX = rect.width / 2;
-        const imageCenterY = rect.height / 2;
-        
-        // Adjust pan position based on zoom
-        const zoomChange = this.zoomLevel - this.touchStartZoom;
-        this.panPosition.x -= (midX - rect.left - imageCenterX - this.panPosition.x) * (zoomChange / this.touchStartZoom);
-        this.panPosition.y -= (midY - rect.top - imageCenterY - this.panPosition.y) * (zoomChange / this.touchStartZoom);
-      }
-    },
-    
-    handleTouchEnd(event) {
-      this.isTouching = false;
-    },
-    
-    getTouchDistance(touches) {
-      const dx = touches[0].clientX - touches[1].clientX;
-      const dy = touches[0].clientY - touches[1].clientY;
-      return Math.sqrt(dx * dx + dy * dy);
-    },
-    
-    resetZoomAndPan() {
-      this.zoomLevel = 1;
-      this.panPosition = { x: 0, y: 0 };
-    },
-    
+    // Zoom and pan methods - REMOVED (Replaced by panzoom library)
+
     startResize(event) {
       this.isResizing = true;
       document.body.style.userSelect = "none";
@@ -1136,12 +1164,11 @@ toggleNavigation: throttle(function () {
 
   .image-container {
     position: relative;
-    display: flex;
-    justify-content: center;
-    align-items: center;
+    display: block; /* Removed flex centering */
     width: 100%;
     height: 100%;
-    overflow: visible;
+    overflow: hidden; /* Ensure panzoom doesn't cause scrollbars on parent */
+    background-color: black; /* Visual background */
   }
 
   .preview-image {
@@ -1149,7 +1176,7 @@ toggleNavigation: throttle(function () {
     max-height: 100%;
     object-fit: contain;
     display: block;
-    transition: transform 0.1s ease-out;
+    transform-origin: 0 0; /* Important for panzoom */
   }
 
   .face-overlay {
