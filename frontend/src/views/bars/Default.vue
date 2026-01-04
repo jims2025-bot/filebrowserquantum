@@ -20,6 +20,18 @@
       :disabled="isSearchActive"
     />
     <action
+      v-if="isPreviewView"
+      icon="file_download"
+      :label="$t('buttons.download')"
+      @action="download"
+    />
+    <action
+      v-if="isPreviewView && canShare"
+      icon="share"
+      :label="$t('buttons.share')"
+      @action="share"
+    />
+    <action
       v-if="isMetadataToggleVisible"
       icon="info"
       label="Metadata"
@@ -42,6 +54,7 @@ import router from "@/router";
 import { getters, state, mutations } from "@/store";
 import Action from "@/components/Action.vue";
 import Search from "@/components/Search.vue";
+import * as filesApi from "@/api/files";
 
 export default {
   name: "UnifiedHeader",
@@ -116,6 +129,9 @@ export default {
     isSettings() {
       return getters.isSettings();
     },
+    canShare() {
+       return typeof navigator.share === 'function';
+    },
     isMetadataToggleVisible() {
       return getters.currentView() === 'preview';
     },
@@ -163,6 +179,33 @@ export default {
       this.headerTimeout = setTimeout(() => {
         this.showHeader = false;
       }, 3000);
+    },
+
+    download() {
+      const url = filesApi.getDownloadURL(state.req.source, state.req.path);
+      window.open(url);
+    },
+    async share() {
+      const url = filesApi.getDownloadURL(state.req.source, state.req.path, true);
+      try {
+        const response = await fetch(url);
+        const blob = await response.blob();
+        const file = new File([blob], state.req.name, { type: blob.type });
+
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: state.req.name,
+            text: 'Check out this file!',
+          });
+        } else {
+             alert('Sharing is not supported on this device/browser.');
+        }
+      } catch (err) {
+        if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') {
+             console.error('Share failed:', err);
+        }
+      }
     },
   },
   mounted() {

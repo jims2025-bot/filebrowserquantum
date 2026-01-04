@@ -68,6 +68,16 @@
               <i class="material-icons">file_download</i>{{ $t("buttons.download") }}
             </div>
           </a>
+          <button
+            @click="shareImage"
+            class="button button--flat"
+            :title="$t('buttons.share')"
+            :style="{ opacity: canShare ? 1 : 0.5 }"
+          >
+            <div>
+              <i class="material-icons">share</i>{{ $t("buttons.share") }}
+            </div>
+          </button>
           <a
             target="_blank"
             :href="raw"
@@ -369,6 +379,13 @@ export default {
     };
   },
   computed: {
+    canShare() {
+      // Check if basic sharing is supported. Strict file sharing check happens at runtime or we assume support if navigator.share exists.
+      // Note: navigator.canShare({ files: ... }) requires the files to check, so we essentially just check for API existence here.
+      return typeof navigator.share === 'function' && 
+             this.req.type !== 'directory' && 
+             this.previewType === 'image';
+    },
 	canEditInstructions() {
 		return state.user?.permissions?.modify === true;
 	},
@@ -627,6 +644,37 @@ export default {
     this.disposePanzoom();
   },
   methods: {
+    async shareImage() {
+      if (!this.canShare) {
+          alert("Sharing is not supported on this device or browser. Try using a mobile device with HTTPS.");
+          return;
+      }
+      
+      try {
+        // Show some loading indication if needed, or just rely on async
+        const response = await fetch(this.raw);
+        const blob = await response.blob();
+        const file = new File([blob], this.req.name, { type: blob.type });
+
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: this.req.name,
+            text: 'Check out this image!',
+          });
+          this.$showSuccess(this.$t('Shared successfully'));
+        } else {
+             // Fallback or error if files not sharable
+            console.warn("File sharing not supported by this device.");
+             this.$showError(this.$t('Sharing not supported for this file'));
+        }
+      } catch (err) {
+        if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') { // Ignore user cancellations
+             console.error('Share failed:', err);
+             // this.$showError(this.$t('Share failed')); 
+        }
+      }
+    },
     toggleMetadataHeight() {
         this.isMetadataExpanded = !this.isMetadataExpanded;
         this.metadataHeight = this.isMetadataExpanded ? 600 : 300;
@@ -1164,7 +1212,7 @@ toggleNavigation: throttle(function () {
 
   .image-container {
     position: relative;
-    display: block; /* Removed flex centering */
+    display: block;
     width: 100%;
     height: 100%;
     overflow: hidden; /* Ensure panzoom doesn't cause scrollbars on parent */
