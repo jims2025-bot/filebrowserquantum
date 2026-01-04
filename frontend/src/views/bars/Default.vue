@@ -169,6 +169,10 @@ export default {
     },
     showHeaderTemporarily() {
       this.showHeader = true;
+
+      // On mobile/tablet, keep the header visible (don't auto-hide)
+      // Check state, width (covers tablets), or touch capability
+      if (state.isMobile || window.innerWidth <= 1024 || ('ontouchstart' in window)) return;
       
       // Clear any existing timeout
       if (this.headerTimeout) {

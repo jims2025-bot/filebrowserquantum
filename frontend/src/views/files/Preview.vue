@@ -2,8 +2,8 @@
   <div 
     id="previewer" 
     @mousemove="toggleNavigation" 
-    @touchstart="handleTouchStart" 
-    @touchend="handleTouchEnd"
+    @touchstart.capture="handleTouchStart" 
+    @touchend.capture="handleTouchEnd"
     @click="handlePreviewClick"
   >
     <!-- Preview Section -->
@@ -280,6 +280,18 @@
               >
                 <i class="material-icons" style="font-size: 18px;">content_copy</i>
               </button>
+              
+              <a 
+                v-if="gpsCoordinates"
+                :href="'https://www.google.com/maps/search/?api=1&query=' + gpsCoordinates.lat + ',' + gpsCoordinates.lon" 
+                target="_blank" 
+                class="button button--flat" 
+                title="Open in Google Maps"
+                style="margin-left: 10px; display: flex; align-items: center; text-decoration: none; color: inherit;"
+              >
+                <i class="material-icons">map</i>
+                <span style="margin-left: 5px;">Open in Google Maps</span>
+              </a>
             </div>
 
             <div class="map-container">
@@ -647,8 +659,7 @@ export default {
   },
   methods: {
     handlePreviewClick(event) {
-        // Desktop Click Navigation
-        if (this.isMobile) return; 
+        // Desktop & Mobile Click Navigation (Edge Tapping)
         
         // Ignore clicks on interactive elements or metadata pane
         if (event.target.closest('button, a, input, textarea, .metadata-container, .tabs-header')) return;
@@ -656,6 +667,7 @@ export default {
         const width = window.innerWidth;
         const x = event.clientX;
         
+        // Navigation Logic
         if (x < width * 0.3) {
             this.prev();
         } else if (x > width * 0.7) {
@@ -664,10 +676,14 @@ export default {
     },
     
     handleTouchStart(event) {
+        // Ignore touches on interactive elements or metadata pane
+        if (event.target.closest('button, a, input, textarea, .metadata-container, .tabs-header')) return;
+
         this.toggleNavigation();
         if (event.touches.length === 1) {
             this.touchStartX = event.touches[0].clientX;
             this.touchStartY = event.touches[0].clientY;
+            this.touchStartTime = new Date().getTime();
         }
     },
     
@@ -676,29 +692,37 @@ export default {
         
         const touchEndX = event.changedTouches[0].clientX;
         const touchEndY = event.changedTouches[0].clientY;
+        const timeDiff = new Date().getTime() - this.touchStartTime;
         
-        const diffX = this.touchStartX - touchEndX;
-        const diffY = this.touchStartY - touchEndY;
+        const diffX = Math.abs(this.touchStartX - touchEndX);
+        const diffY = Math.abs(this.touchStartY - touchEndY);
         
         // Reset
         this.touchStartX = null;
         this.touchStartY = null;
 
-        // Check zoom level - don't swipe nav if zoomed in
-        if (this.panzoomInstance) {
-            const transform = this.panzoomInstance.getTransform();
-            if (transform.scale > 1.1) return;
-        }
-
-        // Horizontal Swipe Threshold (e.g. 50px) and vertical constraint (e.g. 50px)
-        // Ensure it's more horizontal than vertical
-        if (Math.abs(diffX) > 50 && Math.abs(diffY) < 100) {
-            if (diffX > 0) {
-                // Swiped Left -> Next
+        // TAP DETECTION: Moderate time (<500ms) and moderate movement (<30px)
+        if (timeDiff < 500 && diffX < 30 && diffY < 30) {
+            // It's a tap!
+            
+            // Prevent ghost clicks
+            if (event.cancelable) event.preventDefault();
+            
+            // If zoomed in (scale > 1.1), maybe we don't want to navigate?
+            // Actually, edge tapping usually overrides zoom panning in many apps, 
+            // but let's be safe. If they tap the edge, they probably want next.
+            // But if they are panning, they wouldn't release in <300ms with <10px movement.
+            // So this logic naturally filters out pans.
+            
+            const width = window.innerWidth;
+            if (touchEndX < width * 0.3) {
+                this.prev();
+            } else if (touchEndX > width * 0.7) {
                 this.next();
             } else {
-                // Swiped Right -> Prev
-                this.prev();
+                 // Center tap - toggle header visibility
+                 // (Default.vue handles keeping it open, but we send the signal anyway)
+                 this.triggerHeaderVisibility();
             }
         }
     },
@@ -813,6 +837,7 @@ export default {
 		if (tabName === 'exif') return !this.metadata.exif || Object.keys(this.metadata.exif).length === 0;
 		if (tabName === 'iptc') return !this.metadata.iptc || Object.keys(this.metadata.iptc).length === 0;
 		if (tabName === 'xmp') return !this.metadata.xmp || Object.keys(this.metadata.xmp).length === 0;
+		if (tabName === 'map') return !this.gpsCoordinates;
 		return false;
 	},
   
@@ -901,11 +926,20 @@ export default {
       // Force initial center after a small tick to ensure dimensions are ready
       setTimeout(() => {
           if (this.panzoomInstance && this.$refs.panzoomContent) {
-              // This library's autocenter might need a nudge if the image loaded late
-              // But 'autocenter: true' should usually handle it. 
-              // We can manually trigger a zoom/move if needed.
-              // this.panzoomInstance.moveTo(0, 0); // panzoom uses 0,0 as top-left of container usually.
-              // Let's rely on the library's autocenter but ensure the container is sized.
+              const transform = this.panzoomInstance.getTransform();
+              // Explicitly center if scale is 1 (initial load)
+              if (transform.scale === 1 || transform.scale === 0.1) { // 0.1 is minZoom default sometimes
+                   const container = this.$refs.panzoomContent.parentNode;
+                   const content = this.$refs.panzoomContent;
+                   if (container && content) {
+                       // Center: (ContainerWidth - ContentWidth) / 2
+                       // But since we are using panzoom, we need to consider if the content is smaller than container
+                       const cx = (container.clientWidth - content.offsetWidth) / 2;
+                       const cy = (container.clientHeight - content.offsetHeight) / 2;
+                       
+                       this.panzoomInstance.moveTo(cx, cy);
+                   }
+              }
           }
       }, 100);
     },
@@ -1272,6 +1306,7 @@ toggleNavigation: throttle(function () {
     height: 100%;
     overflow: hidden; /* Ensure panzoom doesn't cause scrollbars on parent */
     background-color: black; /* Visual background */
+    touch-action: none; /* Disable browser handling of gestures */
   }
 
   .preview-image {
@@ -1313,9 +1348,9 @@ toggleNavigation: throttle(function () {
   /* Increase size for desktop/larger screens */
   @media (min-width: 1024px) {
     .face-label {
-        font-size: 48px;
-        top: -65px;
-        padding: 12px 20px;
+        font-size: 14px;
+        top: -24px;
+        padding: 4px 8px;
     }
   }
 }
