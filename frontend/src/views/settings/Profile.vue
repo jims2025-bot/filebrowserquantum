@@ -23,6 +23,11 @@
               v-model="localuser.quickDownload"
               :name="$t('profileSettings.showQuickDownload')"
             />
+            <ToggleSwitch
+              class="item"
+              v-model="localuser.disableSingleClick"
+              name="Disable Single Click"
+            />
           </div>
           <h3> {{ $t('profileSettings.filePreviewOptions') }}</h3>
           <div class="settings-items">
@@ -195,6 +200,7 @@ export default {
           "quickDownload",
           "disableOnlyOfficeExt",
           "preview",
+          "disableSingleClick",
         ]);
         notify.showSuccess(this.$t("settings.settingsUpdated"));
       } catch (e) {

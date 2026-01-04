@@ -41,7 +41,7 @@ export const mutations = {
     state.sources.current = value;
     emitStateChanged();
   },
-  updateSource: (sourcename,value) => {
+  updateSource: (sourcename, value) => {
     if (state.sources.info[sourcename]) {
       state.sources.info[sourcename] = value;
     }
@@ -79,7 +79,7 @@ export const mutations = {
     emitStateChanged();
   },
   setRealtimeActive: (value) => {
-    if ( value == false ) {
+    if (value == false) {
       state.realtimeDownCount = state.realtimeDownCount + 1;
     } else {
       state.realtimeDownCount = 0;
@@ -89,7 +89,7 @@ export const mutations = {
   setSources: (user) => {
     state.serverHasMultipleSources = serverHasMultipleSources;
     const currentSource = user.scopes.length > 0 ? user.scopes[0].name : "";
-    let sources = {info: {}, current: currentSource, count: user.scopes.length};
+    let sources = { info: {}, current: currentSource, count: user.scopes.length };
     for (const source of user.scopes) {
       sources.info[source.name] = {
         pathPrefix: sources.count == 1 ? "" : source.name,
@@ -161,7 +161,7 @@ export const mutations = {
     state.upload = value;
     emitStateChanged();
   },
-  setUsage: (source,value) => {
+  setUsage: (source, value) => {
     state.usages[source] = value;
     emitStateChanged();
   },
@@ -220,7 +220,7 @@ export const mutations = {
       if (!value.locale) {
         value.locale = i18n.detectLocale();
       }
-      state.user = value;
+      state.user = { ...state.user, ...value };
     } catch (error) {
       console.log(error);
     }

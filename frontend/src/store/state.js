@@ -36,7 +36,7 @@ export const state = reactive({
     username: "",
     quickDownloadEnabled: false,
     gallarySize: 0,
-    singleClick: false,
+    disableSingleClick: false,
     stickySidebar: stickyStartup(),
     locale: detectLocale(), // Default to the locale from moment
     viewMode: 'normal', // Default to mosaic view

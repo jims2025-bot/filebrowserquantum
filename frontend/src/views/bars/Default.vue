@@ -215,11 +215,15 @@ export default {
     
     // Start the timer to hide the header
     this.showHeaderTemporarily();
+    
+    // Listen for events from other components (like Preview)
+    this.$root.$on('show-header-temporarily', this.showHeaderTemporarily);
   },
   beforeUnmount() {
     // Clean up event listeners
     document.removeEventListener('mousemove', this.showHeaderTemporarily);
     document.removeEventListener('click', this.showHeaderTemporarily);
+    this.$root.$off('show-header-temporarily', this.showHeaderTemporarily);
     
     // Clear timeout
     if (this.headerTimeout) {

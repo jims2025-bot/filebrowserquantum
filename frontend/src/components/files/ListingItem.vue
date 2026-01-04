@@ -109,7 +109,7 @@ export default {
       return url.base64Encode(this.name);
     },
     quickNav() {
-      return state.user.singleClick && !state.multiple;
+      return !state.user.disableSingleClick && !state.multiple;
     },
     user() {
       return state.user;
@@ -118,7 +118,7 @@ export default {
       return state.selected;
     },
     isClicked() {
-      if (state.user.singleClick || !this.allowedView) {
+      if (!state.user.disableSingleClick || !this.allowedView) {
         return false;
       }
       return !this.isMaximized;
@@ -346,7 +346,7 @@ export default {
       }
 
       if (
-        !state.user.singleClick &&
+        state.user.disableSingleClick &&
         getters.selectedCount() !== 0 &&
         event.button === 0
       ) {
@@ -385,7 +385,7 @@ export default {
         return;
       }
       if (
-        !state.user.singleClick &&
+        state.user.disableSingleClick &&
         !event.ctrlKey &&
         !event.metaKey &&
         !state.multiple

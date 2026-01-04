@@ -1,5 +1,11 @@
 <template>
-  <div id="previewer" @mousemove="toggleNavigation" @touchstart="toggleNavigation">
+  <div 
+    id="previewer" 
+    @mousemove="toggleNavigation" 
+    @touchstart="handleTouchStart" 
+    @touchend="handleTouchEnd"
+    @click="handlePreviewClick"
+  >
     <!-- Preview Section -->
     <div class="preview" :class="{ 'full-height': !isMetadataVisible }" :style="{ maxHeight: previewMaxHeight }">
       <div class="image-container" v-if="previewType == 'image'">
@@ -301,28 +307,21 @@
     </div>
 
     <!-- Navigation Buttons -->
-    <button
-      @click="prev"
-      @mouseover="hoverNav = true"
-      @mouseleave="hoverNav = false"
-      :class="{ hidden: !hasPrevious || !showNav }"
-      :aria-label="$t('buttons.previous')"
-      :title="$t('buttons.previous')"
-      class="nav-button nav-button-prev"
-    >
-      <i class="material-icons">chevron_left</i>
-    </button>
-    <button
-      @click="next"
-      @mouseover="hoverNav = true"
-      @mouseleave="hoverNav = false"
-      :class="{ hidden: !hasNext || !showNav }"
-      :aria-label="$t('buttons.next')"
-      :title="$t('buttons.next')"
-      class="nav-button nav-button-next"
-    >
-      <i class="material-icons">chevron_right</i>
-    </button>
+    <!-- Navigation Buttons - Hidden as per request for Click/Swipe Nav -->
+    <div style="display: none;">
+      <button
+        @click="prev"
+        class="nav-button nav-button-prev"
+      >
+        <i class="material-icons">chevron_left</i>
+      </button>
+      <button
+        @click="next"
+        class="nav-button nav-button-next"
+      >
+        <i class="material-icons">chevron_right</i>
+      </button>
+    </div>
     <link rel="prefetch" :href="previousRaw" />
     <link rel="prefetch" :href="nextRaw" />
   </div>
@@ -379,6 +378,9 @@ export default {
     };
   },
   computed: {
+    isMobile() {
+        return state.isMobile;
+    },
     canShare() {
       // Check if basic sharing is supported. Strict file sharing check happens at runtime or we assume support if navigator.share exists.
       // Note: navigator.canShare({ files: ... }) requires the files to check, so we essentially just check for API existence here.
@@ -644,37 +646,63 @@ export default {
     this.disposePanzoom();
   },
   methods: {
-    async shareImage() {
-      if (!this.canShare) {
-          alert("Sharing is not supported on this device or browser. Try using a mobile device with HTTPS.");
-          return;
-      }
-      
-      try {
-        // Show some loading indication if needed, or just rely on async
-        const response = await fetch(this.raw);
-        const blob = await response.blob();
-        const file = new File([blob], this.req.name, { type: blob.type });
+    handlePreviewClick(event) {
+        // Desktop Click Navigation
+        if (this.isMobile) return; 
+        
+        // Ignore clicks on interactive elements or metadata pane
+        if (event.target.closest('button, a, input, textarea, .metadata-container, .tabs-header')) return;
 
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          await navigator.share({
-            files: [file],
-            title: this.req.name,
-            text: 'Check out this image!',
-          });
-          this.$showSuccess(this.$t('Shared successfully'));
-        } else {
-             // Fallback or error if files not sharable
-            console.warn("File sharing not supported by this device.");
-             this.$showError(this.$t('Sharing not supported for this file'));
+        const width = window.innerWidth;
+        const x = event.clientX;
+        
+        if (x < width * 0.3) {
+            this.prev();
+        } else if (x > width * 0.7) {
+            this.next();
         }
-      } catch (err) {
-        if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') { // Ignore user cancellations
-             console.error('Share failed:', err);
-             // this.$showError(this.$t('Share failed')); 
-        }
-      }
     },
+    
+    handleTouchStart(event) {
+        this.toggleNavigation();
+        if (event.touches.length === 1) {
+            this.touchStartX = event.touches[0].clientX;
+            this.touchStartY = event.touches[0].clientY;
+        }
+    },
+    
+    handleTouchEnd(event) {
+        if (!this.touchStartX || !this.touchStartY) return;
+        
+        const touchEndX = event.changedTouches[0].clientX;
+        const touchEndY = event.changedTouches[0].clientY;
+        
+        const diffX = this.touchStartX - touchEndX;
+        const diffY = this.touchStartY - touchEndY;
+        
+        // Reset
+        this.touchStartX = null;
+        this.touchStartY = null;
+
+        // Check zoom level - don't swipe nav if zoomed in
+        if (this.panzoomInstance) {
+            const transform = this.panzoomInstance.getTransform();
+            if (transform.scale > 1.1) return;
+        }
+
+        // Horizontal Swipe Threshold (e.g. 50px) and vertical constraint (e.g. 50px)
+        // Ensure it's more horizontal than vertical
+        if (Math.abs(diffX) > 50 && Math.abs(diffY) < 100) {
+            if (diffX > 0) {
+                // Swiped Left -> Next
+                this.next();
+            } else {
+                // Swiped Right -> Prev
+                this.prev();
+            }
+        }
+    },
+
     toggleMetadataHeight() {
         this.isMetadataExpanded = !this.isMetadataExpanded;
         this.metadataHeight = this.isMetadataExpanded ? 600 : 300;
@@ -1280,6 +1308,15 @@ toggleNavigation: throttle(function () {
     border-radius: 4px;
     z-index: 10;
     pointer-events: none; /* Ensure it doesn't block interactions */
+  }
+
+  /* Increase size for desktop/larger screens */
+  @media (min-width: 1024px) {
+    .face-label {
+        font-size: 48px;
+        top: -65px;
+        padding: 12px 20px;
+    }
   }
 }
 
