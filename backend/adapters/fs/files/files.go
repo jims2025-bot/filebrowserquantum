@@ -1,7 +1,7 @@
 package files
 
 import (
-    "bytes"
+	"bytes"
 	"crypto/md5"
 	"crypto/sha1"
 	"crypto/sha256"
@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,16 +20,15 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
-    "log"	
 
+	"github.com/gtsteffaniak/go-cache/cache"
+	"github.com/gtsteffaniak/go-logger/logger"
 	"github.com/jims2025-bot/filebrowserquantum/backend/adapters/fs/fileutils"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/errors"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/utils"
 	"github.com/jims2025-bot/filebrowserquantum/backend/indexing"
 	"github.com/jims2025-bot/filebrowserquantum/backend/indexing/iteminfo"
-	"github.com/gtsteffaniak/go-cache/cache"
-	"github.com/gtsteffaniak/go-logger/logger"
 )
 
 // Structs for parsing the relevant parts of XMP
@@ -46,18 +46,63 @@ type regions struct {
 }
 
 type rdfLi struct {
+	// Direct fields (legacy/simple format)
 	Name           string `xml:"Name"`
 	Type           string `xml:"Type"`
 	NameAssignType string `xml:"NameAssignType"`
 	DLYArea        area   `xml:"DLYArea"` // ACDSee uses DLYArea
 	ALGArea        area   `xml:"ALGArea"` // Standard ALGArea
+
+	// Nested Description (ACDSee standard format)
+	Description *rdfLiDescription `xml:"Description"`
+}
+
+type rdfLiDescription struct {
+	Name           string `xml:"Name,attr"`
+	Type           string `xml:"Type,attr"`
+	NameAssignType string `xml:"NameAssignType,attr"`
+	DLYArea        area   `xml:"DLYArea"`
+	ALGArea        area   `xml:"ALGArea"`
 }
 
 type area struct {
+	// Element support
 	H float64 `xml:"h"`
 	W float64 `xml:"w"`
 	X float64 `xml:"x"`
 	Y float64 `xml:"y"`
+
+	// Attribute support (generic and namespaced)
+	HAttr float64 `xml:"h,attr"`
+	WAttr float64 `xml:"w,attr"`
+	XAttr float64 `xml:"x,attr"`
+	YAttr float64 `xml:"y,attr"`
+}
+
+// Helper to get values regardless of format
+func (a area) GetH() float64 {
+	if a.H != 0 {
+		return a.H
+	}
+	return a.HAttr
+}
+func (a area) GetW() float64 {
+	if a.W != 0 {
+		return a.W
+	}
+	return a.WAttr
+}
+func (a area) GetX() float64 {
+	if a.X != 0 {
+		return a.X
+	}
+	return a.XAttr
+}
+func (a area) GetY() float64 {
+	if a.Y != 0 {
+		return a.Y
+	}
+	return a.YAttr
 }
 
 var OnlyOfficeCache = cache.NewCache(48 * time.Hour)
@@ -119,35 +164,65 @@ func GetMetadata(filePath string) (map[string]interface{}, error) {
 			// Process and normalize the region data
 			processedRegions := make([]map[string]interface{}, 0)
 			if xmpDataParsed.RDF.Regions.Items != nil {
+
 				for _, region := range xmpDataParsed.RDF.Regions.Items {
+					// Normalize data from either direct fields or nested Description
+					name := region.Name
+					rType := region.Type
+					assignType := region.NameAssignType
+					dlyArea := region.DLYArea
+					algArea := region.ALGArea
+
+					if region.Description != nil {
+						if name == "" {
+							name = region.Description.Name
+						}
+						if rType == "" {
+							rType = region.Description.Type
+						}
+						if assignType == "" {
+							assignType = region.Description.NameAssignType
+						}
+						// Prefer description areas if available
+						if region.Description.DLYArea.GetH() != 0 {
+							dlyArea = region.Description.DLYArea
+						}
+						if region.Description.ALGArea.GetH() != 0 {
+							algArea = region.Description.ALGArea
+						}
+					}
+
 					processedRegion := map[string]interface{}{
-						"Name":           region.Name,
-						"Type":           region.Type,
-						"NameAssignType": region.NameAssignType,
+						"Name":           name,
+						"Type":           rType,
+						"NameAssignType": assignType,
 					}
 					var areaData area
 					hasValidArea := false
-					if region.DLYArea.X > 0 && region.DLYArea.Y > 0 &&
-						region.DLYArea.W > 0 && region.DLYArea.H > 0 {
-						areaData = region.DLYArea
+
+					// Check DLYArea
+					if dlyArea.GetX() > 0 && dlyArea.GetY() > 0 &&
+						dlyArea.GetW() > 0 && dlyArea.GetH() > 0 {
+						areaData = dlyArea
 						hasValidArea = true
-						logger.Debugf("Using DLYArea coordinates for %s", region.Name)
-					} else if region.ALGArea.X > 0 && region.ALGArea.Y > 0 &&
-						region.ALGArea.W > 0 && region.ALGArea.H > 0 {
-						areaData = region.ALGArea
+						logger.Debugf("Using DLYArea coordinates for %s", name)
+					} else if algArea.GetX() > 0 && algArea.GetY() > 0 &&
+						algArea.GetW() > 0 && algArea.GetH() > 0 {
+						areaData = algArea
 						hasValidArea = true
-						logger.Debugf("Using ALGArea coordinates for %s", region.Name)
+						logger.Debugf("Using ALGArea coordinates for %s", name)
 					}
 					if hasValidArea {
 						processedRegion["ALGArea"] = map[string]float64{
-							"X": areaData.X,
-							"Y": areaData.Y,
-							"W": areaData.W,
-							"H": areaData.H,
+							"X": areaData.GetX(),
+							"Y": areaData.GetY(),
+							"W": areaData.GetW(),
+							"H": areaData.GetH(),
 						}
 						processedRegions = append(processedRegions, processedRegion)
 					}
 				}
+
 			}
 			if len(processedRegions) > 0 {
 				xmpData["Regions"] = processedRegions

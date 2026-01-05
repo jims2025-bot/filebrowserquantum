@@ -28,7 +28,7 @@
                 class="face-box"
                 :style="getFaceBoxStyle(region)"
               >
-                <span class="face-label">{{ region.Name || 'Unnamed' }}</span>
+                <span class="face-label" :style="{ fontSize: faceFontSize + 'px', top: -faceFontSize * 1.5 + 'px' }">{{ region.Name || 'Unnamed' }}</span>
               </div>
             </div>
         </div>
@@ -230,6 +230,21 @@
 
         <div v-if="activeTab === 'xmp'" class="tab-pane">
           <h3>XMP Metadata</h3>
+          
+          <!-- Font Size Control for Face Boxes -->
+          <div v-if="metadata.xmp && metadata.xmp.Regions && metadata.xmp.Regions.length > 0" style="margin-bottom: 1rem; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 4px;">
+             <label for="fontSizeRange" style="display: block; margin-bottom: 5px;">Face Label Size: {{ faceFontSize }}px</label>
+             <input 
+               type="range" 
+               id="fontSizeRange" 
+               min="10" 
+               max="60" 
+               step="1" 
+               v-model.number="faceFontSize"
+               style="width: 100%; cursor: pointer;"
+             >
+          </div>
+
           <div v-if="metadata && metadata.xmp && Object.keys(metadata.xmp).length > 0" class="metadata-table">
             <table v-if="metadata.xmp.Regions && metadata.xmp.Regions.length > 0">
               <thead>
@@ -387,6 +402,7 @@ export default {
       dimensionRetryCount: 0,
       panzoomInstance: null, // Store panzoom instance
       isMetadataExpanded: false,
+      faceFontSize: 24, // Default font size
     };
   },
   computed: {
