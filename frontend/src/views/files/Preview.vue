@@ -10,10 +10,10 @@
     <div class="preview" :class="{ 'full-height': !isMetadataVisible }" :style="{ maxHeight: previewMaxHeight }">
       
       <!-- Media Content Wrapper: Contains the actual viewer elements to preserve v-if chain -->
-      <div class="media-wrapper" style="flex: 1; overflow: hidden; position: relative; display: flex; align-items: center; justify-content: center; width: 100%;">
+      <div class="media-wrapper" style="flex: 1; overflow: hidden; position: relative; width: 100%;">
           
           <div class="image-container" v-if="previewType == 'image'" :style="{ height: showInstructionsModal && !isMobile ? '100%' : '100%' }">
-            <div ref="panzoomContent" class="panzoom-content" style="position: relative; display: inline-block;">
+            <div ref="panzoomContent" class="panzoom-content" style="position: relative; display: inline-block; transform-origin: 0 0;">
                 <img 
                   ref="image" 
                   :src="raw" 
@@ -161,7 +161,7 @@
           <ul>
             <li><strong>Name:</strong> {{ req.name }}</li>
             <li><strong>Path:</strong> {{ req.path }}</li>
-            <li><strong>Size:</strong> {{ req.size | bytesToSize }}</li>
+            <li><strong>Size:</strong> {{ (req.size / 1048576).toFixed(2) }} MB</li>
             <li><strong>Type:</strong> {{ req.type }}</li>
             <li><strong>Modified:</strong> {{ formattedModifiedDate }}</li>
           </ul>
@@ -193,13 +193,23 @@
           <h3>IPTC Metadata</h3>
 
 			<!-- photoshop:Instructions (XMP) Section -->
-			<div style="margin-top: 1rem;">
-				<strong>Photoshop Instructions:&nbsp;</strong>
-				<span v-if="photoshopInstructions">{{ photoshopInstructions }}</span>
+			<div style="margin-top: 1rem; display: flex; flex-direction: column;">
+                <div style="display: flex; align-items: flex-start;">
+                    <i 
+                        class="material-icons" 
+                        style="font-size: 16px; margin-right: 8px; cursor: pointer; color: #aaa; margin-top: 3px;"
+                        title="Photoshop Instructions"
+                        @click="showTagPopup('Photoshop Instructions')"
+                    >
+                        info
+                    </i>
+				    <span v-if="photoshopInstructions" style="font-size: 0.85rem; flex: 1;">{{ photoshopInstructions }}</span>
+                </div>
 				<button 
 					v-if="canEditInstructions" 
 					@click="openInstructionsModal" 
 					class="button button--flat"
+                    style="align-self: flex-start; margin-left: 24px; margin-top: 0.5rem;"
 				>
 				Edit
 				</button>
@@ -207,16 +217,19 @@
 
           <div v-if="metadata && Object.keys(metadata.iptc).length > 0" class="metadata-table">
             <table>
-              <thead>
-                <tr>
-                  <th>Tag</th>
-                  <th>Value</th>
-                </tr>
-              </thead>
               <tbody>
                 <tr v-for="(value, key) in metadata.iptc" :key="key">
-                  <td>{{ key }}</td>
-                  <td>{{ value }}</td>
+                  <td style="display: flex; align-items: top;">
+                      <i 
+                        class="material-icons" 
+                        style="font-size: 16px; margin-right: 8px; cursor: pointer; color: #aaa; margin-top: 2px;"
+                        :title="key"
+                        @click="showTagPopup(key)"
+                      >
+                        info
+                      </i>
+                      <span style="flex: 1;">{{ value }}</span>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -626,8 +639,13 @@ export default {
     },
     activeTab(newTab) {
       if (newTab === "xmp") {
-        this.dimensionRetryCount = 0;
-        this.$nextTick(() => this.updateImageDimensions());
+         // Only update dimensions if we don't have a panzoom instance, 
+         // otherwise toggling the tab might reset the user's zoom/pan.
+         if (this.previewType === 'image' && this.panzoomInstance) {
+             return;
+         }
+         this.dimensionRetryCount = 0;
+         this.$nextTick(() => this.updateImageDimensions());
       }
     },
     isMetadataVisible(newValue) {
@@ -964,7 +982,8 @@ export default {
         minZoom: 0.1,
         bounds: true,
         boundsPadding: 0.1,
-        autocenter: true, 
+        autocenter: true,  // Enable autocenter for initial positioning
+        zoomDoubleClickSpeed: 1, 
         onTouch: function() {
            return true; 
         }
@@ -1055,7 +1074,15 @@ findInstructionDeep(obj) {
         mutations.toggleInstructionsEditMode(false);
     },
 
-    async saveInstructions() {
+    showTagPopup(key) {
+        if (this.$showSuccess) {
+            this.$showSuccess(key);
+        } else {
+            alert(key);
+        }
+    },
+
+    saveInstructions: async function() {
       if (!this.canEditInstructions) return; 
       try {
         const metadataPath = this.metadata?.path || state.req.path;
@@ -1651,10 +1678,9 @@ toggleNavigation: throttle(function () {
         border-collapse: collapse;
 
         th, td {
-          padding: 0.25rem 0.4rem;  /* Tighter cell padding */
+          padding: 0.25rem 0.4rem;
           border: 1px solid var(--dark-theme-2);
           text-align: left;
-          font-size: 0.8rem;        /* Smaller table text */
           vertical-align: top;
         }
 
@@ -1662,13 +1688,14 @@ toggleNavigation: throttle(function () {
           background: rgba(255, 255, 255, 0.05);
           color: #aaa;
           font-weight: bold;
-          font-size: 0.75rem;       /* Even smaller caption */
+          font-size: 0.75rem;       /* Shrunk text for Tab Column */
           text-transform: uppercase;
-          width: 30%;               /* Reduced width for keys */
+          width: 25%;               /* Reduced width for Tab Column */
         }
 
         td {
             color: #fff;
+            font-size: 0.9rem;      /* Increased size for Value Column */
         }
       }
     }
