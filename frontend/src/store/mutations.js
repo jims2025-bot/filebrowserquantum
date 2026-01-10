@@ -23,6 +23,10 @@ export const mutations = {
     state.isMetadataVisible = !state.isMetadataVisible;
     emitStateChanged();
   },
+  toggleInstructionsEditMode: (value) => {
+    state.isInstructionsEditMode = value;
+    emitStateChanged();
+  },
   setWatchDirChangeAvailable() {
     state.req.hasUpdate = true;
   },

@@ -5,7 +5,8 @@ export const state = reactive({
   multiButtonState: "menu",
   multiButtonLastState: "menu",
   showOverflowMenu: false,
-  isMetadataVisible: true, // ADD THIS LINE
+  isMetadataVisible: true,
+  isInstructionsEditMode: false, // Persistent state for instructions editor
   sessionId: "",
   disableOnlyOfficeExt: "",
   isSafari: /^((?!chrome|android).)*safari/i.test(navigator.userAgent),

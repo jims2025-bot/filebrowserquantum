@@ -176,7 +176,15 @@ export default {
 }
 
 #main.moveWithSidebar {
-  padding-left: 20em;
+  padding-right: 20em; /* Changed from padding-left to padding-right */
+  padding-left: 0;
+}
+
+@media (max-width: 768px) {
+  #main.moveWithSidebar {
+    padding-right: 0;
+    padding-bottom: 5em; /* Add bottom padding for mobile tab bar */
+  }
 }
 
 #main::-webkit-scrollbar {

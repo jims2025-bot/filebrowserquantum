@@ -169,20 +169,6 @@ export default {
     },
     showHeaderTemporarily() {
       this.showHeader = true;
-
-      // On mobile/tablet, keep the header visible (don't auto-hide)
-      // Check state, width (covers tablets), or touch capability
-      if (state.isMobile || window.innerWidth <= 1024 || ('ontouchstart' in window)) return;
-      
-      // Clear any existing timeout
-      if (this.headerTimeout) {
-        clearTimeout(this.headerTimeout);
-      }
-      
-      // Hide header after 3 seconds
-      this.headerTimeout = setTimeout(() => {
-        this.showHeader = false;
-      }, 3000);
     },
 
     download() {
@@ -213,26 +199,10 @@ export default {
     },
   },
   mounted() {
-    // Set up event listeners for mouse movement and clicks
-    document.addEventListener('mousemove', this.showHeaderTemporarily);
-    document.addEventListener('click', this.showHeaderTemporarily);
-    
-    // Start the timer to hide the header
-    this.showHeaderTemporarily();
-    
-    // Listen for events from other components (like Preview)
-    this.$root.$on('show-header-temporarily', this.showHeaderTemporarily);
+    this.showHeader = true;
   },
   beforeUnmount() {
-    // Clean up event listeners
-    document.removeEventListener('mousemove', this.showHeaderTemporarily);
-    document.removeEventListener('click', this.showHeaderTemporarily);
-    this.$root.$off('show-header-temporarily', this.showHeaderTemporarily);
-    
-    // Clear timeout
-    if (this.headerTimeout) {
-      clearTimeout(this.headerTimeout);
-    }
+    // Clean up
   },
 };
 </script>

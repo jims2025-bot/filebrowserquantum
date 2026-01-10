@@ -65,7 +65,8 @@ export default {
   width: 20em;
   position: fixed;
   z-index: 4;
-  left: -20em;
+  right: -20em; /* Hidden state: off-screen to the right */
+  left: unset;  /* Unset left */
   height: 100%;
   box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
   transition: 0.5s ease;
@@ -90,17 +91,57 @@ export default {
 }
 
 body.rtl nav {
-  left: unset;
-  right: -17em;
+  right: unset;
+  left: -20em;
 }
 
 #sidebar.active {
-  left: 0;
+  right: 0; /* Visible state: 0 from right */
+}
+
+/* Mobile Styling */
+@media (max-width: 768px) {
+  #sidebar {
+    flex-direction: row; /* Horizontal layout for tabs */
+    width: 100%;
+    height: auto;
+    top: unset;
+    
+    /* Mobile Transition State */
+    bottom: -100%; /* Start hidden below screen */
+    right: 0;
+    left: 0;
+    
+    padding: 0.5em; /* Reduce padding */
+    padding-bottom: env(safe-area-inset-bottom); /* Handle iPhone home bar */
+    box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.1);
+    
+    /* Ensure overflow is visible for tooltips or handled */
+    overflow: visible; 
+  }
+  
+  #sidebar.active {
+     bottom: 0;
+     right: 0; /* Maintain right 0 */
+  }
+
+  /* Hide elements that don't fit in bottom bar */
+  #sidebar .credits,
+  #sidebar .buffer {
+    display: none;
+  }
+  
+  /* Adjust items to fit horizontally */
+  #sidebar > * {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+  }
 }
 
 #sidebar.rtl nav.active {
-  left: unset;
-  right: 0;
+  right: unset;
+  left: 0;
 }
 
 #sidebar .action {

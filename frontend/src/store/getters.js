@@ -1,6 +1,6 @@
 import { removePrefix } from "@/utils/url.js";
-import { getFileExtension } from  "@/utils/files.js";
-import { state,mutations } from "@/store";
+import { getFileExtension } from "@/utils/files.js";
+import { state, mutations } from "@/store";
 import { noAuth } from "@/utils/constants.js";
 import { getTypeInfo } from "@/utils/mimetype";
 import { fromNow } from "@/utils/moment";
@@ -27,7 +27,7 @@ export const getters = {
     return true
   },
   previewType: () => getTypeInfo(state.req.type).simpleType,
-  isCardView: () => (state.user.viewMode == "gallery" || state.user.viewMode == "normal" ) && getters.currentView() == "listingView" ,
+  isCardView: () => (state.user.viewMode == "gallery" || state.user.viewMode == "normal") && getters.currentView() == "listingView",
   currentHash: () => state.route.hash.replace("#", ""),
   isMobile: () => state.isMobile,
   isLoading: () => Object.keys(state.loading).length > 0,
@@ -146,7 +146,7 @@ export const getters = {
     if (
       currentView == "editor" ||
       currentView == "onlyOfficeEditor"
-      ) {
+    ) {
       visible = false;
     }
     return visible
@@ -157,7 +157,7 @@ export const getters = {
     if (currentView == "settings") {
       sticky = true
     }
-    if (currentView == null && !getters.isLoading() && getters.isShare() ) {
+    if (currentView == null && !getters.isLoading() && getters.isShare()) {
       sticky = true
     }
     if (getters.isMobile()) {
@@ -171,17 +171,17 @@ export const getters = {
     return hasPrompt || showForSidebar || state.isSearchActive;
   },
   showBreadCrumbs: () => {
-    return getters.currentView() == "listingView" ;
+    return getters.currentView() == "listingView";
   },
-  routePath: (trimModifier="") => {
-    return removePrefix(state.route.path,trimModifier)
+  routePath: (trimModifier = "") => {
+    return removePrefix(state.route.path, trimModifier)
   },
   sharePathBase: () => {
     let urlPath = getters.routePath("share");
     // Step 1: Split the path by '/'
     let parts = urlPath.split("/");
     // Step 2: Assign hash to the second part (index 2) and join the rest for subPath
-    return "/share/"+ parts[1] + "/";
+    return "/share/" + parts[1] + "/";
   },
   currentView: () => {
     let listingView = null
@@ -305,5 +305,6 @@ export const getters = {
     }
     return true;
   },
-  isMetadataVisible: () => state.isMetadataVisible,  
+  isMetadataVisible: () => state.isMetadataVisible,
+  isInstructionsEditMode: () => state.isInstructionsEditMode,
 };

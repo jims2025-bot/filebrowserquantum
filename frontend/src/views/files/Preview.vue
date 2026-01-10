@@ -8,94 +8,119 @@
   >
     <!-- Preview Section -->
     <div class="preview" :class="{ 'full-height': !isMetadataVisible }" :style="{ maxHeight: previewMaxHeight }">
-      <div class="image-container" v-if="previewType == 'image'">
-        <div ref="panzoomContent" class="panzoom-content" style="position: relative; display: inline-block;">
-            <img 
-              ref="image" 
-              :src="raw" 
-              @load="updateImageDimensions" 
-              class="preview-image"
-              style="display: block; max-width: 100%; max-height: 100%;"
-            >
-            <div
-              v-if="activeTab === 'xmp' && metadata && metadata.xmp && metadata.xmp.Regions && metadata.xmp.Regions.length > 0 && isMetadataVisible"
-              class="face-overlay"
-              style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;"
-            >
-              <div
-                v-for="(region, index) in metadata.xmp.Regions"
-                :key="index"
-                class="face-box"
-                :style="getFaceBoxStyle(region)"
+      
+      <!-- Media Content Wrapper: Contains the actual viewer elements to preserve v-if chain -->
+      <div class="media-wrapper" style="flex: 1; overflow: hidden; position: relative; display: flex; align-items: center; justify-content: center; width: 100%;">
+          
+          <div class="image-container" v-if="previewType == 'image'" :style="{ height: showInstructionsModal && !isMobile ? '100%' : '100%' }">
+            <div ref="panzoomContent" class="panzoom-content" style="position: relative; display: inline-block;">
+                <img 
+                  ref="image" 
+                  :src="raw" 
+                  @load="updateImageDimensions" 
+                  class="preview-image"
+                  style="display: block; max-width: 100%; max-height: 100%;"
+                >
+                <div
+                  v-if="activeTab === 'xmp' && metadata && metadata.xmp && metadata.xmp.Regions && metadata.xmp.Regions.length > 0 && isMetadataVisible"
+                  class="face-overlay"
+                  style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;"
+                >
+                  <div
+                    v-for="(region, index) in metadata.xmp.Regions"
+                    :key="index"
+                    class="face-box"
+                    :style="getFaceBoxStyle(region)"
+                  >
+                    <span class="face-label" :style="{ fontSize: faceFontSize + 'px', top: -faceFontSize * 1.5 + 'px' }">{{ region.Name || 'Unnamed' }}</span>
+                  </div>
+                </div>
+            </div>
+          </div>
+
+          <audio
+            v-else-if="previewType == 'audio'"
+            ref="player"
+            :src="raw"
+            controls
+            :autoplay="autoPlay"
+            @play="autoPlay = true"
+          ></audio>
+
+          <video
+            v-else-if="previewType == 'video'"
+            ref="player"
+            :src="raw"
+            controls
+            :autoplay="autoPlay"
+            @play="autoPlay = true"
+          >
+            <track
+              kind="captions"
+              v-for="(sub, index) in subtitlesList"
+              :key="index"
+              :src="sub.src"
+              :label="'Subtitle ' + sub.name"
+              :default="index === 0"
+            />
+          </video>
+
+          <object v-else-if="previewType == 'pdf'" class="pdf" :data="raw"></object>
+
+          <div v-else class="info">
+            <div class="title">
+              <i class="material-icons">feedback</i>
+              {{ $t("files.noPreview") }}
+            </div>
+            <div>
+              <a target="_blank" :href="downloadUrl" class="button button--flat">
+                <div>
+                  <i class="material-icons">file_download</i>{{ $t("buttons.download") }}
+                </div>
+              </a>
+              <button
+                @click="shareImage"
+                class="button button--flat"
+                :title="$t('buttons.share')"
+                :style="{ opacity: canShare ? 1 : 0.5 }"
               >
-                <span class="face-label" :style="{ fontSize: faceFontSize + 'px', top: -faceFontSize * 1.5 + 'px' }">{{ region.Name || 'Unnamed' }}</span>
-              </div>
+                <div>
+                  <i class="material-icons">share</i>{{ $t("buttons.share") }}
+                </div>
+              </button>
+              <a
+                target="_blank"
+                :href="raw"
+                class="button button--flat"
+                v-if="req.type != 'directory'"
+              >
+                <div>
+                  <i class="material-icons">open_in_new</i>{{ $t("buttons.openFile") }}
+                </div>
+              </a>
             </div>
-        </div>
-      </div>
+          </div>
+      </div> 
+      <!-- End Media Wrapper -->
 
-      <audio
-        v-else-if="previewType == 'audio'"
-        ref="player"
-        :src="raw"
-        controls
-        :autoplay="autoPlay"
-        @play="autoPlay = true"
-      ></audio>
+       <!-- Persistent Photoshop Instructions Editor (Split View) -->
+       <!-- Now this is a sibling to media-wrapper, breaking the v-if interaction but thats ok because media-wrapper is the flex item -->
+       <div v-if="showInstructionsModal" class="instructions-split-pane" :style="{ height: !isMobile ? '33%' : 'auto', flex: !isMobile ? '0 0 33%' : '0 0 auto' }">
+          <div class="pane-header">
+             <h4>Edit Photoshop Instructions</h4>
+             <button @click="closeInstructionsModal" class="close-icon"><i class="material-icons">close</i></button>
+          </div>
+          <textarea
+            v-model="photoshopInstructions"
+            :readonly="!canEditInstructions"
+            placeholder="Enter instructions here..."
+          ></textarea>
+          <div class="button-row">
+            <button @click="saveInstructions" class="button button--flat">Save</button>
+            <button @click="closeInstructionsModal" class="button button--flat">Close</button>
+          </div>
+       </div>
 
-      <video
-        v-else-if="previewType == 'video'"
-        ref="player"
-        :src="raw"
-        controls
-        :autoplay="autoPlay"
-        @play="autoPlay = true"
-      >
-        <track
-          kind="captions"
-          v-for="(sub, index) in subtitlesList"
-          :key="index"
-          :src="sub.src"
-          :label="'Subtitle ' + sub.name"
-          :default="index === 0"
-        />
-      </video>
-
-      <object v-else-if="previewType == 'pdf'" class="pdf" :data="raw"></object>
-
-      <div v-else class="info">
-        <div class="title">
-          <i class="material-icons">feedback</i>
-          {{ $t("files.noPreview") }}
-        </div>
-        <div>
-          <a target="_blank" :href="downloadUrl" class="button button--flat">
-            <div>
-              <i class="material-icons">file_download</i>{{ $t("buttons.download") }}
-            </div>
-          </a>
-          <button
-            @click="shareImage"
-            class="button button--flat"
-            :title="$t('buttons.share')"
-            :style="{ opacity: canShare ? 1 : 0.5 }"
-          >
-            <div>
-              <i class="material-icons">share</i>{{ $t("buttons.share") }}
-            </div>
-          </button>
-          <a
-            target="_blank"
-            :href="raw"
-            class="button button--flat"
-            v-if="req.type != 'directory'"
-          >
-            <div>
-              <i class="material-icons">open_in_new</i>{{ $t("buttons.openFile") }}
-            </div>
-          </a>
-        </div>
-      </div>
     </div>
 	
     <!-- Metadata Section -->
@@ -199,34 +224,8 @@
           <p v-else-if="metadata && Object.keys(metadata.iptc).length === 0">No IPTC data found for this file.</p>
           <p v-else>Loading IPTC metadata...</p>
 
-		<!-- Full-width bottom overlay that covers the metadata-container -->
-		<div
-			v-if="showInstructionsModal && activeTab === 'iptc'" 
-			class="overlay-modal-bottom"
-			:style="{ height: overlayHeight + 'px' }"
-			@keydown.esc="closeInstructionsModal"
-			tabindex="-1"
-		>
-		<div class="overlay-content" role="dialog" aria-modal="true">
-		<h4>Edit Photoshop Instructions</h4>
-
-		<!-- textarea grows to fill space, scrolls internally if content is long -->
-		<textarea
-			v-model="photoshopInstructions"
-			:readonly="!canEditInstructions"
-			autofocus
-			aria-label="Photoshop instructions editor"
-		></textarea>
-
-		<!-- button row always visible at bottom -->
-		<div class="button-row">
-			<button @click="saveInstructions" class="button button--flat">Save</button>
-			<button @click="closeInstructionsModal" class="button button--flat">Cancel</button>
-		</div>
-		</div>
-		</div>
-			
-			</div> <!--  close IPTC tab-pane -->
+		<!-- REMOVED overlay-modal-bottom from here -->	
+		</div> <!--  close IPTC tab-pane -->
 
         <div v-if="activeTab === 'xmp'" class="tab-pane">
           <h3>XMP Metadata</h3>
@@ -371,8 +370,9 @@ export default {
   components: {},
   data() {
     return {
-	  photoshopInstructions: '',      // Stores the value for display/edit
-      showInstructionsModal: false,   // Controls modal popup visibility
+      photoshopInstructions: '',      // Stores the value for display/edit
+      originalInstructions: '',       // For dirty check (auto-save)
+      // showInstructionsModal: false,   // Moved to global store for persistence
       previousLink: "",
       nextLink: "",
       listing: null,
@@ -403,6 +403,7 @@ export default {
       panzoomInstance: null, // Store panzoom instance
       isMetadataExpanded: false,
       faceFontSize: 24, // Default font size
+      metadataCache: {}, // Cache for pre-fetched metadata
     };
   },
   computed: {
@@ -425,6 +426,9 @@ export default {
 		return Math.max(this.metadataHeight || 200, 200);		
 	},  
   
+    showInstructionsModal() {
+      return getters.isInstructionsEditMode();
+    },
     sidebarShowing() {
       return getters.isSidebarVisible();
     },
@@ -481,6 +485,10 @@ export default {
       return visible;
     },
     previewMaxHeight() {
+      // On desktop (side-by-side), height is not constrained by metadata panel height
+      if (window.innerWidth >= 1024) { 
+          return '100%';
+      }
       return this.isMetadataVisible ? `calc(100vh - ${this.metadataHeight}px)` : '100vh';
     },
     gpsCoordinates() {
@@ -678,12 +686,17 @@ export default {
         // Desktop & Mobile Click Navigation (Edge Tapping)
         
         // Ignore clicks on interactive elements or metadata pane
-        if (event.target.closest('button, a, input, textarea, .metadata-container, .tabs-header')) return;
+        if (event.target.closest('button, a, input, textarea, .metadata-container, .tabs-header, .instructions-split-pane')) return;
 
-        const width = window.innerWidth;
-        const x = event.clientX;
+        // Use the .preview container for relative coordinates to handle Split Views/Sidebars
+        const previewEl = this.$el.querySelector('.preview');
+        if (!previewEl) return;
+
+        const rect = previewEl.getBoundingClientRect();
+        const x = event.clientX - rect.left; // x relative to the preview container
+        const width = rect.width;
         
-        // Navigation Logic
+        // Navigation Logic (30% zones)
         if (x < width * 0.3) {
             this.prev();
         } else if (x > width * 0.7) {
@@ -693,7 +706,7 @@ export default {
     
     handleTouchStart(event) {
         // Ignore touches on interactive elements or metadata pane
-        if (event.target.closest('button, a, input, textarea, .metadata-container, .tabs-header')) return;
+        if (event.target.closest('button, a, input, textarea, .metadata-container, .tabs-header, .instructions-split-pane')) return;
 
         this.toggleNavigation();
         if (event.touches.length === 1) {
@@ -724,20 +737,20 @@ export default {
             // Prevent ghost clicks
             if (event.cancelable) event.preventDefault();
             
-            // If zoomed in (scale > 1.1), maybe we don't want to navigate?
-            // Actually, edge tapping usually overrides zoom panning in many apps, 
-            // but let's be safe. If they tap the edge, they probably want next.
-            // But if they are panning, they wouldn't release in <300ms with <10px movement.
-            // So this logic naturally filters out pans.
+            // Calculate relative to Preview container
+            const previewEl = this.$el.querySelector('.preview');
+            if (!previewEl) return;
+
+            const rect = previewEl.getBoundingClientRect();
+            const relativeX = touchEndX - rect.left;
+            const width = rect.width;
             
-            const width = window.innerWidth;
-            if (touchEndX < width * 0.3) {
+            if (relativeX < width * 0.3) {
                 this.prev();
-            } else if (touchEndX > width * 0.7) {
+            } else if (relativeX > width * 0.7) {
                 this.next();
             } else {
                  // Center tap - toggle header visibility
-                 // (Default.vue handles keeping it open, but we send the signal anyway)
                  this.triggerHeaderVisibility();
             }
         }
@@ -762,25 +775,43 @@ export default {
 		this.showInstructionsModal = false;
 	},	
 	
+    async getMetadata(source, path) {
+       // Check cache
+       if (this.metadataCache[path]) {
+           return this.metadataCache[path];
+       }
+       
+       try {
+           const res = await filesApi.fetchMetadata(source, path);
+           const data = res.data || res;
+           // Cache it
+           this.metadataCache[path] = data;
+           return data;
+       } catch (error) {
+           console.error("Failed to fetch metadata for", path, error);
+           return { exif: {}, iptc: {}, xmp: {} }; // Return empty structure on fail
+       }
+    },
+
     async fetchMetadata() {
       this.metadata = null;
       if (this.previewType !== "image") {
         console.log("Not an image, skipping metadata fetch");
         return;
       }
-      try {
-        const res = await filesApi.fetchMetadata(state.req.source, state.req.path);
-        //console.log("Full API response:", res);
-        this.metadata = res.data || res;
-		if (!this.metadata.xmp) {
-			this.metadata.xmp = {};
-		}
-		this.parsePhotoshopInstructions(); // <-- parse instructions here
-        //console.log("Assigned metadata:", this.metadata);
-      } catch (error) {
-        console.error("Failed to fetch metadata:", error);
-        this.metadata = { exif: {}, iptc: {}, xmp: {} };
+      
+      // Use getMetadata to fetch for current file (checks cache)
+      const data = await this.getMetadata(state.req.source, state.req.path);
+      
+      // Clone to ensure we don't mutate cache directly if we don't want to, 
+      // OR mostly we do want to cache the parsed result. 
+      // For now, let's just assign.
+      this.metadata = data;
+
+      if (!this.metadata.xmp) {
+        this.metadata.xmp = {};
       }
+      this.parsePhotoshopInstructions();
     },
     async updateImageDimensions() {
       if (this.previewType !== "image" || !this.$refs.image) {
@@ -988,6 +1019,7 @@ export default {
 
   const val = [fromXmp, fromIptc].find(v => typeof v === 'string' && v.trim());
   this.photoshopInstructions = val || '';
+  this.originalInstructions = this.photoshopInstructions;
 
   // Optional: quick debug to see what keys you actually have
   if (!this.photoshopInstructions) {
@@ -1015,21 +1047,40 @@ findInstructionDeep(obj) {
   return null;
 },
   
-async saveInstructions() {
-  if (!this.canEditInstructions) return; // prevent saving if not an editor
-  try {
-    const metadataPath = this.metadata?.path || state.req.path;
-    await filesApi.updateXMPInstructions(
-      state.req.source,
-      metadataPath,
-      this.photoshopInstructions
-    );
-    this.showInstructionsModal = false;
-    //console.log("Photoshop instructions saved to:", metadataPath);
-  } catch (err) {
-    console.error("Failed to save Photoshop instructions:", err);
-  }
-},
+    openInstructionsModal() {
+        mutations.toggleInstructionsEditMode(true);
+    },
+    
+    closeInstructionsModal() {
+        mutations.toggleInstructionsEditMode(false);
+    },
+
+    async saveInstructions() {
+      if (!this.canEditInstructions) return; 
+      try {
+        const metadataPath = this.metadata?.path || state.req.path;
+        // Use existing API call if it works, or fallback to generic updateMetadata
+        if (filesApi.updateXMPInstructions) {
+             await filesApi.updateXMPInstructions(state.req.source, metadataPath, this.photoshopInstructions);
+        } else {
+             // Fallback to generic metadata update
+             await filesApi.updateMetadata(state.req.source, state.req.path, {
+                xmp: { 'photoshop:Instructions': this.photoshopInstructions }
+             });
+        }
+        
+        // Update original to prevent re-saving
+        this.originalInstructions = this.photoshopInstructions;
+
+        // Do NOT close modal (Persistence)
+        // this.showInstructionsModal = false; 
+        
+        //console.log("Photoshop instructions saved to:", metadataPath);
+      } catch (err) {
+        console.error("Failed to save Photoshop instructions:", err);
+        alert("Failed to save instructions.");
+      }
+    },
 	
     
     // Zoom and pan methods - REMOVED (Replaced by panzoom library)
@@ -1096,11 +1147,19 @@ async saveInstructions() {
         },
       };
     },
-    prev() {
+    async tryAutoSave() {
+        if (this.canEditInstructions && this.photoshopInstructions !== this.originalInstructions) {
+             //console.log("Auto-saving Modified Instructions...");
+             await this.saveInstructions();
+        }
+    },
+    async prev() {
+      await this.tryAutoSave();  
       this.hoverNav = false;
       this.$router.replace({ path: this.previousLink });
     },
-    next() {
+    async next() {
+      await this.tryAutoSave();
       this.hoverNav = false;
       this.$router.replace({ path: this.nextLink });
     },
@@ -1152,6 +1211,8 @@ async saveInstructions() {
           this.previousLink = composedListing.url;
           if (getTypeInfo(composedListing.type).simpleType == "image") {
             this.previousRaw = this.prefetchUrl(composedListing);
+            // Prefetch metadata for previous image
+            this.getMetadata(state.req.source, composedListing.path);
           }
           break;
         }
@@ -1161,6 +1222,8 @@ async saveInstructions() {
           this.nextLink = composedListing.url;
           if (getTypeInfo(composedListing.type).simpleType == "image") {
             this.nextRaw = this.prefetchUrl(composedListing);
+            // Prefetch metadata for next image
+            this.getMetadata(state.req.source, composedListing.path);
           }
           break;
         }
@@ -1227,7 +1290,101 @@ toggleNavigation: throttle(function () {
   position: absolute;
   top: 0;
   left: 0;
-  overflow-y: auto;
+  overflow: hidden;
+  box-sizing: border-box; /* Ensure padding doesn't add to height */
+  padding-top: 4em;       /* Push content below the header */
+}
+
+/* Desktop Layout: Side-by-side */
+@media (min-width: 1024px) {
+  #previewer {
+    flex-direction: row;
+  }
+}
+
+/* Instructions Split Pane (Persistent) */
+.instructions-split-pane {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  background: #fff;
+  border-top: 1px solid #ccc;
+  padding: 1rem;
+  box-sizing: border-box;
+  color: #333; /* ensure text is readable */
+  position: relative; /* layout context */
+  z-index: 50; /* ensure it's above image */
+}
+
+.pane-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  
+  h4 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: bold;
+    color: #333;
+  }
+  
+  .close-icon {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    
+    i {
+      font-size: 1.5rem;
+      color: #666;
+    }
+    
+    &:hover i {
+      color: #000;
+    }
+  }
+}
+
+.instructions-split-pane textarea {
+  flex: 1;
+  width: 100%;
+  resize: none;
+  font-family: inherit;
+  padding: 0.5rem;
+  box-sizing: border-box;
+  margin-bottom: 0.5rem;
+  min-height: 0; /* allows flex shrink */
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+/* button row reused */
+.button-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+/* When instructions are showing, the preview column handles split (image top, editor bottom) */
+.preview {
+  display: flex;
+  flex-direction: column; /* Stack image and editor vertically */
+  /* width, flex-grow etc inherited */
+}
+
+/* ... overlay styles ... */
+
+@media (min-width: 1024px) {
+  .metadata-container {
+    width: 350px;
+    height: 100%;      /* Fill parent height */
+    max-height: none;  /* Remove constraint */
+    border-top: none;
+    border-left: 1px solid var(--dark-theme-2);
+  }
 }
 
 
@@ -1309,7 +1466,8 @@ toggleNavigation: throttle(function () {
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: visible;
+  overflow: hidden; /* Prevent spillover */
+  position: relative;
 
   &.full-height {
     max-height: 100vh;
@@ -1391,15 +1549,27 @@ toggleNavigation: throttle(function () {
 
 .metadata-container {
   position: relative;
-  width: 100%;
-  min-height: 100px;
-  max-height: 80vh;
   background: var(--dark-theme-1);
   color: #fff;
-  border-top: 1px solid var(--dark-theme-2);
   padding: 1rem;
   overflow-y: auto;
   flex-shrink: 0;
+  z-index: 20;
+
+  /* Mobile Pattern (Default) */
+  width: 100%;
+  border-top: 1px solid var(--dark-theme-2);
+  /* Remove max-height constraint to start, control via style binding or default */
+}
+
+@media (min-width: 1024px) {
+  .metadata-container {
+    width: 350px; /* Default width on desktop */
+    height: 100% !important; /* Force full height on desktop, overriding inline styles if any */
+    max-height: none !important;
+    border-top: none;
+    border-left: 1px solid var(--dark-theme-2);
+  }
 }
 
 .resize-handle {
@@ -1410,6 +1580,17 @@ toggleNavigation: throttle(function () {
   height: 10px;
   cursor: ns-resize;
   background: transparent;
+  z-index: 21;
+}
+
+@media (min-width: 1024px) {
+  .resize-handle {
+    top: 0;
+    left: -5px;
+    width: 10px;
+    height: 100%;
+    cursor: ew-resize; /* Horizontal resize cursor */
+  }
 }
 
 .tabs-header {
