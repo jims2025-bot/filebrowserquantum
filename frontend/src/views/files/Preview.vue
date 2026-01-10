@@ -1379,7 +1379,7 @@ toggleNavigation: throttle(function () {
 
 @media (min-width: 1024px) {
   .metadata-container {
-    width: 350px;
+    width: 450px;
     height: 100%;      /* Fill parent height */
     max-height: none;  /* Remove constraint */
     border-top: none;
@@ -1604,11 +1604,12 @@ toggleNavigation: throttle(function () {
     background: none;
     border: none;
     color: #fff;
-    padding: 0.5rem 1rem;
-    margin: 0 0.25rem;
+    padding: 0.25rem 0.5rem;    /* Tighter padding */
+    margin: 0 0.1rem;           /* Tighter margin */
     cursor: pointer;
     border-radius: 4px;
     transition: background-color 0.2s;
+    font-size: 0.85rem;         /* Smaller text */
 
     &:hover {
       background: rgba(255, 255, 255, 0.1);
@@ -1620,11 +1621,10 @@ toggleNavigation: throttle(function () {
     }
 
     &.tab-empty {
-      background: #ffcccc; // light red for empty tabs
+      background: #ffcccc; 
       color: #000;
     }
 
-    // Ensure active overrides empty
     &.active.tab-empty {
       background: var(--accent-green);
       color: #000;
@@ -1639,10 +1639,11 @@ toggleNavigation: throttle(function () {
     h3 {
       margin-top: 0;
       color: var(--accent-green);
+      font-size: 1rem; /* Smaller header */
     }
 
     .metadata-table {
-      max-height: 300px;
+      max-height: 400px; /* Increased height */
       overflow-y: auto;
 
       table {
@@ -1650,13 +1651,24 @@ toggleNavigation: throttle(function () {
         border-collapse: collapse;
 
         th, td {
-          padding: 0.5rem;
+          padding: 0.25rem 0.4rem;  /* Tighter cell padding */
           border: 1px solid var(--dark-theme-2);
           text-align: left;
+          font-size: 0.8rem;        /* Smaller table text */
+          vertical-align: top;
         }
 
         th {
           background: rgba(255, 255, 255, 0.05);
+          color: #aaa;
+          font-weight: bold;
+          font-size: 0.75rem;       /* Even smaller caption */
+          text-transform: uppercase;
+          width: 30%;               /* Reduced width for keys */
+        }
+
+        td {
+            color: #fff;
         }
       }
     }

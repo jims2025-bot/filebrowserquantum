@@ -1,19 +1,20 @@
 package http
 
 import (
+	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
-	"log"
 
-	"github.com/jims2025-bot/filebrowserquantum/backend/auth"
-	"github.com/jims2025-bot/filebrowserquantum/backend/database/users"
 	"github.com/jims2025-bot/filebrowserquantum/backend/adapters/fs/files"
-	"github.com/jims2025-bot/filebrowserquantum/backend/indexing"
+	"github.com/jims2025-bot/filebrowserquantum/backend/auth"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
+	"github.com/jims2025-bot/filebrowserquantum/backend/database/users"
+	"github.com/jims2025-bot/filebrowserquantum/backend/indexing"
 )
 
 // createApiKeyHandler creates an API key for the user.
@@ -288,9 +289,19 @@ func resourceInstructionsHandler(w http.ResponseWriter, r *http.Request, d *requ
 	path := r.URL.Query().Get("path")
 	instructions := r.URL.Query().Get("instructions")
 
+	// Try reading from JSON body if instructions override is empty in query
+	if r.Body != nil {
+		var reqBody struct {
+			Instructions string `json:"instructions"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err == nil && reqBody.Instructions != "" {
+			instructions = reqBody.Instructions
+		}
+	}
+
 	//if source == "" || path == "" || instructions == "" {
-//		return http.StatusBadRequest, fmt.Errorf("source, path, and instructions are required")
-//	}
+	//		return http.StatusBadRequest, fmt.Errorf("source, path, and instructions are required")
+	//	}
 
 	userScope := "/"
 	if d.user.Username != "publicUser" {
@@ -333,4 +344,3 @@ func resourceInstructionsHandler(w http.ResponseWriter, r *http.Request, d *requ
 	}
 	return renderJSON(w, r, response)
 }
-

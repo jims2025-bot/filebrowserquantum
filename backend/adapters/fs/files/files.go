@@ -255,7 +255,8 @@ func WriteXMPInstructions(filePath, instructions string) error {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Printf("Error writing XMP/IPTC Instructions to %s: %v\nOutput: %s", filePath, err, string(output))
-		return fmt.Errorf("could not write XMP/IPTC Instructions: %w", err)
+		// Include the output in the returned error so the frontend can display it
+		return fmt.Errorf("could not write XMP/IPTC Instructions: %s (err: %w)", string(output), err)
 	}
 
 	log.Printf("Exiftool output: %s", string(output))

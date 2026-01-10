@@ -1,6 +1,6 @@
 import i18n from '@/i18n'; // Import the default export (your i18n instance)
 
-const name = window.FileBrowser.Name;
+const name = "ShantonMedia Archive";
 const disableExternal = window.FileBrowser.DisableExternal;
 const externalLinks = window.FileBrowser.ExternalLinks;
 const baseURL = window.FileBrowser.BaseURL;
@@ -26,7 +26,7 @@ const origin = window.location.origin;
 const settings = [
   { id: 'profile', label: i18n.global.t('settings.profileSettings'), component: 'ProfileSettings' },
   { id: 'shares', label: i18n.global.t('settings.shareSettings'), component: 'SharesSettings', permissions: { share: true } },
-  { id: 'api', label: i18n.global.t('api.title'), component: 'ApiKeys', permissions: { api: true }  },
+  { id: 'api', label: i18n.global.t('api.title'), component: 'ApiKeys', permissions: { api: true } },
   //{ id: 'global', label: 'Global', component: 'GlobalSettings', permissions: { admin: true } },
   { id: 'users', label: i18n.global.t('settings.userManagement'), component: 'UserManagement' },
 ];

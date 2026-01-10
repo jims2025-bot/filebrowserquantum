@@ -87,7 +87,7 @@ export default {
       return darkMode;
     },
     loginName() {
-      return name;
+      return "ShantonMedia Archive";
     },
   },
   data: function () {
