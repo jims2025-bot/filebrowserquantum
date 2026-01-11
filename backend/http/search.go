@@ -80,10 +80,12 @@ func searchHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 	if index == nil {
 		return http.StatusBadRequest, fmt.Errorf("index not found for source %s", source)
 	}
-	userscope, err := settings.GetScopeFromSourceName(d.user.Scopes, source)
+	var realSource string
+	userscope, realSource, err := settings.GetScopeFromSourceName(d.user.Scopes, source)
 	if err != nil {
 		return http.StatusForbidden, err
 	}
+	source = realSource
 	combinedPath := index.MakeIndexPath(filepath.Join(userscope, searchScope))
 	// Perform the search using the provided query and user scope
 	response := index.Search(query, combinedPath, sessionId)

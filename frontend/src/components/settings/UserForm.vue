@@ -128,9 +128,17 @@
 
         <input
           class="input flat-left scope-input"
-          placeholder="scope eg. '/subfolder', leave blank for default path"
+          placeholder="Path (e.g. /subfolder)"
           @input="updateParent({ source: source, input: $event })"
           :value="source.scope"
+          :class="{ 'flat-right': selectedSources.length > 1 }"
+        />
+        <input
+          class="input flat-left"
+          style="width: 50%"
+          placeholder="Alias (optional)"
+          @input="updateAlias({ source: source, input: $event })"
+          :value="source.alias"
           :class="{ 'flat-right': selectedSources.length > 1 }"
         />
         <button
@@ -216,20 +224,14 @@ export default {
 
     this.user.password = this.user.password || "";
     this.selectedSources = this.user.scopes || [];
-    this.availableSources = this.sourceList.filter(
-      (s) => !this.selectedSources.some((sel) => sel.name === s.name)
-    );
-
-    if (this.isNew && this.availableSources.length) {
-      const newSource = this.availableSources.shift();
-      if (newSource) {
-        this.selectedSources.push(newSource);
-        this.emitUserUpdate();
-      }
-    }
+    // Always allow all sources to be selected
+    this.availableSources = this.sourceList; 
   },
   watch: {
     createUserDir(newVal) {
+      // If creating user dir, we usually reset to default. 
+      // But if user wants multiple scopes, this interaction might be tricky.
+      // For now, keep existing behavior: if you toggle this, it resets scope.
       this.user.scopes = newVal ? { default: "" } : this.originalUserScope;
       this.emitUserUpdate();
     },
@@ -242,11 +244,20 @@ export default {
     },
     passwordAvailable: () => passwordAvailable,
     duplicateSources() {
-      const names = this.selectedSources.map((s) => s.name);
-      return names.filter((name, idx) => names.indexOf(name) !== idx);
+      // Allow same name, but maybe flag if same name AND same scope?
+      // Actually strictly speaking, duplicate names are fine now.
+      // We only flag if Name AND Scope are identical.
+      const entries = this.selectedSources.map((s) => s.name + "::" + s.scope);
+      return this.selectedSources.filter((s, idx) => {
+          const key = s.name + "::" + s.scope;
+          return entries.indexOf(key) !== idx;
+      }).map(s => s.name); 
+      // Note: mapping back to name might flag all instances of that name as 'invalid-form' style
+      // which is acceptable for visual feedback if they are EXACT duplicates.
     },
     hasMoreSources() {
-      return this.selectedSources.length < this.sourceList.length;
+      // Always allow adding more if we have at least one source definition
+      return this.sourceList.length > 0;
     },
     stateUser() {
       return state.user;
@@ -290,33 +301,42 @@ export default {
       this.$emit("update:updatePassword", true);
     },
     updateParent(input) {
-      const updatedScopes = this.selectedSources.map((source) =>
-        source.name === input.source.name
-          ? { ...source, scope: input.input.target.value }
-          : source
-      );
-      this.selectedSources = updatedScopes;
+      // We need to be careful updating by NAME if multiple have same name.
+      // input.source is the object reference from the v-for loop.
+      // We should update that object directly? 
+      // The filtered updatedScopes logic in original code:
+      // const updatedScopes = this.selectedSources.map((source) =>
+      //   source.name === input.source.name
+      //     ? { ...source, scope: input.input.target.value }
+      //     : source
+      // );
+      // This will update ALL scopes with that name. That is BAD.
+      
+      // Since 'source' is passed by reference from the v-for, we can just mutate it
+      // and then emit.
+      input.source.scope = input.input.target.value;
+      this.emitUserUpdate();
+    },
+    updateAlias(input) {
+      input.source.alias = input.input.target.value;
       this.emitUserUpdate();
     },
     addNewScopeSource(event) {
       event.preventDefault();
-      if (this.hasMoreSources) {
-        this.selectedSources.push({ name: "", scope: "" });
+      // Add a new empty/default scope
+      if (this.sourceList.length > 0) {
+        // Default to first source
+        this.selectedSources.push({ name: this.sourceList[0].name, scope: "" });
         this.emitUserUpdate();
       }
     },
     removeScope(index) {
-      const removed = this.selectedSources.splice(index, 1)[0];
-      this.availableSources.push({ name: removed.name });
+      this.selectedSources.splice(index, 1);
       this.emitUserUpdate();
     },
     handleSourceChange(source, event, oldName) {
-      const newName = event.target.value;
-      this.availableSources = this.availableSources.filter((s) => s.name !== newName);
-      if (oldName && !this.availableSources.find((s) => s.name === oldName)) {
-        this.availableSources.push({ name: oldName });
-      }
-      source.name = newName;
+      // Just update the name. No pool management needed.
+      source.name = event.target.value;
       this.emitUserUpdate();
     },
     updateUserField(field, value) {

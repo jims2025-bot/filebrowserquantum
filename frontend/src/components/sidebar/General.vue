@@ -5,51 +5,7 @@
     </span>
   </div>
 
-  <div v-if="hasSourceInfo" class="tooltip-sources">
-    <div
-      class="tooltiptext-sources"
-      :style="{ top: mouseY - 500 + 'px' }"
-      :class="{ visible: sourceInfoTooltip != '' }"
-    >
-      <table class="tooltip-table">
-        <thead>
-          <tr>
-            <th colspan="2">{{ sourceInfoTooltip.name }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>{{ $t("index.status") }}</td>
-            <td>{{ sourceInfoTooltip.status }}</td>
-          </tr>
-          <tr>
-            <td>{{ $t("index.assessment") }}</td>
-            <td>{{ sourceInfoTooltip.assessment }}</td>
-          </tr>
-          <tr>
-            <td>{{ $t("index.files") }}</td>
-            <td>{{ sourceInfoTooltip.files }}</td>
-          </tr>
-          <tr>
-            <td>{{ $t("index.folders") }}</td>
-            <td>{{ sourceInfoTooltip.folders }}</td>
-          </tr>
-          <tr>
-            <td>{{ $t("index.lastScanned") }}</td>
-            <td>{{ gethumanReadable }}</td>
-          </tr>
-          <tr>
-            <td>{{ $t("index.quickScan") }}</td>
-            <td>{{ humanReadableQuickScan }}</td>
-          </tr>
-          <tr>
-            <td>{{ $t("index.fullScan") }}</td>
-            <td>{{ humanReadableFullScan }}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
+
 
   <div class="card headline-card">
     <div class="card-wrapper user-card">
@@ -129,9 +85,8 @@
           class="action source-button"
           :class="{ active: activeSource == name }"
           @click="navigateTo('/files/' + info.pathPrefix)"
-          @mouseenter="updateSourceTooltip($event, info)"
-          @mouseleave="resetSourceTooltip"
           :aria-label="$t('sidebar.myFiles')"
+
         >
           <div class="source-container">
             <svg
@@ -149,6 +104,9 @@
             <span>{{ name }}</span>
           </div>
           <div v-if="hasSourceInfo" class="usage-info">
+             <div class="metrics-row">
+                 <span> {{ info.files }} files | {{ info.folders }} folders </span>
+             </div>
             <ProgressBar
               :val="info.usedPercentage"
               text-position="inside"
@@ -164,6 +122,35 @@
             </div>
           </div>
         </button>
+      </div>
+      
+      <!-- Source Details Footer -->
+      <div v-if="activeSourceInfo" class="source-details-footer">
+          <h5>{{ $t("sidebar.sourceDetails") }}</h5>
+          <table class="details-table">
+            <tbody>
+              <tr>
+                <td>{{ $t("index.status") }}</td>
+                <td>{{ activeSourceInfo.status }}</td>
+              </tr>
+              <tr>
+                <td>{{ $t("index.assessment") }}</td>
+                <td>{{ activeSourceInfo.assessment }}</td>
+              </tr>
+              <tr>
+                <td>{{ $t("index.lastScanned") }}</td>
+                <td>{{ gethumanReadable }}</td>
+              </tr>
+              <tr>
+                <td>{{ $t("index.quickScan") }}</td>
+                <td>{{ humanReadableQuickScan }}</td>
+              </tr>
+              <tr>
+                <td>{{ $t("index.fullScan") }}</td>
+                <td>{{ humanReadableFullScan }}</td>
+              </tr>
+            </tbody>
+          </table>
       </div>
     </div>
   </div>
@@ -211,6 +198,10 @@ export default {
     route: () => state.route,
     sourceInfo: () => state.sources.info,
     activeSource: () => state.sources.current,
+    activeSourceInfo() {
+      if (!state.sources.hasSourceInfo || !state.sources.current) return null;
+      return state.sources.info[state.sources.current];
+    },
     realtimeActive: () => state.realtimeActive,
     humanReadableQuickScan() {
       const tooltip = this.getTooltipInfo();
@@ -247,17 +238,14 @@ export default {
       return getHumanReadableFilesize(size);
     },
     getTooltipInfo() {
-      return this.sourceInfoTooltip || null;
+      if (!this.activeSourceInfo) return null; // Use active source info
+      return this.activeSourceInfo;
     },
     checkLogin() {
       return getters.isLoggedIn() && !getters.routePath().startsWith("/share");
     },
-    updateSourceTooltip(event, text) {
-      this.mouseY = event.clientY;
-      this.sourceInfoTooltip = text;
-    },
     resetSourceTooltip() {
-      this.sourceInfoTooltip = ""; // Reset to default hover text
+      // no-op
     },
     updateHoverText(text) {
       this.hoverText = text;
@@ -396,9 +384,38 @@ export default {
   border-bottom: none !important;
 }
 
-.tooltiptext-first,
-.tooltiptext-sources {
+.tooltiptext-first {
   pointer-events: none;
+}
+
+.source-details-footer {
+  margin-top: 1em;
+  width: 100%;
+  font-size: 0.85em;
+  border-top: 1px solid var(--surfaceSecondary);
+  padding-top: 0.5em;
+}
+
+.source-details-footer h5 {
+    margin: 0 0 0.5em 0;
+    text-align: center;
+    opacity: 0.7;
+}
+
+.details-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.details-table td {
+  padding: 0.2em;
+  color: var(--textSecondary);
+}
+
+.metrics-row {
+  font-size: 0.8em;
+  opacity: 0.8;
+  margin-bottom: 0.25em;
 }
 
 .user-card {

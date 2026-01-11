@@ -6,14 +6,15 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/goccy/go-yaml"
+	"github.com/gtsteffaniak/go-logger/logger"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/version"
 	"github.com/jims2025-bot/filebrowserquantum/backend/database/users"
-	"github.com/gtsteffaniak/go-logger/logger"
 )
 
 var Config Settings
@@ -326,16 +327,32 @@ func setDefaults() Settings {
 	}
 }
 
+// ConvertToBackendScopes converts frontend scope names to backend paths
 func ConvertToBackendScopes(scopes []users.SourceScope) ([]users.SourceScope, error) {
 	if len(scopes) == 0 {
 		return Config.UserDefaults.DefaultScopes, nil
 	}
 	newScopes := []users.SourceScope{}
+	logger.Debugf("ConvertToBackendScopes: Processing %d scopes", len(scopes))
 	for _, scope := range scopes {
+		logger.Debugf("Processing scope: Name=%s, Alias=%s", scope.Name, scope.Alias)
 
 		// first check if its already a path name and keep it
 		source, ok := Config.Server.SourceMap[scope.Name]
+		if !ok {
+			// Case-insensitive fallback
+			for path, s := range Config.Server.SourceMap {
+				if strings.EqualFold(scope.Name, path) {
+					source = s
+					ok = true
+					logger.Debugf("Match via SourceMap (Case Insensitive): %s -> %s", scope.Name, source.Path)
+					break
+				}
+			}
+		}
+
 		if ok {
+			logger.Debugf("Match via SourceMap: %s -> %s", scope.Name, source.Path)
 			if scope.Scope == "" {
 				scope.Scope = source.Config.DefaultUserScope
 			}
@@ -348,6 +365,7 @@ func ConvertToBackendScopes(scopes []users.SourceScope) ([]users.SourceScope, er
 			newScopes = append(newScopes, users.SourceScope{
 				Name:  source.Path, // backend name is path
 				Scope: scope.Scope,
+				Alias: scope.Alias,
 			})
 			continue
 		}
@@ -355,9 +373,11 @@ func ConvertToBackendScopes(scopes []users.SourceScope) ([]users.SourceScope, er
 		// check if its the name of a source and convert it to a path
 		source, ok = Config.Server.NameToSource[scope.Name]
 		if !ok {
+			logger.Warningf("Source not configured: %s", scope.Name)
 			// source might no longer be configured
 			continue
 		}
+		logger.Debugf("Match via NameToSource: %s -> %s", scope.Name, source.Path)
 		if scope.Scope == "" {
 			scope.Scope = source.Config.DefaultUserScope
 		}
@@ -370,6 +390,7 @@ func ConvertToBackendScopes(scopes []users.SourceScope) ([]users.SourceScope, er
 		newScopes = append(newScopes, users.SourceScope{
 			Name:  source.Path, // backend name is path
 			Scope: scope.Scope,
+			Alias: scope.Alias,
 		})
 	}
 	return newScopes, nil
@@ -378,11 +399,34 @@ func ConvertToBackendScopes(scopes []users.SourceScope) ([]users.SourceScope, er
 func ConvertToFrontendScopes(scopes []users.SourceScope) []users.SourceScope {
 	newScopes := []users.SourceScope{}
 	for _, scope := range scopes {
-		if source, ok := Config.Server.SourceMap[scope.Name]; ok {
-			// Replace scope.Name with source.Path while keeping the same Scope value
+		source, ok := Config.Server.SourceMap[scope.Name]
+		if !ok {
+			// Case-insensitive fallback for Windows paths
+			for path, s := range Config.Server.SourceMap {
+				if strings.EqualFold(scope.Name, path) {
+					source = s
+					ok = true
+					logger.Debugf("ConvertToFrontendScopes: Matched case-insensitive %s -> %s", scope.Name, path)
+					break
+				}
+			}
+		}
+
+		if ok {
+			// Replace scope.Name (Path) with source.Name (Name)
 			newScopes = append(newScopes, users.SourceScope{
 				Name:  source.Name,
 				Scope: scope.Scope,
+				Alias: scope.Alias,
+			})
+		} else {
+			// If we can't map it back to a Source Name, we should still return it.
+			// The frontend might show the raw Path, but at least it won't be lost.
+			logger.Warningf("ConvertToFrontendScopes: Source lookup failed for path: %s. Returning raw path.", scope.Name)
+			newScopes = append(newScopes, users.SourceScope{
+				Name:  scope.Name, // Return raw path
+				Scope: scope.Scope,
+				Alias: scope.Alias,
 			})
 		}
 	}
@@ -398,19 +442,87 @@ func HasSourceByPath(scopes []users.SourceScope, sourcePath string) bool {
 	return false
 }
 
-func GetScopeFromSourceName(scopes []users.SourceScope, sourceName string) (string, error) {
+// GetScopeFromSourceName resolves a scope from a source name or alias.
+// Returns scopePath, realSourceName, and error.
+func GetScopeFromSourceName(scopes []users.SourceScope, sourceName string) (string, string, error) {
+	// 1. Check if sourceName is a Real Source Name configured in server
 	source, ok := Config.Server.NameToSource[sourceName]
-	if !ok {
-		logger.Debug("Could not get scope from source name: ", sourceName)
-		return "", fmt.Errorf("source with name not found %v", sourceName)
-	}
-	for _, scope := range scopes {
-		if scope.Name == source.Path {
-			return scope.Scope, nil
+	if ok {
+		// It matches a real source name. Look for the corresponding user scope.
+		for _, scope := range scopes {
+			if scope.Name == source.Path {
+				return scope.Scope, source.Name, nil
+			}
 		}
 	}
-	logger.Debugf("scope not found for source %v", sourceName)
-	return "", fmt.Errorf("scope not found for source %v", sourceName)
+
+	// 2. Check if sourceName is an Alias in the user's scopes
+	for _, scope := range scopes {
+		if scope.Alias == sourceName {
+			// Found alias match.
+			// scope.Name is the Source Path (e.g. /abs/path).
+			// Find the Source Name from the config using the path.
+			if src, ok := Config.Server.SourceMap[scope.Name]; ok {
+				return scope.Scope, src.Name, nil
+			} else {
+				// Fallback if SourceMap lookup fails (rare, config drift?)
+				// Try to find by value in NameToSource? SourceMap is definitive.
+				logger.Errorf("Alias %s points to source path %s which is not in SourceMap", sourceName, scope.Name)
+			}
+		}
+	}
+
+	logger.Debugf("scope not found for source/alias %v. Scopes count: %d", sourceName, len(scopes))
+	return "", "", fmt.Errorf("source with name or alias not found %v", sourceName)
+}
+
+// GetScopeFromSourceString parses a source string which might be "Name", "Name:Index", or "Alias"
+// and returns the corresponding scope path and real source name.
+func GetScopeFromSourceString(scopes []users.SourceScope, sourceString string) (string, string, error) {
+	// Check for "Name:Index" format
+	// NOTE: Aliases generally should NOT support :Index suffix as they are unique.
+	// We assume "Name" here refers to Real Name. User shouldn't verify Alias:Index.
+	if strings.Contains(sourceString, ":") {
+		parts := strings.Split(sourceString, ":")
+		if len(parts) == 2 {
+			name := parts[0]
+			indexStr := parts[1]
+			if idx, err := strconv.Atoi(indexStr); err == nil {
+				// Frontend uses the Global Array Index for the :Index suffix.
+				if idx >= 0 && idx < len(scopes) {
+					scope := scopes[idx]
+
+					// Verify the name matches expected source
+					// 1. Resolve 'name' to Source Object
+					source, ok := Config.Server.NameToSource[name]
+					if ok {
+						if scope.Name == source.Path {
+							return scope.Scope, source.Name, nil
+						}
+					}
+
+					// 2. Fallback: Maybe 'name' is an Alias? (Unlikely for Name:Index usage, but possible)
+					if scope.Alias == name {
+						// Find Real Name from scope.Name (Path)
+						if src, ok := Config.Server.SourceMap[scope.Name]; ok {
+							return scope.Scope, src.Name, nil
+						}
+					}
+
+					// Mismatch between requested Name and Scope at Index
+					// This implies the frontend Index and Name don't align with Backend User Scopes.
+					// This can happen if User Object logic differs.
+					// But we should trust the Index if it's valid? No, for security, verify name.
+					logger.Debugf("GetScopeFromSourceString: Index %d points to scope %v but name %s requested", idx, scope.Name, name)
+				}
+				return "", "", fmt.Errorf("scope index %d not found or name mismatch for source %v", idx, name)
+			}
+		}
+	}
+
+	// Fallback to standard lookup (Real Name or Alias)
+	logger.Debugf("GetScopeFromSourceString: Fallback to GetScopeFromSourceName for %s", sourceString)
+	return GetScopeFromSourceName(scopes, sourceString)
 }
 
 func GetScopeFromSourcePath(scopes []users.SourceScope, sourcePath string) (string, error) {

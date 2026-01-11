@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/gtsteffaniak/go-logger/logger"
 	"github.com/jims2025-bot/filebrowserquantum/backend/adapters/fs/files"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/errors"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
@@ -18,7 +19,6 @@ import (
 	"github.com/jims2025-bot/filebrowserquantum/backend/indexing"
 	"github.com/jims2025-bot/filebrowserquantum/backend/indexing/iteminfo"
 	"github.com/jims2025-bot/filebrowserquantum/backend/preview"
-	"github.com/gtsteffaniak/go-logger/logger"
 )
 
 // resourceGetHandler retrieves information about a resource.
@@ -54,10 +54,17 @@ func resourceGetHandler(w http.ResponseWriter, r *http.Request, d *requestContex
 	if err != nil {
 		return http.StatusBadRequest, fmt.Errorf("invalid path encoding: %v", err)
 	}
-	userscope, err := settings.GetScopeFromSourceName(d.user.Scopes, source)
+	if err != nil {
+		return http.StatusBadRequest, fmt.Errorf("invalid path encoding: %v", err)
+	}
+	// Parse scope index
+	var realSource string
+	userscope, realSource, err := settings.GetScopeFromSourceString(d.user.Scopes, source)
 	if err != nil {
 		return http.StatusForbidden, err
 	}
+	source = realSource
+
 	scopePath := utils.JoinPathAsUnix(userscope, path)
 	fileInfo, err := files.FileInfoFaster(iteminfo.FileOptions{
 		Path:    scopePath,
@@ -70,7 +77,12 @@ func resourceGetHandler(w http.ResponseWriter, r *http.Request, d *requestContex
 		return errToStatus(err), err
 	}
 	if userscope != "/" {
-		fileInfo.Path = strings.TrimPrefix(fileInfo.Path, userscope)
+		// Case-insensitive trimming for Windows compatibility
+		if len(fileInfo.Path) >= len(userscope) && strings.EqualFold(fileInfo.Path[:len(userscope)], userscope) {
+			fileInfo.Path = fileInfo.Path[len(userscope):]
+		} else {
+			fileInfo.Path = strings.TrimPrefix(fileInfo.Path, userscope)
+		}
 	}
 	if fileInfo.Path == "" {
 		fileInfo.Path = "/"
@@ -116,10 +128,16 @@ func resourceDeleteHandler(w http.ResponseWriter, r *http.Request, d *requestCon
 	if path == "/" {
 		return http.StatusForbidden, nil
 	}
-	userscope, err := settings.GetScopeFromSourceName(d.user.Scopes, source)
+	if path == "/" {
+		return http.StatusForbidden, nil
+	}
+	var realSource string
+	userscope, realSource, err := settings.GetScopeFromSourceString(d.user.Scopes, source)
 	if err != nil {
 		return http.StatusForbidden, err
 	}
+	source = realSource
+
 	fileInfo, err := files.FileInfoFaster(iteminfo.FileOptions{
 		Path:   utils.JoinPathAsUnix(userscope, path),
 		Source: source,
@@ -153,10 +171,16 @@ func resourcePostHandler(w http.ResponseWriter, r *http.Request, d *requestConte
 	if !d.user.Permissions.Modify {
 		return http.StatusForbidden, fmt.Errorf("user is not allowed to create or modify")
 	}
-	userscope, err := settings.GetScopeFromSourceName(d.user.Scopes, source)
+	if !d.user.Permissions.Modify {
+		return http.StatusForbidden, fmt.Errorf("user is not allowed to create or modify")
+	}
+	var realSource string
+	userscope, realSource, err := settings.GetScopeFromSourceString(d.user.Scopes, source)
 	if err != nil {
 		return http.StatusForbidden, err
 	}
+	source = realSource
+
 	fileOpts := iteminfo.FileOptions{
 		Path:   utils.JoinPathAsUnix(userscope, path),
 		Source: source,
@@ -211,10 +235,16 @@ func resourcePutHandler(w http.ResponseWriter, r *http.Request, d *requestContex
 	if strings.HasSuffix(path, "/") {
 		return http.StatusMethodNotAllowed, nil
 	}
-	userscope, err := settings.GetScopeFromSourceName(d.user.Scopes, source)
+	if strings.HasSuffix(path, "/") {
+		return http.StatusMethodNotAllowed, nil
+	}
+	var realSource string
+	userscope, realSource, err := settings.GetScopeFromSourceString(d.user.Scopes, source)
 	if err != nil {
 		return http.StatusForbidden, err
 	}
+	source = realSource
+
 	fileOpts := iteminfo.FileOptions{
 		Path:   utils.JoinPathAsUnix(userscope, path),
 		Source: source,
@@ -256,14 +286,22 @@ func resourcePatchHandler(w http.ResponseWriter, r *http.Request, d *requestCont
 	if dst == "/" || src == "/" {
 		return http.StatusForbidden, fmt.Errorf("forbidden: source or destination is attempting to modify root")
 	}
-	userscopeDst, err := settings.GetScopeFromSourceName(d.user.Scopes, dstIndex)
+	if dst == "/" || src == "/" {
+		return http.StatusForbidden, fmt.Errorf("forbidden: source or destination is attempting to modify root")
+	}
+	var realSourceDst, realSourceSrc string
+	userscopeDst, realSourceDst, err := settings.GetScopeFromSourceString(d.user.Scopes, dstIndex)
 	if err != nil {
 		return http.StatusForbidden, err
 	}
-	userscopeSrc, err := settings.GetScopeFromSourceName(d.user.Scopes, srcIndex)
+	userscopeSrc, realSourceSrc, err := settings.GetScopeFromSourceString(d.user.Scopes, srcIndex)
 	if err != nil {
 		return http.StatusForbidden, err
 	}
+	// Use real source names
+	dstIndex = realSourceDst
+	srcIndex = realSourceSrc
+
 	idx := indexing.GetIndex(dstIndex)
 	if idx == nil {
 		return http.StatusNotFound, fmt.Errorf("source %s not found", dstIndex)
@@ -369,6 +407,3 @@ func mockData(w http.ResponseWriter, r *http.Request) {
 	mockDir := utils.CreateMockData(NumDirs, numFiles)
 	renderJSON(w, r, mockDir) // nolint:errcheck
 }
-
-
-

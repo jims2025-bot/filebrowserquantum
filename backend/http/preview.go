@@ -59,10 +59,12 @@ func previewHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (
 	if path == "" {
 		return http.StatusBadRequest, fmt.Errorf("invalid request path")
 	}
-	userscope, err := settings.GetScopeFromSourceName(d.user.Scopes, source)
+	var realSource string
+	userscope, realSource, err := settings.GetScopeFromSourceString(d.user.Scopes, source)
 	if err != nil {
 		return http.StatusForbidden, err
 	}
+	source = realSource
 	fileInfo, err := files.FileInfoFaster(iteminfo.FileOptions{
 		Path:   utils.JoinPathAsUnix(userscope, path),
 		Modify: d.user.Permissions.Modify,

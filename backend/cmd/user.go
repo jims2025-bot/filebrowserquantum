@@ -3,11 +3,12 @@ package cmd
 import (
 	"fmt"
 	"reflect"
+	"strings"
 
+	"github.com/gtsteffaniak/go-logger/logger"
 	"github.com/jims2025-bot/filebrowserquantum/backend/adapters/fs/fileutils"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
 	"github.com/jims2025-bot/filebrowserquantum/backend/database/users"
-	"github.com/gtsteffaniak/go-logger/logger"
 )
 
 var createBackup = []bool{}
@@ -68,45 +69,47 @@ func validateUserInfo() {
 
 func updateUserScopes(user *users.User) bool {
 	newScopes := []users.SourceScope{}
-	seen := make(map[string]bool)
+	seenSources := make(map[string]bool)
 
-	// Build map for existing scopes by Name
-	existing := make(map[string]users.SourceScope)
+	// 1. Process existing user scopes (Preserve Alias, fix Casing)
 	for _, s := range user.Scopes {
-		existing[s.Name] = s
+		canonicalName := s.Name
+
+		// Try to match against live config to fix casing
+		for path := range settings.Config.Server.SourceMap {
+			if strings.EqualFold(s.Name, path) {
+				canonicalName = path
+				break
+			}
+		}
+
+		newScopes = append(newScopes, users.SourceScope{
+			Name:  canonicalName,
+			Scope: s.Scope,
+			Alias: s.Alias, // IMPORTANT: Preserve Alias
+		})
+		// Mark as seen using upper case for case-insensitive check later
+		seenSources[strings.ToUpper(canonicalName)] = true
 	}
 
-	// Preserve order by using Config.Server.Sources
+	// 2. Add Default-Enabled sources if not present
 	for _, src := range settings.Config.Server.Sources {
 		realsource, ok := settings.Config.Server.NameToSource[src.Name]
 		if !ok {
 			continue
 		}
-		existingScope, ok := existing[realsource.Path]
-		if ok {
-			// If scope is empty and there's a default, apply default
-			if existingScope.Scope == "" {
-				existingScope.Scope = src.Config.DefaultUserScope
-			}
-		} else if realsource.Config.DefaultEnabled {
-			existingScope.Scope = realsource.Config.DefaultUserScope
-		} else {
-			continue
-		}
 
-		newScopes = append(newScopes, users.SourceScope{
-			Name:  realsource.Path,
-			Scope: existingScope.Scope,
-		})
-		seen[realsource.Path] = true
-	}
-
-	// Preserve user-defined scopes not matching current sources, append to end
-	for _, s := range user.Scopes {
-		if !seen[s.Name] {
-			newScopes = append(newScopes, s)
+		// Check if we already have this source (Case-Insensitive check via Upper Key)
+		if !seenSources[strings.ToUpper(realsource.Path)] && realsource.Config.DefaultEnabled {
+			// Add default
+			newScopes = append(newScopes, users.SourceScope{
+				Name:  realsource.Path,
+				Scope: realsource.Config.DefaultUserScope,
+				// Alias left empty for auto-added defaults
+			})
 		}
 	}
+
 	changed := !reflect.DeepEqual(user.Scopes, newScopes)
 	user.Scopes = newScopes
 	return changed

@@ -192,10 +192,13 @@ func getMetadataHandler(w http.ResponseWriter, r *http.Request, d *requestContex
 	userScope := "/"
 	if d.user.Username != "publicUser" {
 		var err error
-		userScope, err = settings.GetScopeFromSourceName(d.user.Scopes, source)
+		var realSource string
+		userScope, realSource, err = settings.GetScopeFromSourceString(d.user.Scopes, source)
 		if err != nil && d.share == nil {
 			return http.StatusForbidden, fmt.Errorf("source %s is not available for user %s", source, d.user.Username)
 		}
+		// Use real source name for subsequent calls
+		source = realSource
 	}
 
 	idx := indexing.GetIndex(source)
@@ -245,10 +248,12 @@ func resourceGetInstructionsHandler(w http.ResponseWriter, r *http.Request, d *r
 	userScope := "/"
 	if d.user.Username != "publicUser" {
 		var err error
-		userScope, err = settings.GetScopeFromSourceName(d.user.Scopes, source)
+		var realSource string
+		userScope, realSource, err = settings.GetScopeFromSourceName(d.user.Scopes, source)
 		if err != nil && d.share == nil {
 			return http.StatusForbidden, fmt.Errorf("source %s is not available for user %s", source, d.user.Username)
 		}
+		source = realSource
 	}
 
 	idx := indexing.GetIndex(source)
@@ -306,10 +311,12 @@ func resourceInstructionsHandler(w http.ResponseWriter, r *http.Request, d *requ
 	userScope := "/"
 	if d.user.Username != "publicUser" {
 		var err error
-		userScope, err = settings.GetScopeFromSourceName(d.user.Scopes, source)
+		var realSource string
+		userScope, realSource, err = settings.GetScopeFromSourceString(d.user.Scopes, source)
 		if err != nil && d.share == nil {
 			return http.StatusForbidden, fmt.Errorf("source %s is not available for user %s", source, d.user.Username)
 		}
+		source = realSource
 	}
 
 	idx := indexing.GetIndex(source)

@@ -49,13 +49,23 @@ export async function fetchJSON(url, opts) {
   if (res.status < 300) {
     return res.json();
   } else {
-    notify.showError("received status: "+res.status+" on url " + url);
+    notify.showError("received status: " + res.status + " on url " + url);
     throw new Error(res.status);
   }
 }
 
+import { extractSourceFromPath } from "@/utils/url";
+
 export function adjustedData(data, url) {
   data.url = url;
+
+  // Use the source from the URL (which handles aliasing/indexing) 
+  // instead of what the backend returns (which might be the raw source name)
+  const extracted = extractSourceFromPath(url);
+  if (extracted.source) {
+    data.source = extracted.source;
+  }
+
   if (data.type === "directory") {
     if (!data.url.endsWith("/")) data.url += "/";
 

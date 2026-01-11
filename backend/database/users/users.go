@@ -71,6 +71,7 @@ type User struct {
 type SourceScope struct {
 	Name  string `json:"name"`
 	Scope string `json:"scope"`
+	Alias string `json:"alias"`
 }
 
 // json tags must match variable name with smaller case first letter

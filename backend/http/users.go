@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/gtsteffaniak/go-logger/logger"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/errors"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
 	"github.com/jims2025-bot/filebrowserquantum/backend/database/storage"
@@ -82,6 +83,7 @@ func userGetHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (
 		return http.StatusInternalServerError, err
 	}
 	prepForFrontend(u)
+	return renderJSON(w, r, u)
 	return renderJSON(w, r, u)
 }
 
@@ -208,6 +210,12 @@ func userPutHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (
 	if err = json.Unmarshal(body, &req); err != nil {
 		return http.StatusBadRequest, err
 	}
+	// Debug logging for user update
+	logger.Debugf("userPutHandler: Updating user %d. Received %d scopes.", req.Data.ID, len(req.Data.Scopes))
+	for i, s := range req.Data.Scopes {
+		logger.Debugf("  Scope[%d]: Name='%s', Scope='%s', Alias='%s'", i, s.Name, s.Scope, s.Alias)
+	}
+
 	if !req.Data.OtpEnabled {
 		req.Data.TOTPSecret = ""
 		req.Data.TOTPNonce = ""

@@ -12,13 +12,13 @@ import (
 	"time"
 
 	jwt "github.com/golang-jwt/jwt/v4"
+	"github.com/gtsteffaniak/go-cache/cache"
+	"github.com/gtsteffaniak/go-logger/logger"
 	"github.com/jims2025-bot/filebrowserquantum/backend/adapters/fs/files"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/utils"
 	"github.com/jims2025-bot/filebrowserquantum/backend/indexing"
 	"github.com/jims2025-bot/filebrowserquantum/backend/indexing/iteminfo"
-	"github.com/gtsteffaniak/go-cache/cache"
-	"github.com/gtsteffaniak/go-logger/logger"
 )
 
 var OnlyOfficeCache = cache.NewCache(48 * time.Hour)
@@ -65,10 +65,12 @@ func onlyofficeClientConfigGetHandler(w http.ResponseWriter, r *http.Request, d 
 		replacement := strings.Split(url, "/api/raw")[0]
 		url = strings.Replace(url, replacement, settings.Config.Server.InternalUrl, 1)
 	}
-	userscope, err := settings.GetScopeFromSourceName(d.user.Scopes, source)
+	var realSource string
+	userscope, realSource, err := settings.GetScopeFromSourceName(d.user.Scopes, source)
 	if err != nil {
 		return http.StatusForbidden, err
 	}
+	source = realSource
 	fileInfo, err := files.FileInfoFaster(iteminfo.FileOptions{
 		Path:   utils.JoinPathAsUnix(userscope, path),
 		Modify: d.user.Permissions.Modify,

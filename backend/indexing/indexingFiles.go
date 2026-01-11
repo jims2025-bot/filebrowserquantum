@@ -10,11 +10,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gtsteffaniak/go-cache/cache"
+	"github.com/gtsteffaniak/go-logger/logger"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/utils"
 	"github.com/jims2025-bot/filebrowserquantum/backend/indexing/iteminfo"
-	"github.com/gtsteffaniak/go-cache/cache"
-	"github.com/gtsteffaniak/go-logger/logger"
 )
 
 var RealPathCache = cache.NewCache(48*time.Hour, 72*time.Hour)
@@ -223,7 +223,13 @@ func (idx *Index) MakeIndexPath(subPath string) string {
 	}
 	// clean path
 	subPath = strings.TrimSuffix(subPath, "/")
-	adjustedPath := strings.TrimPrefix(subPath, idx.Source.Path)
+	var adjustedPath string
+	// Case-insensitive check for Windows
+	if len(subPath) >= len(idx.Source.Path) && strings.EqualFold(subPath[:len(idx.Source.Path)], idx.Source.Path) {
+		adjustedPath = subPath[len(idx.Source.Path):]
+	} else {
+		adjustedPath = strings.TrimPrefix(subPath, idx.Source.Path)
+	}
 	// remove index prefix
 	adjustedPath = strings.ReplaceAll(adjustedPath, "\\", "/")
 	// remove trailing slash
@@ -259,8 +265,23 @@ func (idx *Index) GetRealPath(relativePath ...string) (string, bool, error) {
 	if err != nil {
 		return absolutePath, false, fmt.Errorf("could not get real path: %v, %s", joinedPath, err)
 	}
-	// Resolve symlinks and get the real path
-	realPath, isDir, err := utils.ResolveSymlinks(absolutePath)
+	// Resolve symlinks and get the real path (Canonical Casing on Windows)
+	realPath, err := filepath.EvalSymlinks(absolutePath)
+	if err != nil {
+		// If file doesn't exist (e.g. invalid scope), EvalSymlinks fails.
+		// Fallback to absolutePath so we can at least log the attempted path later.
+		// Returning error here causes 500 in rawHandler immediately.
+		// We prefer to return the path and let GetReducedMetadata return "not found" (404-like).
+		return absolutePath, false, nil
+	}
+
+	// Check if directory
+	info, err := os.Stat(realPath)
+	// isDir is already declared at line 258
+	if err == nil {
+		isDir = iteminfo.IsDirectory(info)
+	}
+
 	if err == nil {
 		RealPathCache.Set(joinedPath, realPath)
 		RealPathCache.Set(joinedPath+":isdir", isDir)

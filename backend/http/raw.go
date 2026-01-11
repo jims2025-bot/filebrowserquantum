@@ -13,10 +13,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gtsteffaniak/go-logger/logger"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/utils"
 	"github.com/jims2025-bot/filebrowserquantum/backend/indexing"
-	"github.com/gtsteffaniak/go-logger/logger"
 )
 
 func setContentDisposition(w http.ResponseWriter, r *http.Request, fileName string) {
@@ -63,11 +63,13 @@ func addFile(path string, d *requestContext, tarWriter *tar.Writer, zipWriter *z
 	path = splitFile[1]
 	var err error
 	userScope := "/"
+	var realSource string
 	if d.user.Username != "publicUser" {
-		userScope, err = settings.GetScopeFromSourceName(d.user.Scopes, source)
+		userScope, realSource, err = settings.GetScopeFromSourceString(d.user.Scopes, source)
 		if d.share == nil && err != nil {
 			return fmt.Errorf("source %s is not available for user %s", source, d.user.Username)
 		}
+		source = realSource
 	}
 
 	idx := indexing.GetIndex(source)
@@ -192,19 +194,29 @@ func rawFilesHandler(w http.ResponseWriter, r *http.Request, d *requestContext, 
 	var err error
 	userscope := "/"
 	if d.user.Username != "publicUser" {
-		userscope, err = settings.GetScopeFromSourceName(d.user.Scopes, firstFileSource)
+		var realSource string
+		userscope, realSource, err = settings.GetScopeFromSourceString(d.user.Scopes, firstFileSource)
 		if err != nil {
+			logger.Errorf("GetScopeFromSourceString failed for source %s: %v", firstFileSource, err)
 			return http.StatusForbidden, err
 		}
+		// Use Real Source Name
+		firstFileSource = realSource
 	}
+
+	logger.Debugf("RawFilesHandler: Original Source: %s, UserScope: %s", firstFileSource, userscope)
+
 	idx := indexing.GetIndex(firstFileSource)
 	if idx == nil {
+		logger.Errorf("RawFilesHandler: Source index not found for %s", firstFileSource)
 		return http.StatusInternalServerError, fmt.Errorf("source %s is not available", firstFileSource)
 	}
 	realPath, isDir, err := idx.GetRealPath(userscope, firstFilePath)
 	if err != nil {
+		logger.Errorf("RawFilesHandler: GetRealPath failed for scope %s, path %s: %v", userscope, firstFilePath, err)
 		return http.StatusInternalServerError, err
 	}
+	logger.Debugf("RawFilesHandler: Resolved RealPath: %s", realPath)
 	// Compute estimated download size
 	estimatedSize, err := computeArchiveSize(fileList, d)
 	if err != nil {
@@ -323,27 +335,42 @@ func computeArchiveSize(fileList []string, d *requestContext) (int64, error) {
 		}
 		source := splitFile[0]
 		path := splitFile[1]
-		idx := indexing.GetIndex(source)
-		if idx == nil {
-			return 0, fmt.Errorf("source %s is not available", source)
-		}
 		var err error
 		userScope := "/"
 		if d.user.Username != "publicUser" {
-			userScope, err = settings.GetScopeFromSourceName(d.user.Scopes, source)
+			var realSource string
+			userScope, realSource, err = settings.GetScopeFromSourceString(d.user.Scopes, source)
 			if d.share == nil && err != nil {
 				return 0, fmt.Errorf("source %s is not available for user %s", source, d.user.Username)
 			}
+			source = realSource
+		}
+
+		idx := indexing.GetIndex(source)
+		if idx == nil {
+			return 0, fmt.Errorf("source %s is not available", source)
 		}
 		realPath, isDir, err := idx.GetRealPath(userScope, path)
 		if err != nil {
 			return http.StatusInternalServerError, err
 		}
-		indexPath := idx.MakeIndexPath(realPath)
+
+		// Use logical path for metadata lookup to avoid casing issues with MakeIndexPath(realPath)
+		indexPath := utils.JoinPathAsUnix(userScope, path)
 		info, ok := idx.GetReducedMetadata(indexPath, isDir)
 		if !ok {
-			return 0, fmt.Errorf("failed to get metadata info for %s", path)
+			// Check if we need to try with MakeIndexPath as fallback?
+			// No, logical path should be robust if metadata exists.
+			// But let's log specifically if this fails.
+			logger.Errorf("computeArchiveSize: Metadata missing for path: %s, UserScope: %s, IndexPath: %s", path, userScope, indexPath)
+			// Try MakeIndexPath as fallback just in case Symlinks usage makes logical path invalid
+			indexPath = idx.MakeIndexPath(realPath)
+			info, ok = idx.GetReducedMetadata(indexPath, isDir)
+			if !ok {
+				return 0, fmt.Errorf("failed to get metadata info for %s", path)
+			}
 		}
+		logger.Debugf("computeArchiveSize: Found metadata for %s. Size: %d", indexPath, info.Size)
 		estimatedSize += info.Size
 	}
 	return estimatedSize, nil

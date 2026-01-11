@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/gtsteffaniak/go-logger/logger"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
 	"github.com/jims2025-bot/filebrowserquantum/backend/database/users"
 )
@@ -22,11 +24,26 @@ func MakeUserDirs(u *users.User, disableScopeChange bool) error {
 	if cleanedUserName == "" || cleanedUserName == "-" || cleanedUserName == "." {
 		return fmt.Errorf("create user: invalid user for home dir creation: [%s]", u.Username)
 	}
+
 	for i, scope := range u.Scopes {
 		source, ok := settings.Config.Server.SourceMap[scope.Name]
 		if !ok {
-			return fmt.Errorf("create user: source not found: %s", scope.Name)
+			// Case-insensitive fallback
+			found := false
+			for path, s := range settings.Config.Server.SourceMap {
+				if strings.EqualFold(scope.Name, path) {
+					source = s
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				logger.Error("create user: source not found for scope: " + scope.Name)
+				continue
+			}
 		}
+
 		// create directory and append user name
 		if filepath.Base(scope.Scope) != cleanedUserName && source.Config.CreateUserDir && !disableScopeChange {
 			fullPath := filepath.Join(source.Path, scope.Scope, cleanedUserName)
@@ -55,7 +72,8 @@ func MakeUserDirs(u *users.User, disableScopeChange bool) error {
 			// just assigning scope to path provided, so just check that it exists
 			path := filepath.Join(source.Path, scope.Scope)
 			if !Exists(path) {
-				return fmt.Errorf("create user: scope folder does not exist: %s", path)
+				// Log warning but allow save to proceed
+				logger.Warningf("create user: scope folder does not exist: %s. Proceeding with save.", path)
 			}
 		}
 		u.Scopes[i] = scope
