@@ -415,6 +415,20 @@
                  ></iframe>
               </div>
             </div>
+            
+            <!-- Empty State / Add Location -->
+            <div v-else style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px; text-align: center; height: 100%; opacity: 0.6;">
+                 <i class="material-icons" style="font-size: 48px; margin-bottom: 10px;">location_off</i>
+                 <div style="margin-bottom: 20px;">No location data.</div>
+                 <button 
+                    v-if="canEditCoordinates" 
+                    @click="startEditCoordinates" 
+                    class="button button--flat"
+                    style="border: 1px solid currentColor; padding: 5px 15px;"
+                 >
+                    <i class="material-icons">add_location</i> Add Location
+                 </button>
+            </div>
       </div>
     </div>
   </div>
@@ -1038,6 +1052,7 @@ export default {
                  this.mapInstance.remove(); 
              } catch(e) { /* ignore */ }
              this.mapInstance = null;
+             this.mapMarker = null; // Important: Reset marker so it gets recreated on new map
         }
 
         // Default view
@@ -1458,7 +1473,7 @@ findInstructionDeep(obj) {
             
             await usersApi.update(userUpdate, ['savedLocations']);
             await usersApi.update(userUpdate, ['savedLocations']);
-            mutations.updateUser({ ...state.user, savedLocations: this.savedLocations });
+            mutations.updateCurrentUser({ ...state.user, savedLocations: this.savedLocations });
              notify.showSuccess('Location deleted');
         } catch (e) {
              console.error(e);
@@ -1521,9 +1536,10 @@ findInstructionDeep(obj) {
             delete userUpdate.viewMode; // prevent other things from resetting if API is sensitive
             // Actually users.js update handles filtering.
             
+            delete userUpdate.viewMode; // Avoid sending viewMode if it's local
+            
             await usersApi.update(userUpdate, ['savedLocations']);
-            await usersApi.update(userUpdate, ['savedLocations']);
-            mutations.updateUser({ ...state.user, savedLocations: this.savedLocations });
+            mutations.updateCurrentUser({ ...state.user, savedLocations: this.savedLocations });
              notify.showSuccess('Location saved to profile');
         } catch (e) {
              console.error(e);
