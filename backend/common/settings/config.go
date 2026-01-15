@@ -445,30 +445,52 @@ func HasSourceByPath(scopes []users.SourceScope, sourcePath string) bool {
 // GetScopeFromSourceName resolves a scope from a source name or alias.
 // Returns scopePath, realSourceName, and error.
 func GetScopeFromSourceName(scopes []users.SourceScope, sourceName string) (string, string, error) {
-	// 1. Check if sourceName is a Real Source Name configured in server
+	// 1. Check if sourceName is a Real Source Name configured in server (Case-Insensitive)
+	// Try direct lookup first for speed
 	source, ok := Config.Server.NameToSource[sourceName]
+	if !ok {
+		// Case-insensitive fallback
+		for name, src := range Config.Server.NameToSource {
+			if strings.EqualFold(name, sourceName) {
+				source = src
+				ok = true
+				break
+			}
+		}
+	}
+
 	if ok {
 		// It matches a real source name. Look for the corresponding user scope.
 		for _, scope := range scopes {
+			// Check if user has this path
 			if scope.Name == source.Path {
+				return scope.Scope, source.Name, nil
+			}
+			// Windows/Case-Insensitive Path check
+			if strings.EqualFold(scope.Name, source.Path) {
 				return scope.Scope, source.Name, nil
 			}
 		}
 	}
 
-	// 2. Check if sourceName is an Alias in the user's scopes
+	// 2. Check if sourceName is an Alias in the user's scopes (Case-Insensitive)
 	for _, scope := range scopes {
-		if scope.Alias == sourceName {
+		if strings.EqualFold(scope.Alias, sourceName) {
 			// Found alias match.
 			// scope.Name is the Source Path (e.g. /abs/path).
 			// Find the Source Name from the config using the path.
 			if src, ok := Config.Server.SourceMap[scope.Name]; ok {
 				return scope.Scope, src.Name, nil
-			} else {
-				// Fallback if SourceMap lookup fails (rare, config drift?)
-				// Try to find by value in NameToSource? SourceMap is definitive.
-				logger.Errorf("Alias %s points to source path %s which is not in SourceMap", sourceName, scope.Name)
 			}
+
+			// Try case-insensitive lookup in SourceMap
+			for path, src := range Config.Server.SourceMap {
+				if strings.EqualFold(scope.Name, path) {
+					return scope.Scope, src.Name, nil
+				}
+			}
+
+			logger.Errorf("Alias %s points to source path %s which is not in SourceMap", sourceName, scope.Name)
 		}
 	}
 
