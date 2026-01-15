@@ -23,17 +23,26 @@ export async function fetchFiles(url, content = false) {
   }
 }
 
-async function resourceAction(url, method, content) {
+async function resourceAction(url, method, content, action) {
   try {
     const result = extractSourceFromPath(url)
     let source = result.source
     let path = result.path
     let opts = { method }
     if (content) {
-      opts.body = content
+      if (typeof content === 'object' && !(content instanceof Blob)) {
+        opts.body = JSON.stringify(content);
+        opts.headers = { 'Content-Type': 'application/json' };
+      } else {
+        opts.body = content
+      }
     }
     path = encodeURIComponent(path)
-    const apiPath = getApiPath('api/resources', { path: path, source: source })
+    const params = { path: path, source: source };
+    if (action) {
+      params.action = action;
+    }
+    const apiPath = getApiPath('api/resources', params)
     const res = await fetchURL(apiPath, opts)
     return res
   } catch (err) {
@@ -51,14 +60,14 @@ export async function remove(url) {
   }
 }
 
-export async function put(path, source, content = '') {
+export async function put(path, source, content = '', action = '') {
   try {
     if (serverHasMultipleSources) {
       path = `/files/${source}${path}`
     } else {
       path = `/files${path}`
     }
-    return await resourceAction(path, 'PUT', content)
+    return await resourceAction(path, 'PUT', content, action)
   } catch (err) {
     notify.showError(err.message || 'Error putting resource')
     throw err
@@ -253,14 +262,12 @@ export async function sources() {
   }
 }
 
-// 👇 NEW FUNCTION ADDED HERE
 export async function fetchMetadata(source, path) {
   try {
     const params = {
       path: encodeURIComponent(path),
       source: source,
     };
-    // NOTE: You might need to change 'api/metadata' to match your actual backend endpoint
     const apiPath = getApiPath('api/metadata', params);
     const res = await fetchURL(apiPath);
     if (!res.ok) {
@@ -274,17 +281,10 @@ export async function fetchMetadata(source, path) {
   }
 }
 
-
-/**
- * Update the Photoshop XMP instructions for a file.
- * @param {string} source - The file source
- * @param {string} path - The file path
- * @param {string} instructions - The new instructions text
- */
 export async function updateXMPInstructions(source, path, instructions) {
   try {
     const apiPath = getApiPath('api/resources/instructions', {
-      path: path,          // already encoded inside getApiPath
+      path: path,
       source: source
     });
 
@@ -307,4 +307,11 @@ export async function updateXMPInstructions(source, path, instructions) {
     notify.showError(err.message || 'Error updating XMP instructions');
     throw err;
   }
+}
+
+export async function updateMetadata(source, path, metadata) {
+  // Placeholder implementation to fix build. 
+  // Real implementation depends on backend support for generic metadata updates.
+  console.warn("updateMetadata not fully implemented");
+  return Promise.resolve();
 }

@@ -291,59 +291,133 @@
           <p v-else>Loading XMP metadata...</p>
         </div>
 
-        <div v-if="activeTab === 'map'" class="tab-pane">
-          <h3>Map Location</h3>
-          <div v-if="gpsCoordinates">
-            <div style="display: flex; align-items: center; margin-bottom: 1rem;">
-              <p style="margin: 0; margin-right: 10px;">
-                <strong>Coordinates:</strong> {{ gpsCoordinates.lat.toFixed(6) }}, {{ gpsCoordinates.lon.toFixed(6) }}
-              </p>
-              <button 
-                @click="copyCoordinates" 
-                class="button button--flat" 
-                title="Copy coordinates"
-                aria-label="Copy coordinates"
-                style="padding: 0; min-width: 36px; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;"
-              >
-                <i class="material-icons" style="font-size: 18px;">content_copy</i>
-              </button>
-              
-              <a 
-                v-if="gpsCoordinates"
-                :href="'https://www.google.com/maps/search/?api=1&query=' + gpsCoordinates.lat + ',' + gpsCoordinates.lon" 
-                target="_blank" 
-                class="button button--flat" 
-                title="Open in Google Maps"
-                style="margin-left: 10px; display: flex; align-items: center; text-decoration: none; color: inherit;"
-              >
-                <i class="material-icons">map</i>
-                <span style="margin-left: 5px;">Open in Google Maps</span>
-              </a>
+          <div v-if="activeTab === 'map'" class="tab-pane" style="height: 100%; display: flex; flex-direction: column;">
+
+            
+            <div v-if="isEditingCoordinates" class="coordinate-editor" style="margin-bottom: 0px; padding: 5px; background: rgba(0,0,0,0.05); border-radius: 4px; display: flex; flex-direction: column; height: 100%; overflow: hidden;">
+               
+               <div style="flex: 0 0 auto;">
+                   <!-- Inputs Line -->
+                   <div style="display: flex; gap: 5px; align-items: center; margin-bottom: 5px;">
+                        <div style="display: flex; gap: 5px; align-items: center; flex: 1;">
+                            <label style="font-size: 0.8em; margin: 0; white-space: nowrap;">Lat:</label>
+                            <input type="number" step="any" v-model.number="editLat" @input="handleCoordInput($event, 'editLat')" class="input input--block" style="padding: 2px 5px; height: 28px; font-size: 0.9em; min-width: 0;">
+                            <label style="font-size: 0.8em; margin: 0; white-space: nowrap;">Lon:</label>
+                            <input type="number" step="any" v-model.number="editLon" @input="handleCoordInput($event, 'editLon')" class="input input--block" style="padding: 2px 5px; height: 28px; font-size: 0.9em; min-width: 0;">
+                        </div>
+                   </div>
+
+                   <!-- Buttons Line -->
+                   <div style="display: flex; gap: 5px; justify-content: flex-end; margin-bottom: 5px;">
+                        <div style="display: flex; gap: 3px;">
+                             <button 
+                                @click="saveCoordinates" 
+                                class="button button--flat"
+                                :class="{'button--primary': hasUnsavedCoordinates}"
+                                :style="hasUnsavedCoordinates ? 'background-color: #2196f3; color: white;' : ''"
+                                style="padding: 2px 6px; min-height: 28px; line-height: 1; font-size: 0.9em;"
+                             >Save</button>
+                            <button @click="cancelEditCoordinates" class="button button--flat" style="opacity: 0.7; padding: 2px 6px; min-height: 28px; line-height: 1; font-size: 0.9em;">Cancel</button>
+                            <button @click="saveLocationToProfile" class="button button--flat" title="Save" style="padding: 2px 6px; min-height: 28px;">
+                                <i class="material-icons" style="font-size: 16px;">bookmark_add</i>
+                            </button>
+                       </div>
+                   </div>
+
+                    <div style="display: flex; gap: 5px; border-bottom: 1px solid rgba(0,0,0,0.1); margin-bottom: 5px; padding-bottom: 5px; align-items: center;">
+                        <button @click="editTab = 'location'" class="button button--flat" :style="editTab === 'location' ? 'font-weight: bold; border-bottom: 2px solid #2196f3;' : ''" style="padding: 2px 8px; min-height: 24px; line-height: 1; font-size: 0.9em;">Location</button>
+                        <button @click="editTab = 'locations'" class="button button--flat" :style="editTab === 'locations' ? 'font-weight: bold; border-bottom: 2px solid #2196f3;' : ''" style="padding: 2px 8px; min-height: 24px; line-height: 1; font-size: 0.9em;">Saved</button>
+                    </div>
+                </div>
+
+                <div v-show="editTab === 'location'" style="flex: 1; min-height: 0; display: flex; flex-direction: column;">
+                     <!-- Search Box Moved Here -->
+                     <div style="display: flex; gap: 5px; margin-bottom: 5px;">
+                        <input type="text" v-model="searchQuery" @keyup.enter="searchLocation" placeholder="Search..." class="input input--block" style="flex: 1; padding: 2px 5px; height: 28px; font-size: 0.9em;">
+                        <button @click="searchLocation" class="button button--flat" title="Search" style="padding: 0 8px; min-height: 28px;"><i class="material-icons" style="font-size: 18px;">search</i></button>
+                     </div>
+                     <!-- Explicit height to fix 0px issue: flex-none with static height -->
+                     <div class="map-container" style="flex: 0 0 300px; width: 100%; position: relative; background: #f0f0f0; border: 1px solid #ccc; height: 300px;">
+                        <div id="leafletMap" ref="leafletMap" style="width: 100%; height: 100%; z-index: 1;"></div>
+                     </div>
+                    <div style="font-size: 0.7em; color: #888; margin-top: 2px; display: flex; justify-content: space-between;">
+                        <span>{{ mapStatus }}</span>
+                        <span style="opacity: 0.7;">Click map to set.</span>
+                    </div>
+               </div>
+               
+               <div v-if="editTab === 'locations'" style="flex: 1; overflow-y: auto;">
+                   <div v-if="savedLocations.length === 0" style="padding: 10px; opacity: 0.6; font-style: italic; font-size: 0.9em;">No saved locations.</div>
+                   <div v-for="(loc, idx) in savedLocations" :key="idx" style="display: flex; justify-content: space-between; align-items: center; padding: 5px 10px; border-bottom: 1px solid #eee; cursor: pointer;" @click="loadSavedLocationIdx(idx)">
+                       <span style="font-weight: bold; color: #2196f3; font-size: 0.9em;">{{ loc.name }}</span>
+                       <div @click.stop>
+                            <button @click="deleteSavedLocationIdx(idx)" class="button button--flat" title="Delete" style="color: #f44336; padding: 2px; min-height: 24px;">
+                               <i class="material-icons" style="font-size: 16px;">delete</i>
+                            </button>
+                       </div>
+                   </div>
+               </div>
             </div>
 
-            <div class="map-container">
-              <iframe 
-                width="100%" 
-                height="400" 
-                frameborder="0" 
-                scrolling="no" 
-                marginheight="0" 
-                marginwidth="0" 
-                :src="`https://www.openstreetmap.org/export/embed.html?bbox=${gpsCoordinates.lon-0.01}%2C${gpsCoordinates.lat-0.01}%2C${gpsCoordinates.lon+0.01}%2C${gpsCoordinates.lat+0.01}&amp;layer=mapnik&amp;marker=${gpsCoordinates.lat}%2C${gpsCoordinates.lon}`"
-                style="border: 1px solid black"
-              ></iframe>
-              <br/>
-              <small>
-                <a :href="`https://www.openstreetmap.org/?mlat=${gpsCoordinates.lat}&amp;mlon=${gpsCoordinates.lon}#map=16/${gpsCoordinates.lat}/${gpsCoordinates.lon}`" target="_blank">
-                  View Larger Map
-                </a>
-              </small>
+            <div v-else-if="gpsCoordinates" style="display: flex; flex-direction: column; height: 100%;">
+              <!-- Compact Toolbar -->
+              <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px; flex-wrap: wrap; font-size: 0.9em; padding: 5px; background: rgba(0,0,0,0.03); border-radius: 4px;">
+                  <div style="display: flex; align-items: center; gap: 5px;">
+                      <strong style="white-space: nowrap;">Coords:</strong> 
+                      <span style="font-family: monospace;">{{ gpsCoordinates.lat.toFixed(8) }}, {{ gpsCoordinates.lon.toFixed(8) }}</span>
+                  </div>
+                  
+                  <div style="flex: 1;"></div> <!-- Spacer -->
+
+                  <div style="display: flex; gap: 5px;">
+                      <button 
+                        @click="copyCoordinates" 
+                        class="button button--flat" 
+                        title="Copy"
+                        style="padding: 2px 6px; min-width: auto; min-height: 26px; line-height: 1;"
+                      >
+                        <i class="material-icons" style="font-size: 16px;">content_copy</i>
+                      </button>
+                      
+                      <a 
+                        :href="'https://www.google.com/maps/search/?api=1&query=' + gpsCoordinates.lat + ',' + gpsCoordinates.lon" 
+                        target="_blank" 
+                        class="button button--flat" 
+                        title="Open Google Maps"
+                        style="padding: 2px 6px; min-width: auto; min-height: 26px; line-height: 1; display: flex; align-items: center; text-decoration: none; color: inherit;"
+                      >
+                        <i class="material-icons" style="font-size: 16px;">map</i>
+                      </a>
+
+                      <button 
+                        v-if="canEditCoordinates" 
+                        @click="startEditCoordinates" 
+                        class="button button--flat" 
+                        title="Edit"
+                        style="padding: 2px 6px; min-width: auto; min-height: 26px; line-height: 1;"
+                      >
+                        <i class="material-icons" style="font-size: 16px;">edit</i>
+                      </button>
+                  </div>
+              </div>
+
+              <!-- Map iframe: Flex 1 to fill height (Taller) -->
+              <div style="flex: 1; width: 100%; position: relative; min-height: 400px;">
+                 <iframe 
+                    width="100%" 
+                    height="100%" 
+                    frameborder="0" 
+                    scrolling="no" 
+                    marginheight="0" 
+                    marginwidth="0" 
+                    :src="'https://maps.google.com/maps?q=' + gpsCoordinates.lat + ',' + gpsCoordinates.lon + '&z=15&output=embed'"
+                    style="position: absolute; top: 0; left: 0;"
+                 ></iframe>
+              </div>
             </div>
-          </div>
-          <p v-else>No GPS data found for this image.</p>
-        </div>
       </div>
     </div>
+  </div>
 
     <!-- Navigation Buttons -->
     <!-- Navigation Buttons - Hidden as per request for Click/Swipe Nav -->
@@ -369,6 +443,8 @@
 
 <script>
 import * as filesApi from "@/api/files.js";
+import * as usersApi from "@/api/users.js"; // Import usersApi
+import { notify } from "@/notify"; // Import notify
 import url from "@/utils/url.js";
 import throttle from "@/utils/throttle";
 import { state, getters, mutations } from "@/store";
@@ -377,6 +453,18 @@ import { convertToVTT } from "@/utils/subtitles";
 import { getTypeInfo } from "@/utils/mimetype";
 import moment from "moment";
 import panzoom from "panzoom"; // Import panzoom
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+
+// Fix Leaflet icon issue
+delete L.Icon.Default.prototype._getIconUrl;
+
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+});
+
 
 export default {
   name: "preview",
@@ -400,6 +488,20 @@ export default {
       currentPrompt: null,
       subtitlesList: [],
       activeTab: "details",
+      
+      // Map Editing
+      isEditingCoordinates: false,
+      searchQuery: "",
+      editLat: 0,
+      editLon: 0,
+      savedLocations: [], // fetched from user profile
+      selectedSavedLocationIdx: null,
+      mapStatus: "", // Text status is fine to be reactive
+      
+      // Edit Settings Tabs
+      editTab: 'location', // 'location' | 'locations'
+      mapBasemap: 'hybrid', // 'hybrid' | 'streets' | 'osm'
+
       tabs: [
         { name: "details", label: "Details" },
         { name: "exif", label: "EXIF" },
@@ -442,6 +544,18 @@ export default {
     showInstructionsModal() {
       return getters.isInstructionsEditMode();
     },
+    canEditCoordinates() {
+        return state.user?.permissions?.modify === true;
+    },
+    hasUnsavedCoordinates() {
+        if (!this.gpsCoordinates) {
+            return this.editLat !== 0 || this.editLon !== 0; // If no original, any change from 0 is "unsaved"
+        }
+        // Use a small epsilon for float comparison or just direct
+        return Math.abs(this.editLat - this.gpsCoordinates.lat) > 0.000001 || 
+               Math.abs(this.editLon - this.gpsCoordinates.lon) > 0.000001;
+    },
+
     sidebarShowing() {
       return getters.isSidebarVisible();
     },
@@ -637,6 +751,7 @@ export default {
         }
       });
     },
+
     activeTab(newTab) {
       if (newTab === "xmp") {
          // Only update dimensions if we don't have a panzoom instance, 
@@ -646,6 +761,11 @@ export default {
          }
          this.dimensionRetryCount = 0;
          this.$nextTick(() => this.updateImageDimensions());
+      }
+      if (newTab === "map") {
+         this.$nextTick(() => {
+             this.initMap();
+         });
       }
     },
     isMetadataVisible(newValue) {
@@ -665,6 +785,11 @@ export default {
 		this.metadata.xmp['photoshop:Instructions'] = newVal;
 		}
    	  }
+  },
+  created() {
+      // Non-reactive properties for Leaflet
+      this.mapInstance = null;
+      this.mapMarker = null;
   },
   async mounted() {
     window.addEventListener("keydown", this.key);
@@ -698,6 +823,10 @@ export default {
     window.removeEventListener("resize", this.updateImageDimensions);
     
     this.disposePanzoom();
+    if (this.mapInstance) {
+        this.mapInstance.remove();
+        this.mapInstance = null;
+    }
   },
   methods: {
     handlePreviewClick(event) {
@@ -793,8 +922,209 @@ export default {
 		this.showInstructionsModal = false;
 	},	
 	
+
+    
+    async retrieveSavedLocations() {
+         // Should be in user profile.
+         // We might need an API to update just the user settings/profile?
+         // Assuming state.user has it, but local modification needs to push change back.
+         // For now, let's look at state.user.savedLocations
+         if (state.user && state.user.savedLocations) {
+             this.savedLocations = JSON.parse(JSON.stringify(state.user.savedLocations));
+         }
+    },
+    
+    startEditCoordinates() {
+        this.retrieveSavedLocations();
+        this.isEditingCoordinates = true;
+        this.activeTab = 'map'; // Ensure map tab is active
+        this.editTab = 'location'; // Ensure location edit tab is active
+
+        if (this.gpsCoordinates) {
+            this.editLat = parseFloat(this.gpsCoordinates.lat.toFixed(8));
+            this.editLon = parseFloat(this.gpsCoordinates.lon.toFixed(8));
+        } else {
+            // Default to 0,0 or map center
+            this.editLat = 0;
+            this.editLon = 0;
+        }
+        
+        // Wait for DOM to render the map container
+        this.$nextTick(() => {
+             this.initMap(this.editLat, this.editLon); // Initialize map with current/default coords
+             this.updateMapMarker(this.editLat, this.editLon);
+        });
+    },
+    cancelEditCoordinates() {
+        this.isEditingCoordinates = false;
+        // Reset marker to actual GPS if exists
+        if (this.gpsCoordinates) {
+             this.updateMapMarker(this.gpsCoordinates.lat, this.gpsCoordinates.lon);
+        } else if (this.mapMarker) {
+            this.mapInstance.removeLayer(this.mapMarker);
+            this.mapMarker = null;
+        }
+    },
+    async saveCoordinates() {
+        try {
+            await filesApi.put(this.req.path, this.req.source, {
+                latitude: this.editLat,
+                longitude: this.editLon
+            }, "exif");
+            
+            // Wait a bit or manually update metadata?
+            // Reload metadata
+            this.metadataCache = {}; // Clear cache
+            await this.fetchMetadata();
+            this.isEditingCoordinates = false;
+            notify.showSuccess('Coordinates updated');
+             // Also update local GPS if not doing full fetch:
+             // But fetchMetadata should handle it.
+        } catch (e) {
+            console.error(e);
+             notify.showError('Failed to update coordinates');
+        }
+
+    },
+    async searchLocation() {
+        if (!this.searchQuery) return;
+        try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(this.searchQuery)}`);
+            const data = await res.json();
+            if (data && data.length > 0) {
+                const lat = parseFloat(data[0].lat);
+                const lon = parseFloat(data[0].lon);
+                
+                // Truncate to 8 decimals as requested
+                this.editLat = parseFloat(lat.toFixed(8));
+                this.editLon = parseFloat(lon.toFixed(8));
+                
+                this.mapInstance.setView([lat, lon], 13);
+                this.updateMapMarker(this.editLat, this.editLon);
+            } else {
+                  console.log("No results found for", this.searchQuery);
+                  notify.showError('Location not found');
+            }
+        } catch (e) {
+            console.error(e);
+             notify.showError('Search failed');
+        }
+    },
+
+    handleCoordInput(event, field) {
+        let val = event.target.value;
+        if (val.indexOf('.') > -1) {
+            const parts = val.split('.');
+            if (parts[1].length > 8) {
+                // Truncate to 8 decimals
+                val = parts[0] + '.' + parts[1].substring(0, 8);
+                // Update component data
+                this[field] = parseFloat(val);
+                // Force update input value visually if needed (Vue's v-model might lag on raw string edit)
+                this.$forceUpdate();
+            }
+        }
+    },
+    initMap() {
+        // Use ref instead of ID
+        const mapContainer = this.$refs.leafletMap;
+        if (!mapContainer) {
+             console.warn("Leaflet container ref not found, retrying...");
+             return;
+        }
+
+        if (this.mapInstance) {
+             try {
+                 this.mapInstance.remove(); 
+             } catch(e) { /* ignore */ }
+             this.mapInstance = null;
+        }
+
+        // Default view
+        let lat = 0;
+        let lon = 0;
+        let zoom = 2;
+
+        if (this.gpsCoordinates) {
+            lat = this.gpsCoordinates.lat;
+            lon = this.gpsCoordinates.lon;
+            zoom = 13;
+        } else if (this.editLat !== 0 || this.editLon !== 0) {
+            lat = this.editLat;
+            lon = this.editLon;
+            zoom = 13;
+        }
+
+        // Create Layers
+        const hybrid = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',{
+            maxZoom: 20,
+            attribution: 'Google'
+        });
+
+        const streets = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',{
+            maxZoom: 20,
+            attribution: 'Google'
+        });
+
+        const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap'
+        });
+
+        // Initialize map
+        // Default to Hybrid (Aerial)
+        this.mapInstance = L.map(mapContainer, { 
+            preferCanvas: true,
+            layers: [hybrid] // Default layer
+        }).setView([lat, lon], zoom);
+
+        // Add Layer Control
+        const baseMaps = {
+            "Aerial (Hybrid)": hybrid,
+            "Streets": streets,
+            "OpenStreetMap": osm
+        };
+        L.control.layers(baseMaps).addTo(this.mapInstance);
+
+        this.updateMapMarker(lat, lon);
+        
+        this.mapStatus = `Map initialized. Size: ${mapContainer.offsetWidth}x${mapContainer.offsetHeight}`;
+
+        this.mapInstance.on('click', (e) => {
+             this.editLat = parseFloat(e.latlng.lat.toFixed(8));
+             this.editLon = parseFloat(e.latlng.lng.toFixed(8));
+             this.updateMapMarker(this.editLat, this.editLon);
+        });
+        
+        // Force resize
+        setTimeout(() => {
+            if (this.mapInstance) {
+                this.mapInstance.invalidateSize();
+                this.mapStatus += " -> Resized";
+            }
+        }, 500);
+    },
+    
+    forceReloadMap() {
+        this.initMap();
+    },
+
+
+
+    updateMapMarker(lat, lon) {
+        if (!this.mapInstance) return;
+
+        if (this.mapMarker) {
+            this.mapMarker.setLatLng([lat, lon]);
+        } else {
+            this.mapMarker = L.marker([lat, lon]).addTo(this.mapInstance);
+        }
+        // Pan map to marker if it's far off?
+        // Maybe optional.
+    },
+    
+    // Resume existing getMetadata
     async getMetadata(source, path) {
-       // Check cache
        if (this.metadataCache[path]) {
            return this.metadataCache[path];
        }
@@ -1098,15 +1428,148 @@ findInstructionDeep(obj) {
         
         // Update original to prevent re-saving
         this.originalInstructions = this.photoshopInstructions;
-
-        // Do NOT close modal (Persistence)
-        // this.showInstructionsModal = false; 
-        
-        //console.log("Photoshop instructions saved to:", metadataPath);
       } catch (err) {
         console.error("Failed to save Photoshop instructions:", err);
         alert("Failed to save instructions.");
       }
+    },
+
+    loadSavedLocationIdx(idx) {
+        if (idx === null || !this.savedLocations[idx]) return;
+        
+        const loc = this.savedLocations[idx];
+        this.editLat = parseFloat(Number(loc.lat).toFixed(8));
+        this.editLon = parseFloat(Number(loc.lon).toFixed(8));
+        this.updateMapMarker(loc.lat, loc.lon);
+        if (this.mapInstance) {
+            this.mapInstance.setView([loc.lat, loc.lon], 13);
+        }
+    },
+    
+    async deleteSavedLocationIdx(idx) {
+        if (!confirm("Are you sure you want to delete this saved location?")) return;
+        
+        // Remove from array
+        this.savedLocations.splice(idx, 1);
+        
+         try {
+            const userUpdate = { ...state.user, savedLocations: this.savedLocations };
+            delete userUpdate.viewMode; 
+            
+            await usersApi.update(userUpdate, ['savedLocations']);
+            await usersApi.update(userUpdate, ['savedLocations']);
+            mutations.updateUser({ ...state.user, savedLocations: this.savedLocations });
+             notify.showSuccess('Location deleted');
+        } catch (e) {
+             console.error(e);
+             notify.showError('Failed to delete location');
+        }
+    },
+
+    updateBaseLayer() {
+        if (!this.mapInstance) return;
+        
+        // Remove existing tile layers
+        this.mapInstance.eachLayer((layer) => {
+            if (layer instanceof L.TileLayer) {
+                this.mapInstance.removeLayer(layer);
+            }
+        });
+
+        let url = '';
+        let options = { maxZoom: 20 };
+
+        if (this.mapBasemap === 'hybrid') {
+            url = 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}';
+            options.attribution = 'Google';
+        } else if (this.mapBasemap === 'streets') {
+             url = 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}';
+             options.attribution = 'Google';
+        } else { // OSM
+             url = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+             options.attribution = '&copy; OpenStreetMap contributors';
+        }
+        
+        L.tileLayer(url, options).addTo(this.mapInstance);
+    },
+
+    
+    async saveLocationToProfile() {
+        if (!this.editLat && !this.editLon) return;
+        
+        let name = prompt("Enter a name for this location:", this.searchQuery || "My Location");
+        if (!name) return;
+        
+        const newLoc = {
+            name: name,
+            lat: this.editLat,
+            lon: this.editLon
+        };
+        
+        if (!this.savedLocations) this.savedLocations = [];
+        this.savedLocations.unshift(newLoc);
+        if (this.savedLocations.length > 10) {
+            this.savedLocations = this.savedLocations.slice(0, 10);
+        }
+        
+        // Save to user profile logic
+        // We need to call user update API.
+        try {
+            // usersApi.update(user, which)
+            // We clone user to avoid mutating state directly just in case, though we updated local list.
+            const userUpdate = { ...state.user, savedLocations: this.savedLocations };
+            delete userUpdate.viewMode; // prevent other things from resetting if API is sensitive
+            // Actually users.js update handles filtering.
+            
+            await usersApi.update(userUpdate, ['savedLocations']);
+            await usersApi.update(userUpdate, ['savedLocations']);
+            mutations.updateUser({ ...state.user, savedLocations: this.savedLocations });
+             notify.showSuccess('Location saved to profile');
+        } catch (e) {
+             console.error(e);
+             notify.showError('Failed to save location');
+        }
+    },
+
+    loadSavedLocation(event) {
+        // v-model update handles the value, but we might need event for simple change
+        // OR just watch selectedSavedLocationIdx.
+        // If event provided (from @change), use it. But v-model "selectedSavedLocationIdx" is cleaner.
+        
+        const idx = this.selectedSavedLocationIdx;
+        if (idx === null || idx === "" || !this.savedLocations[idx]) return;
+        
+        const loc = this.savedLocations[idx];
+        this.editLat = loc.lat;
+        this.editLon = loc.lon;
+        this.updateMapMarker(loc.lat, loc.lon);
+        if (this.mapInstance) {
+            this.mapInstance.setView([loc.lat, loc.lon], 13);
+        }
+    },
+    
+    async deleteSavedLocation() {
+        if (this.selectedSavedLocationIdx === null) return;
+        
+        if (!confirm("Are you sure you want to delete this saved location?")) return;
+        
+        const idx = this.selectedSavedLocationIdx;
+        // Remove from array
+        this.savedLocations.splice(idx, 1);
+        this.selectedSavedLocationIdx = null; // Reset selection
+        
+         try {
+            const userUpdate = { ...state.user, savedLocations: this.savedLocations };
+            delete userUpdate.viewMode; 
+            
+            await usersApi.update(userUpdate, ['savedLocations']);
+            await usersApi.update(userUpdate, ['savedLocations']);
+            mutations.updateUser({ ...state.user, savedLocations: this.savedLocations });
+             notify.showSuccess('Location deleted');
+        } catch (e) {
+             console.error(e);
+             notify.showError('Failed to delete location');
+        }
     },
 	
     

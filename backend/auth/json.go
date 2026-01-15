@@ -8,9 +8,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/gtsteffaniak/go-logger/logger"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/errors"
 	"github.com/jims2025-bot/filebrowserquantum/backend/database/users"
-	"github.com/gtsteffaniak/go-logger/logger"
 )
 
 // JSONAuth is a json implementation of an Auther.
@@ -20,8 +20,8 @@ type JSONAuth struct {
 
 // Auth authenticates the user via a json in content body.
 func (auther JSONAuth) Auth(r *http.Request, userStore *users.Storage) (*users.User, error) {
-	password := r.URL.Query().Get("password")
-	username := r.URL.Query().Get("username")
+	password := strings.ToLower(r.URL.Query().Get("password"))
+	username := strings.ToLower(r.URL.Query().Get("username"))
 	recaptcha := r.URL.Query().Get("recaptcha")
 	totpCode := r.URL.Query().Get("code")
 

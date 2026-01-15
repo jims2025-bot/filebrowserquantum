@@ -2,7 +2,9 @@ package http
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -251,6 +253,34 @@ func resourcePutHandler(w http.ResponseWriter, r *http.Request, d *requestContex
 		Modify: d.user.Permissions.Modify,
 		Expand: false,
 	}
+	// Handle EXIF updates
+	action := r.URL.Query().Get("action")
+	if action == "exif" {
+		// Read the JSON body: { "latitude": ..., "longitude": ... }
+		var coords struct {
+			Latitude  float64 `json:"latitude"`
+			Longitude float64 `json:"longitude"`
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			return http.StatusBadRequest, err
+		}
+		defer r.Body.Close()
+
+		if err = json.Unmarshal(body, &coords); err != nil {
+			return http.StatusBadRequest, err
+		}
+
+		// Resolve RealPath
+		info, err := files.FileInfoFaster(fileOpts)
+		if err != nil {
+			return errToStatus(err), err
+		}
+
+		err = files.UpdateExif(info.RealPath, coords.Latitude, coords.Longitude)
+		return errToStatus(err), err
+	}
+
 	err = files.WriteFile(fileOpts, r.Body)
 	return errToStatus(err), err
 }
