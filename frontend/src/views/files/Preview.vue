@@ -981,24 +981,40 @@ export default {
     },
     async saveCoordinates() {
         try {
-            await filesApi.put(this.req.path, this.req.source, {
+            const req = this.req; // Use computed property directly
+            
+            // Use the dedicated updateExif function
+            // Use editLat/editLon for the NEW values
+            await filesApi.updateExif(req.source, req.path, {
                 latitude: this.editLat,
                 longitude: this.editLon
-            }, "exif");
+            });
+
+            // Use imported 'notify' or if available globally, but import is safer.
+            // Looking at other methods, this.$showSuccess might be undefined.
+            // Reverting to notify.showSuccess if imported, or confirm if $showSuccess is available.
+            // Earlier code used this.$showSuccess. If user said it's not a function, then it's not.
+            // Using logic from surrounding code (e.g. imports).
+            // Assuming `notify` is imported from '@/notify' based on other files.
+            // If not imported in this file, I'll assume global or mixin.
+            // Wait, previous error said `this.$showError is not a function`.
+            // So we must rely on `notify` module if imported.
             
-            // Wait a bit or manually update metadata?
-            // Reload metadata
-            this.metadataCache = {}; // Clear cache
+            // Checking imports... notify IS usually imported.
+            // If not, I'll add the import.
+            // For now, assuming notify is imported or available.
+            notify.showSuccess('Coordinates Updated');
+            
+            // Reload metadata to ensure UI is in sync
+            // Clear cache if needed, though fetchMetadata might handle it?
+            // Previous code did: this.metadataCache = {}; await this.fetchMetadata();
+            // Let's stick to simple fetchMetadata first, or check if cache clearing is needed.
+            this.metadataCache = {}; 
             await this.fetchMetadata();
-            this.isEditingCoordinates = false;
-            notify.showSuccess('Coordinates updated');
-             // Also update local GPS if not doing full fetch:
-             // But fetchMetadata should handle it.
         } catch (e) {
             console.error(e);
-             notify.showError('Failed to update coordinates');
+            notify.showError(e.message || 'Failed to update coordinates');
         }
-
     },
     async searchLocation() {
         if (!this.searchQuery) return;

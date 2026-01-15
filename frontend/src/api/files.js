@@ -309,6 +309,35 @@ export async function updateXMPInstructions(source, path, instructions) {
   }
 }
 
+export async function updateExif(source, path, coords) {
+  try {
+    const apiPath = getApiPath('api/resources', {
+      path: encodeURIComponent(path),
+      source: source,
+      action: 'exif'
+    });
+
+    const res = await fetchURL(apiPath, {
+      method: 'PUT',
+      body: JSON.stringify(coords),
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Auth': state.jwt
+      }
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(errorText || `HTTP error! status: ${res.status}`);
+    }
+
+    return res;
+  } catch (err) {
+    notify.showError(err.message || 'Error updating coordinates');
+    throw err;
+  }
+}
+
 export async function updateMetadata(source, path, metadata) {
   // Placeholder implementation to fix build. 
   // Real implementation depends on backend support for generic metadata updates.
