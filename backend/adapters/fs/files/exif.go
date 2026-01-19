@@ -8,7 +8,6 @@ import (
 // UpdateExif updates or adds GPS coordinates to an image file using exiftool.
 func UpdateExif(path string, lat, lon float64) error {
 	// Construct exiftool command arguments
-	// -P: Preserve file modification date/time
 	// -overwrite_original: Overwrite the original file instead of creating _original backup
 
 	latRef := "N"
@@ -33,7 +32,6 @@ func UpdateExif(path string, lat, lon float64) error {
 	// We need to pass the values.
 
 	cmd := exec.Command("exiftool",
-		"-P",
 		"-overwrite_original",
 		fmt.Sprintf("-GPSLatitude=%f", lat),
 		fmt.Sprintf("-GPSLatitudeRef=%s", latRef),
