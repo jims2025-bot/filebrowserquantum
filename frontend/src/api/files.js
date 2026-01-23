@@ -338,6 +338,33 @@ export async function updateExif(source, path, coords) {
   }
 }
 
+export async function clearCoordinates(source, path) {
+  try {
+    const apiPath = getApiPath('api/resources', {
+      path: encodeURIComponent(path),
+      source: source,
+      action: 'exif'
+    });
+
+    const res = await fetchURL(apiPath, {
+      method: 'DELETE',
+      headers: {
+        'X-Auth': state.jwt
+      }
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(errorText || `HTTP error! status: ${res.status}`);
+    }
+
+    return res;
+  } catch (err) {
+    notify.showError(err.message || 'Error clearing coordinates');
+    throw err;
+  }
+}
+
 export async function regenerateHeatmap(source, path) {
   if (source === undefined) {
     source = "";

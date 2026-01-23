@@ -76,3 +76,22 @@ func GetGPS(path string) (float64, float64, error) {
 
 	return lat, lon, nil
 }
+
+// RemoveExif removes GPS coordinates from an image file using exiftool.
+func RemoveExif(path string) error {
+	cmd := exec.Command("exiftool",
+		"-overwrite_original",
+		"-GPSLatitude=",
+		"-GPSLatitudeRef=",
+		"-GPSLongitude=",
+		"-GPSLongitudeRef=",
+		path,
+	)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("exiftool failed: %s: %w", string(output), err)
+	}
+
+	return nil
+}

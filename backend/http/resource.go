@@ -153,6 +153,13 @@ func resourceDeleteHandler(w http.ResponseWriter, r *http.Request, d *requestCon
 		return errToStatus(err), err
 	}
 	preview.DelThumbs(r.Context(), fileInfo)
+
+	// Handle EXIF removal
+	if r.URL.Query().Get("action") == "exif" {
+		err = files.RemoveExif(fileInfo.RealPath)
+		return errToStatus(err), err
+	}
+
 	err = files.DeleteFiles(source, fileInfo.RealPath, filepath.Dir(fileInfo.RealPath))
 	if err != nil {
 		return errToStatus(err), err

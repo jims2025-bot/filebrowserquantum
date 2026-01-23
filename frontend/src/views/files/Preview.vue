@@ -107,13 +107,13 @@
        <!-- Now this is a sibling to media-wrapper, breaking the v-if interaction but thats ok because media-wrapper is the flex item -->
        <div v-if="showInstructionsModal" class="instructions-split-pane" :style="{ height: !isMobile ? '33%' : 'auto', flex: !isMobile ? '0 0 33%' : '0 0 auto' }">
           <div class="pane-header">
-             <h4>Edit Photoshop Instructions</h4>
+             <h4 title="Photoshop Instructions">Image Notes</h4>
              <button @click="closeInstructionsModal" class="close-icon"><i class="material-icons">close</i></button>
           </div>
           <textarea
             v-model="photoshopInstructions"
             :readonly="!canEditInstructions"
-            placeholder="Enter instructions here..."
+            placeholder="Add Notes to this Image"
           ></textarea>
           <div class="button-row">
             <button @click="saveInstructions" class="button button--flat">Save</button>
@@ -211,7 +211,7 @@
 					class="button button--flat"
                     style="align-self: flex-start; margin-left: 24px; margin-top: 0.5rem;"
 				>
-				Edit
+				Edit Notes
 				</button>
 			</div>
 
@@ -321,17 +321,36 @@
                                 :class="{'button--primary': hasUnsavedCoordinates}"
                                 :style="hasUnsavedCoordinates ? 'background-color: #2196f3; color: white;' : ''"
                                 style="padding: 2px 6px; min-height: 28px; line-height: 1; font-size: 0.9em;"
-                             >Save</button>
+                             >Save to Image</button>
                             <button @click="cancelEditCoordinates" class="button button--flat" style="opacity: 0.7; padding: 2px 6px; min-height: 28px; line-height: 1; font-size: 0.9em;">Cancel</button>
-                            <button @click="saveLocationToProfile" class="button button--flat" title="Save" style="padding: 2px 6px; min-height: 28px;">
+                             <button @click="saveLocationToProfile" class="button button--flat" title="Save to My Locations" style="padding: 2px 6px; min-height: 28px;">
                                 <i class="material-icons" style="font-size: 16px;">bookmark_add</i>
+                            </button>
+                            <button 
+                                v-if="gpsCoordinates"
+                                @click="handleClearLocation" 
+                                class="button button--flat button--warn" 
+                                title="Clear Location Data"
+                                style="color: #f44336; padding: 2px 6px; min-height: 28px;"
+                            >
+                                <i class="material-icons" style="font-size: 16px;">location_off</i>
                             </button>
                        </div>
                    </div>
 
+                    <!-- No Data Warning -->
+                    <div v-if="!gpsCoordinates" style="padding: 5px; margin-bottom: 5px; background: rgba(255, 152, 0, 0.1); border-left: 3px solid #ff9800; font-size: 0.8em; color: #e65100;">
+                        No location data embedded in this file.
+                    </div>
+
+                    <!-- Matched Location Info -->
+                    <div v-if="gpsCoordinates && gpsMatchedLocationName" style="padding: 5px; margin-bottom: 5px; background: rgba(33, 150, 243, 0.1); border-left: 3px solid #2196f3; font-size: 0.8em; color: #1976d2;">
+                        Location matches saved: <strong>{{ gpsMatchedLocationName }}</strong>
+                    </div>
+
                     <div style="display: flex; gap: 5px; border-bottom: 1px solid rgba(0,0,0,0.1); margin-bottom: 5px; padding-bottom: 5px; align-items: center;">
-                        <button @click="editTab = 'location'" class="button button--flat" :style="editTab === 'location' ? 'font-weight: bold; border-bottom: 2px solid #2196f3;' : ''" style="padding: 2px 8px; min-height: 24px; line-height: 1; font-size: 0.9em;">Location</button>
-                        <button @click="editTab = 'locations'" class="button button--flat" :style="editTab === 'locations' ? 'font-weight: bold; border-bottom: 2px solid #2196f3;' : ''" style="padding: 2px 8px; min-height: 24px; line-height: 1; font-size: 0.9em;">Saved</button>
+                        <button @click="editTab = 'location'" class="button button--flat" :style="editTab === 'location' ? 'font-weight: bold; border-bottom: 2px solid #2196f3;' : ''" style="padding: 2px 8px; min-height: 24px; line-height: 1; font-size: 0.9em;">Map Search</button>
+                        <button @click="editTab = 'locations'" class="button button--flat" :style="editTab === 'locations' ? 'font-weight: bold; border-bottom: 2px solid #2196f3;' : ''" style="padding: 2px 8px; min-height: 24px; line-height: 1; font-size: 0.9em;">My Locations</button>
                     </div>
                 </div>
 
@@ -1062,6 +1081,25 @@ export default {
         } catch (e) {
             console.error(e);
             notify.showError(e.message || 'Failed to update coordinates');
+        }
+    },
+    async handleClearLocation() {
+        if (!confirm('Are you sure you want to remove the location data from this file? This cannot be undone.')) {
+            return;
+        }
+        try {
+            const req = this.req;
+            await filesApi.clearCoordinates(req.source, req.path);
+            
+            notify.showSuccess('Location data removed');
+            
+            
+            // Reload metadata
+            this.metadataCache = {};  
+            await this.fetchMetadata();
+        } catch (e) {
+            console.error(e);
+            notify.showError(e.message || 'Failed to clear location');
         }
     },
     async searchLocation() {
