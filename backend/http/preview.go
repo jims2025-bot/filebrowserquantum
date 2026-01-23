@@ -158,7 +158,9 @@ func previewHelperFunc(w http.ResponseWriter, r *http.Request, d *requestContext
 	}
 	previewImg, err := preview.GetPreviewForFile(d.fileInfo, previewSize, officeUrl, seekPercentage)
 	if err != nil {
-		return http.StatusInternalServerError, err
+		// Log as error (warning level not available in this logger)
+		logger.Error("Preview generation failed for " + d.fileInfo.RealPath + ": " + err.Error())
+		return http.StatusUnprocessableEntity, err // 422 instead of 500
 	}
 	w.Header().Set("Cache-Control", "private")
 	http.ServeContent(w, r, d.fileInfo.RealPath, d.fileInfo.ModTime, bytes.NewReader(previewImg))

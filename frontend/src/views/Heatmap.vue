@@ -29,6 +29,8 @@ import { fetchJSON } from "@/api/utils";
 import { state } from "@/store";
 import { ref } from 'vue'; // Import ref
 
+import { notify } from "@/notify";
+
 const route = useRoute();
 const router = useRouter();
 let map = null;
@@ -39,6 +41,20 @@ const isFolderMode = ref(false);
 const debugClusterCount = ref(0);
 const debugStatus = ref("Initializing...");
 
+// Error tracking
+const failedImageCount = ref(0);
+const failedImages = ref(new Set());
+let errorNotificationTimeout = null;
+
+const showErrorNotification = () => {
+    if (errorNotificationTimeout) clearTimeout(errorNotificationTimeout);
+    errorNotificationTimeout = setTimeout(() => {
+        if (failedImageCount.value > 0) {
+            notify.showError(`Warning: ${failedImageCount.value} images failed to load (corrupted or unsupported).`);
+        }
+    }, 2000); // 2 second debounce
+};
+
 // Stores for dynamic reshuffling
 const clusterDataStore = new Map(); // Key: `${lat},${lon}`, Value: Array of all points for that location
 const renderedMarkerStore = new Map(); // Key: `${lat},${lon}`, Value: Array of L.Marker objects currently rendered for that location
@@ -47,7 +63,11 @@ const goBack = () => {
          const src = route.query.source;
          const p = route.query.path;
          // Ensure no double slashes if path starts with /
-         const cleanP = p.startsWith('/') ? p.substring(1) : p;
+         let cleanP = p.startsWith('/') ? p.substring(1) : p;
+         // Prevent double source in path (e.g. PHOTOS/PHOTOS/...)
+         if (cleanP.startsWith(src + '/')) {
+             cleanP = cleanP.substring(src.length + 1);
+         }
          router.push({ path: `/files/${src}/${cleanP}` }).catch(err => console.error(err));
     } else {
          router.push({ path: '/files/' }).catch(err => console.error(err));
@@ -80,10 +100,21 @@ const generateMarkerIcon = (markerPath, sourceArg, count) => {
         }
         const borderColor = stringToColor(folderPath);
 
-        // The FAN ICON (48px) -- INLINE STYLES FOR SAFETY
-        // Updated border to use dynamic color and slightly thicker (3px)
+        // Check global error handler
+        if (!window.fileBrowserHeatmapImageError) {
+             window.fileBrowserHeatmapImageError = (img, path) => {
+                 img.style.display='none'; 
+                 img.parentElement.style.backgroundColor='#888'; 
+                 img.parentElement.innerHTML='<span style=\'color:white;line-height:48px;display:block;text-align:center;font-weight:bold;\'>?</span>';
+                 
+                 // Dispatch custom event or handle notification
+                 // We can use a custom event on window to communicate back to Vue component
+                 window.dispatchEvent(new CustomEvent('heatmap-image-error', { detail: { path: path } }));
+             };
+        }
+
         const html = `<div class="fan-thumb-container" style="border:3px solid ${borderColor} !important; box-shadow:0 2px 5px rgba(0,0,0,0.5); background-color: #555; width:48px !important; height:48px !important; border-radius:50%; overflow:hidden; position:relative; box-sizing:border-box;">
-            <img src="${thumbUrl}" class="fan-thumb-img" style="width:100% !important; height:100% !important; max-width:100% !important; max-height:100% !important; object-fit:cover !important; border-radius:50%; display:block;" onerror="this.style.display='none'; this.parentElement.style.backgroundColor='#888'; this.parentElement.innerHTML='<span style=\'color:white;line-height:48px;display:block;text-align:center;font-weight:bold;\'>?</span>';" />
+            <img src="${thumbUrl}" class="fan-thumb-img" style="width:100% !important; height:100% !important; max-width:100% !important; max-height:100% !important; object-fit:cover !important; border-radius:50%; display:block;" onerror="window.fileBrowserHeatmapImageError(this, '${markerPath.replace(/'/g, "\\'")}')" />
             ${countOverlay}
         </div>`;
         return L.divIcon({
@@ -445,6 +476,22 @@ const loadData = async () => {
 };
 
 onMounted(() => {
+    // Setup global error handler
+    window.fileBrowserHeatmapImageError = (img, path) => {
+        img.style.display='none'; 
+        img.parentElement.style.backgroundColor='#666'; 
+        img.parentElement.innerHTML='<span style=\'color:white;line-height:48px;display:block;text-align:center;font-weight:bold;font-size:20px;\'>!</span>';
+        window.dispatchEvent(new CustomEvent('heatmap-image-error', { detail: { path: path } }));
+    };
+
+    window.addEventListener('heatmap-image-error', (e) => {
+        if (!failedImages.value.has(e.detail.path)) {
+            failedImages.value.add(e.detail.path);
+            failedImageCount.value++;
+            showErrorNotification();
+        }
+    });
+
     // Expose navigation function globally for Leaflet popups
     window.heatmapNavigate = (targetPath, sourceName, isFolder) => {
         console.log("heatmapNavigate called:", { targetPath, sourceName, isFolder });

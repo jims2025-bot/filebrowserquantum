@@ -41,8 +41,17 @@ export default {
   mounted() {
     window.addEventListener("keydown", this.keyEvent);
   },
+  beforeUnmount() {
+    window.removeEventListener("keydown", this.keyEvent);
+  },
   methods: {
     keyEvent(event) {
+      // Safety check: ignore inputs
+      const tagName = event.target.tagName.toLowerCase();
+      if (tagName === "input" || tagName === "textarea" || event.target.isContentEditable) {
+        return;
+      }
+
       const { key } = event;
       if (key == "Backspace") {
         // go back

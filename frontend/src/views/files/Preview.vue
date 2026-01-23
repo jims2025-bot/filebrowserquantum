@@ -114,6 +114,7 @@
             v-model="photoshopInstructions"
             :readonly="!canEditInstructions"
             placeholder="Add Notes to this Image"
+            @keydown.stop
           ></textarea>
           <div class="button-row">
             <button @click="saveInstructions" class="button button--flat">Save</button>
@@ -301,9 +302,9 @@
                     <div style="display: flex; gap: 5px; align-items: center; margin-bottom: 5px;">
                          <div style="display: flex; gap: 5px; align-items: center; flex: 1; flex-wrap: wrap;">
                              <label style="font-size: 0.8em; margin: 0; white-space: nowrap;">Lat:</label>
-                             <input type="number" step="any" v-model.number="editLat" @input="handleCoordInput($event, 'editLat')" class="input input--block" style="padding: 2px 5px; height: 28px; font-size: 0.9em; min-width: 80px; flex: 1;">
+                             <input type="number" step="any" v-model.number="editLat" @input="handleCoordInput($event, 'editLat')" @keydown.stop class="input input--block" style="padding: 2px 5px; height: 28px; font-size: 0.9em; min-width: 80px; flex: 1;">
                              <label style="font-size: 0.8em; margin: 0; white-space: nowrap;">Lon:</label>
-                             <input type="number" step="any" v-model.number="editLon" @input="handleCoordInput($event, 'editLon')" class="input input--block" style="padding: 2px 5px; height: 28px; font-size: 0.9em; min-width: 80px; flex: 1;">
+                             <input type="number" step="any" v-model.number="editLon" @input="handleCoordInput($event, 'editLon')" @keydown.stop class="input input--block" style="padding: 2px 5px; height: 28px; font-size: 0.9em; min-width: 80px; flex: 1;">
                              
                              <div v-if="matchedLocationName" style="background: #2196f3; color: white; border-radius: 4px; padding: 2px 6px; font-size: 0.75em; white-space: nowrap; display: flex; align-items: center; margin-left: auto;">
                                 <i class="material-icons" style="font-size: 14px; margin-right: 2px;">bookmark</i>
@@ -357,7 +358,7 @@
                 <div v-show="editTab === 'location'" style="flex: 1; min-height: 0; display: flex; flex-direction: column;">
                      <!-- Search Box Moved Here -->
                      <div style="display: flex; gap: 5px; margin-bottom: 5px;">
-                        <input type="text" v-model="searchQuery" @keyup.enter="searchLocation" placeholder="Search..." class="input input--block" style="flex: 1; padding: 2px 5px; height: 28px; font-size: 0.9em;">
+                        <input type="text" v-model="searchQuery" @keyup.enter="searchLocation" @keydown.stop placeholder="Search..." class="input input--block" style="flex: 1; padding: 2px 5px; height: 28px; font-size: 0.9em;">
                         <button @click="searchLocation" class="button button--flat" title="Search" style="padding: 0 8px; min-height: 28px;"><i class="material-icons" style="font-size: 18px;">search</i></button>
                      </div>
                      <!-- Explicit height to fix 0px issue: flex-none with static height -->
@@ -1631,12 +1632,14 @@ findInstructionDeep(obj) {
         };
         
         if (!this.savedLocations) this.savedLocations = [];
-        this.savedLocations.unshift(newLoc);
-        
-        // Limit to 10 recent locations as per existing logic
-        if (this.savedLocations.length > 10) {
-            this.savedLocations = this.savedLocations.slice(0, 10);
+
+        // Limit to 50 items, but do NOT auto-delete old ones
+        if (this.savedLocations.length >= 50) {
+            notify.showError("You have reached the limit of 50 saved locations. Please delete some before adding more.");
+            return;
         }
+
+        this.savedLocations.unshift(newLoc);
         
         try {
             const userUpdate = { ...state.user, savedLocations: this.savedLocations };

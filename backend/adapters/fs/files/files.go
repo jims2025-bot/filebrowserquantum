@@ -297,14 +297,52 @@ func FileInfoFaster(opts iteminfo.FileOptions) (iteminfo.ExtendedFileInfo, error
 	if err != nil {
 		return response, err
 	}
+	// Re-verify isDir to avoid stale cache issues from GetRealPath
+	stat, statErr := os.Stat(realPath)
+	if statErr == nil {
+		isDir = stat.IsDir()
+	}
 	opts.IsDir = isDir
-	err = index.RefreshFileInfo(opts)
+	// Canonicalize the path using the resolved real path to ensure consistency with index keys
+	// This fixes issues where opts.Path has improper casing or duplication (e.g. /PHOTOS/PHOTOS/...)
+	opts.Path = index.MakeIndexPath(realPath)
+
+	// Capture filename if it's a file, because RefreshFileInfo resolves to the directory
+	var originalBase string
+	if !opts.IsDir {
+		originalBase = filepath.Base(realPath)
+	}
+
+	correctedPath, err := index.RefreshFileInfo(opts)
 	if err != nil {
 		return response, err
 	}
+
+	// If it was a file, we need to append the filename back to the corrected directory path
+	if !opts.IsDir {
+		if strings.HasSuffix(correctedPath, "/") {
+			correctedPath += originalBase
+		} else {
+			correctedPath += "/" + originalBase
+		}
+	}
+	opts.Path = correctedPath
+
+	// Re-get real path in case deduplication changed it
+	realPath, isDir, err = index.GetRealPath(opts.Path)
+	if err != nil {
+		// Log but continue if possible, or return error?
+		// If we can't get real path of the corrected path, something is weird.
+		return response, err
+	}
+	opts.IsDir = isDir // Update opts.IsDir with the correct reality
+
+	// info path lookup uses the canonical path now
 	info, exists := index.GetReducedMetadata(opts.Path, opts.IsDir)
 	if !exists {
-		return response, fmt.Errorf("could not get metadata for path: %v", opts.Path)
+		// print all keys in index to debug
+		// index.PrintAllKeys(idx.Source.Name)
+		return response, fmt.Errorf("DEBUG metadata fail. Key: %s. Real: %s. IsDir: %v", opts.Path, realPath, isDir)
 	}
 	if opts.Content && strings.HasPrefix(info.Type, "text") {
 		if info.Size < 20*1024*1024 {
@@ -379,7 +417,7 @@ func DeleteFiles(source, absPath string, absDirPath string) error {
 		return fmt.Errorf("could not get index: %v ", source)
 	}
 	refreshConfig := iteminfo.FileOptions{Path: index.MakeIndexPath(absDirPath), IsDir: true}
-	err = index.RefreshFileInfo(refreshConfig)
+	_, err = index.RefreshFileInfo(refreshConfig)
 	if err != nil {
 		return err
 	}
@@ -401,7 +439,7 @@ func MoveResource(sourceIndex, destIndex, realsrc, realdst string) error {
 	}
 	refreshSourceDir := idxSrc.MakeIndexPath(filepath.Dir(realsrc))
 	refreshDestDir := idxDst.MakeIndexPath(filepath.Dir(realdst))
-	err = idxSrc.RefreshFileInfo(iteminfo.FileOptions{Path: refreshSourceDir, IsDir: true})
+	_, err = idxSrc.RefreshFileInfo(iteminfo.FileOptions{Path: refreshSourceDir, IsDir: true})
 	if err != nil {
 		return fmt.Errorf("could not refresh index for source: %v", err)
 	}
@@ -409,7 +447,7 @@ func MoveResource(sourceIndex, destIndex, realsrc, realdst string) error {
 		return nil
 	}
 	refreshConfig := iteminfo.FileOptions{Path: refreshDestDir, IsDir: true}
-	err = idxDst.RefreshFileInfo(refreshConfig)
+	_, err = idxDst.RefreshFileInfo(refreshConfig)
 	if err != nil {
 		return fmt.Errorf("could not refresh index for dest: %v", err)
 	}
@@ -436,12 +474,12 @@ func CopyResource(sourceIndex, destIndex, realsrc, realdst string) error {
 		return fmt.Errorf("could not get index: %v ", sourceIndex)
 	}
 	refreshConfig := iteminfo.FileOptions{Path: refreshSourceDir, IsDir: true}
-	err = index.RefreshFileInfo(refreshConfig)
+	_, err = index.RefreshFileInfo(refreshConfig)
 	if err != nil {
 		return fmt.Errorf("could not refresh index for source: %v", err)
 	}
 	refreshConfig.Path = refreshDestDir
-	err = index.RefreshFileInfo(refreshConfig)
+	_, err = index.RefreshFileInfo(refreshConfig)
 	if err != nil {
 		return errors.ErrEmptyKey
 	}
@@ -458,7 +496,7 @@ func WriteDirectory(opts iteminfo.FileOptions) error {
 	if err != nil {
 		return err
 	}
-	err = idx.RefreshFileInfo(opts)
+	_, err = idx.RefreshFileInfo(opts)
 	if err != nil {
 		return errors.ErrEmptyKey
 	}
@@ -487,7 +525,8 @@ func WriteFile(opts iteminfo.FileOptions, in io.Reader) error {
 	}
 	opts.Path = idx.MakeIndexPath(parentDir)
 	opts.IsDir = true
-	return idx.RefreshFileInfo(opts)
+	_, err = idx.RefreshFileInfo(opts)
+	return err
 }
 
 func getContent(realPath string) (string, error) {

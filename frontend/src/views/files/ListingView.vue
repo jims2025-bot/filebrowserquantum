@@ -567,6 +567,11 @@ export default {
         return;
       }
       const { key, ctrlKey, metaKey, which } = event;
+      // Block shortcuts if typing in input/textarea
+      const tagName = event.target.tagName.toLowerCase();
+      if (tagName === "input" || tagName === "textarea" || event.target.isContentEditable) {
+        return;
+      }
       // Check if the key is alphanumeric
       const isAlphanumeric = /^[a-z0-9]$/i.test(key);
       const modifierKeys = ctrlKey || metaKey;

@@ -52,7 +52,7 @@ func ScanFolder(sourceName, folderPath string, progress *ScanProgress) ([]Cluste
 
 	// 1. Find images in this folder
 	// Force index refresh
-	refreshErr := idx.RefreshFileInfo(iteminfo.FileOptions{
+	_, refreshErr := idx.RefreshFileInfo(iteminfo.FileOptions{
 		Path:  folderPath,
 		IsDir: true,
 	})

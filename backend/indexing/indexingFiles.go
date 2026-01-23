@@ -301,7 +301,7 @@ func (idx *Index) GetRealPath(relativePath ...string) (string, bool, error) {
 	return realPath, isDir, err
 }
 
-func (idx *Index) RefreshFileInfo(opts iteminfo.FileOptions) error {
+func (idx *Index) RefreshFileInfo(opts iteminfo.FileOptions) (string, error) {
 	refreshOptions := iteminfo.FileOptions{
 		Path:  opts.Path,
 		IsDir: opts.IsDir,
@@ -372,11 +372,11 @@ func (idx *Index) RefreshFileInfo(opts iteminfo.FileOptions) error {
 
 	err := idx.indexDirectory(refreshOptions.Path, false, false)
 	if err != nil {
-		return fmt.Errorf("file/folder does not exist to refresh data: %s", refreshOptions.Path)
+		return refreshOptions.Path, fmt.Errorf("file/folder does not exist to refresh data: %s", refreshOptions.Path)
 	}
 	file, exists := idx.GetMetadataInfo(refreshOptions.Path, true)
 	if !exists {
-		return fmt.Errorf("file/folder does not exist in metadata: %s", refreshOptions.Path)
+		return refreshOptions.Path, fmt.Errorf("file/folder does not exist in metadata: %s", refreshOptions.Path)
 	}
 
 	current, firstExisted := idx.GetMetadataInfo(refreshOptions.Path, true)
@@ -384,15 +384,15 @@ func (idx *Index) RefreshFileInfo(opts iteminfo.FileOptions) error {
 	//utils.PrintStructFields(*file)
 	result := idx.UpdateMetadata(file)
 	if !result {
-		return fmt.Errorf("file/folder does not exist in metadata: %s", refreshOptions.Path)
+		return refreshOptions.Path, fmt.Errorf("file/folder does not exist in metadata: %s", refreshOptions.Path)
 	}
 	if !exists {
-		return nil
+		return refreshOptions.Path, nil
 	}
 	if refreshParentInfo {
 		idx.recursiveUpdateDirSizes(file, current.Size)
 	}
-	return nil
+	return refreshOptions.Path, nil
 }
 
 func isHidden(file os.FileInfo, srcPath string) bool {
