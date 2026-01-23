@@ -63,6 +63,18 @@ func init() {
 	indexes = make(map[string]*Index)
 }
 
+func GetIndexes() map[string]*Index {
+	indexesMutex.RLock()
+	defer indexesMutex.RUnlock()
+	// Return a copy to avoid race conditions if map is modified?
+	// Shallow copy of the map
+	copyMap := make(map[string]*Index)
+	for k, v := range indexes {
+		copyMap[k] = v
+	}
+	return copyMap
+}
+
 func Initialize(source settings.Source, mock bool) {
 	indexesMutex.Lock()
 	newIndex := Index{
@@ -298,6 +310,66 @@ func (idx *Index) RefreshFileInfo(opts iteminfo.FileOptions) error {
 		refreshOptions.Path = idx.MakeIndexPath(filepath.Dir(refreshOptions.Path))
 		refreshOptions.IsDir = true
 	}
+
+	// Heuristic Deduplication:
+	// If the frontend sends a path that seemingly includes the tail end of the Source Path
+	// (e.g. Source: .../A/B, Request: /A/B/C), naive joining creates .../A/B/A/B/C.
+	// We detect this overlap and strip it.
+	// logger.Debugf("RefreshFileInfo: Checking path %s against Source %s", refreshOptions.Path, idx.Source.Path)
+	naivePath := strings.TrimRight(idx.Source.Path, "/") + refreshOptions.Path
+	if _, err := os.Stat(naivePath); os.IsNotExist(err) {
+
+		// logger.Debugf("RefreshFileInfo: Naive path %s does not exist. Attempting deduplication...", naivePath)
+
+		// Normalize paths for segment comparison
+		sourceClean := strings.Trim(strings.ReplaceAll(idx.Source.Path, "\\", "/"), "/")
+		reqClean := strings.Trim(strings.ReplaceAll(refreshOptions.Path, "\\", "/"), "/")
+
+		sourceSegments := strings.Split(sourceClean, "/")
+		reqSegments := strings.Split(reqClean, "/")
+
+		// Check for suffix/prefix overlap
+		// We want to find the largest overlap where Source Suffix == Request Prefix
+		maxOverlap := len(sourceSegments)
+		if len(reqSegments) < maxOverlap {
+			maxOverlap = len(reqSegments)
+		}
+
+		for i := maxOverlap; i > 0; i-- {
+			// Check if last i segments of source match first i segments of request
+			sourceSuffix := sourceSegments[len(sourceSegments)-i:]
+			reqPrefix := reqSegments[:i]
+
+			// Case-insensitive comparison for Windows robustness
+			match := true
+			for j := 0; j < i; j++ {
+				if !strings.EqualFold(sourceSuffix[j], reqPrefix[j]) {
+					match = false
+					break
+				}
+			}
+
+			if match {
+				// We found an overlap!
+				// Construct candidate deduped path
+				remainingSegments := reqSegments[i:]
+				dedupedPath := "/" + strings.Join(remainingSegments, "/")
+
+				// Verify if this deduped path actually exists on disk
+				dedupedCheck := strings.TrimRight(idx.Source.Path, "/") + dedupedPath
+				// logger.Debugf("Found overlap of size %d. Candidate deduped path: %s. Checking: %s", i, dedupedPath, dedupedCheck)
+
+				if _, err := os.Stat(dedupedCheck); err == nil {
+					// logger.Debugf("RefreshFileInfo: Successfully deduped path to %s", dedupedPath)
+					refreshOptions.Path = dedupedPath
+					break // Found the correct path
+				} else {
+					// logger.Debugf("Dedup check result: %v", err)
+				}
+			}
+		}
+	}
+
 	err := idx.indexDirectory(refreshOptions.Path, false, false)
 	if err != nil {
 		return fmt.Errorf("file/folder does not exist to refresh data: %s", refreshOptions.Path)

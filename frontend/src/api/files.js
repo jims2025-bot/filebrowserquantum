@@ -338,6 +338,51 @@ export async function updateExif(source, path, coords) {
   }
 }
 
+export async function regenerateHeatmap(source, path) {
+  if (source === undefined) {
+    source = "";
+  }
+  // Ensure we don't pass undefined path
+  if (path === undefined || path === null) {
+    path = "";
+  }
+
+  const apiPath = getApiPath('api/heatmap/regenerate', {
+    source: source,
+    path: encodeURIComponent(path)
+  });
+
+  const res = await fetchURL(apiPath, {
+    method: "POST",
+  });
+
+  if (!res.ok) {
+    if (res.status === 409) {
+      throw new Error("Scan already in progress");
+    }
+    throw new Error(`Failed to regenerate heatmap: ${res.statusText}`);
+  }
+  return res;
+}
+
+export async function getHeatmapStatus(source, path) {
+  if (source === undefined) source = "";
+  if (path === undefined || path === null) path = "";
+
+  const apiPath = getApiPath('api/heatmap/status', {
+    source: source,
+    path: encodeURIComponent(path)
+  });
+
+  const res = await fetchURL(apiPath);
+  if (!res.ok) {
+    // Return consistent object structure on error
+    return { isScanning: false, progress: null };
+  }
+  const data = await res.json();
+  return data;
+}
+
 export async function updateMetadata(source, path, metadata) {
   // Placeholder implementation to fix build. 
   // Real implementation depends on backend support for generic metadata updates.

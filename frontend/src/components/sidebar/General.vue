@@ -54,6 +54,13 @@
           <i class="material-icons">ads_click</i>
         </div>
         <div
+          @click="navigateTo('/heatmap' + (activeSource ? `?source=${activeSource}&path=${route.params.path || '/'}` : ''))"
+          @mouseover="updateHoverText('Heatmap')"
+          @mouseleave="resetHoverTextToDefault"
+        >
+          <i class="material-icons">map</i>
+        </div>
+        <div
           :class="{ active: user?.darkMode }"
           @click="toggleDarkMode"
           @mouseover="updateHoverText($t('index.toggleDark'))"

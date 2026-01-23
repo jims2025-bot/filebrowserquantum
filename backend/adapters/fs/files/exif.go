@@ -3,6 +3,8 @@ package files
 import (
 	"fmt"
 	"os/exec"
+	"strconv"
+	"strings"
 )
 
 // UpdateExif updates or adds GPS coordinates to an image file using exiftool.
@@ -46,4 +48,31 @@ func UpdateExif(path string, lat, lon float64) error {
 	}
 
 	return nil
+}
+
+// GetGPS reads the GPS coordinates from a file using exiftool.
+func GetGPS(path string) (float64, float64, error) {
+	cmd := exec.Command("exiftool", "-n", "-p", "$GPSLatitude,$GPSLongitude", path)
+	outputBytes, err := cmd.CombinedOutput()
+	if err != nil {
+		return 0, 0, fmt.Errorf("exiftool failed: %w", err)
+	}
+
+	output := strings.TrimSpace(string(outputBytes))
+	parts := strings.Split(output, ",")
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("invalid GPS data found")
+	}
+
+	lat, err := strconv.ParseFloat(parts[0], 64)
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid latitude: %w", err)
+	}
+
+	lon, err := strconv.ParseFloat(parts[1], 64)
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid longitude: %w", err)
+	}
+
+	return lat, lon, nil
 }

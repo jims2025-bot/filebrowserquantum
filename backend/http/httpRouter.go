@@ -11,10 +11,10 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/gtsteffaniak/go-logger/logger"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/version"
 	"github.com/jims2025-bot/filebrowserquantum/backend/database/storage"
-	"github.com/gtsteffaniak/go-logger/logger"
 	// http-swagger middleware
 )
 
@@ -37,9 +37,9 @@ func (d dirFS) Open(name string) (fs.File, error) {
 }
 
 var (
-	store    *storage.Storage
-	config   *settings.Settings
-	assetFs  fs.FS
+	store   *storage.Storage
+	config  *settings.Settings
+	assetFs fs.FS
 )
 
 func StartHttp(ctx context.Context, storage *storage.Storage, shutdownComplete chan struct{}) {
@@ -131,9 +131,15 @@ func StartHttp(ctx context.Context, storage *storage.Storage, shutdownComplete c
 	// Metadata routes
 	api.HandleFunc("GET /metadata", withUser(getMetadataHandler))
 
-    // XMP Instructions routes
-    api.HandleFunc("GET /resources/instructions", withUser(resourceGetInstructionsHandler))
-    api.HandleFunc("POST /resources/instructions", withUser(resourceInstructionsHandler))
+	// Heatmap routes
+	api.HandleFunc("GET /heatmap/global", withUser(getGlobalHeatmapHandler))
+	api.HandleFunc("GET /heatmap/folder", withUser(getFolderHeatmapHandler))
+	api.HandleFunc("POST /heatmap/regenerate", withUser(regenerateHeatmapHandler))
+	api.HandleFunc("GET /heatmap/status", withUser(getHeatmapStatusHandler))
+
+	// XMP Instructions routes
+	api.HandleFunc("GET /resources/instructions", withUser(resourceGetInstructionsHandler))
+	api.HandleFunc("POST /resources/instructions", withUser(resourceInstructionsHandler))
 
 	apiPath := config.Server.BaseURL + "api"
 	router.Handle(apiPath+"/", http.StripPrefix(apiPath, api))

@@ -10,9 +10,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/gtsteffaniak/go-logger/logger"
 	"github.com/jims2025-bot/filebrowserquantum/backend/adapters/fs/files"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
-	"github.com/jims2025-bot/filebrowserquantum/backend/common/utils"
 	"github.com/jims2025-bot/filebrowserquantum/backend/indexing"
 	"github.com/jims2025-bot/filebrowserquantum/backend/indexing/iteminfo"
 	"github.com/jims2025-bot/filebrowserquantum/backend/preview"
@@ -44,7 +44,11 @@ func previewHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (
 	if config.Server.DisablePreviews {
 		return http.StatusNotImplemented, fmt.Errorf("preview is disabled")
 	}
-	path := r.URL.Query().Get("path")
+	encodedPath := r.URL.Query().Get("path")
+	path, err := url.QueryUnescape(encodedPath)
+	if err != nil {
+		return http.StatusBadRequest, fmt.Errorf("invalid path encoding: %v", err)
+	}
 	source := r.URL.Query().Get("source")
 	if source == "" {
 		source = settings.Config.Server.DefaultSource.Name
@@ -59,23 +63,31 @@ func previewHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (
 	if path == "" {
 		return http.StatusBadRequest, fmt.Errorf("invalid request path")
 	}
-	var realSource string
-	userscope, realSource, err := settings.GetScopeFromSourceString(d.user.Scopes, source)
+	// Parse scope index and resolve path handling cross-scope permissions
+	scopePath, realSource, err := ResolveScopePath(d.user, source, path)
 	if err != nil {
 		return http.StatusForbidden, err
 	}
 	source = realSource
+
 	fileInfo, err := files.FileInfoFaster(iteminfo.FileOptions{
-		Path:   utils.JoinPathAsUnix(userscope, path),
+		Path:   scopePath,
 		Modify: d.user.Permissions.Modify,
 		Source: source,
 		Expand: true,
 	})
+
 	if err != nil {
+		logger.Error("Preview: FileInfoFaster failed for path " + scopePath + ": " + err.Error())
 		return errToStatus(err), err
 	}
 	d.fileInfo = fileInfo
-	return previewHelperFunc(w, r, d)
+
+	val, err := previewHelperFunc(w, r, d)
+	if err != nil {
+		logger.Error("Preview: previewHelperFunc failed for " + d.fileInfo.RealPath + ": " + err.Error())
+	}
+	return val, err
 }
 
 func rawFileHandler(w http.ResponseWriter, r *http.Request, file iteminfo.ExtendedFileInfo) (int, error) {

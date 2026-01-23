@@ -18,6 +18,7 @@
 .dark-mode #login {
   background: var(--background);
 }
+
 /* Loading */
 .dark-mode #loading {
   background: var(--background);
@@ -28,41 +29,42 @@
   background: var(--background);
 }
 
-#search.dark-mode input {
-  color:white
+#fb-search.dark-mode input {
+  color: white
 }
 
-#search.active.dark-mode #input {
+#fb-search.active.dark-mode #fb-input {
   border-color: white;
 }
+
 /* Search input */
-.dark-mode #search #input {
+.dark-mode #fb-search #fb-input {
   background: var(--surfaceSecondary);
   border-color: var(--surfaceSecondary);
 }
 
-.dark-mode #search #input input::placeholder {
+.dark-mode #fb-search #fb-input input::placeholder {
   color: var(--textSecondary);
 }
 
 /* Active Search input */
-.dark-mode #search.active #input {
+.dark-mode #fb-search.active #fb-input {
   background: var(--surfacePrimary);
   border-color: white;
 }
 
-.dark-mode #search.active input {
+.dark-mode #fb-search.active input {
   color: var(--textPrimary);
 }
 
 /* Search result */
-.dark-mode #search #result {
+.dark-mode #fb-search #fb-results {
   background: var(--background);
   color: var(--textPrimary);
 }
 
 /* Search boxes */
-.dark-mode #search .boxes h3 {
+.dark-mode #fb-search .boxes h3 {
   color: var(--textPrimary);
 }
 
@@ -81,7 +83,7 @@
 }
 
 /* Navigation */
-.dark-mode nav > div {
+.dark-mode nav>div {
   border-color: var(--divider);
 }
 
@@ -131,13 +133,15 @@
 .dark-mode .dashboard #nav ul li:hover {
   background: var(--surfaceSecondary);
 }
-#search.active.dark-mode #result {
+
+#fb-search.active.dark-mode #fb-results {
   background-color: black;
 }
+
 /* Result list */
-.dark-mode #result-list {
+.dark-mode #fb-result-list {
   background-color: var(--surfacePrimary);
-  color:white;
+  color: white;
 }
 
 /* Card, Dashboard navigation, and label */
@@ -176,7 +180,7 @@
   border-color: var(--divider);
 }
 
-.dark-mode .collapsible > label * {
+.dark-mode .collapsible>label * {
   color: var(--textPrimary);
 }
 
@@ -249,16 +253,16 @@
 /* Button group button */
 .dark-mode .button-group button {
   color: white;
-  background-color:var(--background);
+  background-color: var(--background);
 }
 
 /* Result desktop */
-.dark-mode #results #result-list {
+.dark-mode #fb-results #fb-result-list {
   max-height: unset;
 }
 
 /* Result desktop background */
-.dark-mode #results {
+.dark-mode #fb-results {
   background-color: var(--background);
 }
 
@@ -280,6 +284,7 @@
     background-color: rgb(37 49 55 / 33%) !important;
     backdrop-filter: blur(16px) invert(0.1);
   }
+
   #sidebar.dark-mode {
     background-color: rgb(37 49 55 / 33%) !important;
     backdrop-filter: blur(16px) invert(0.1);

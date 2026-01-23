@@ -309,7 +309,8 @@
     "settings": "Settings",
     "sources": "Sources",
     "signup": "Signup",
-    "siteSettings": "Site Settings"
+    "siteSettings": "Site Settings",
+    "heatmap": "Map"
   },
   "success": {
     "linkCopied": "Link copied!"

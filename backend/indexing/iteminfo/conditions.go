@@ -206,6 +206,12 @@ func IsOnlyOffice(name string) bool {
 	return false
 }
 
+func IsImage(name string) bool {
+	ext := filepath.Ext(name)
+	mimetype := mime.TypeByExtension(ext)
+	return strings.HasPrefix(mimetype, "image")
+}
+
 func IsMatchingType(extension string, matchType string) bool {
 	mimetype := mime.TypeByExtension(extension)
 	if strings.HasPrefix(mimetype, matchType) {

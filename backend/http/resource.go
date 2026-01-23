@@ -59,15 +59,17 @@ func resourceGetHandler(w http.ResponseWriter, r *http.Request, d *requestContex
 	if err != nil {
 		return http.StatusBadRequest, fmt.Errorf("invalid path encoding: %v", err)
 	}
-	// Parse scope index
-	var realSource string
-	userscope, realSource, err := settings.GetScopeFromSourceString(d.user.Scopes, source)
+	// Parse scope index and resolve path handling cross-scope permissions
+	scopePath, realSource, err := ResolveScopePath(d.user, source, path)
 	if err != nil {
 		return http.StatusForbidden, err
 	}
-	source = realSource
 
-	scopePath := utils.JoinPathAsUnix(userscope, path)
+	// Restore userscope for path trimming logic later
+	// We use the original source string because that's what the scopes are mapped to (or aliases)
+	userscope, _, _ := settings.GetScopeFromSourceString(d.user.Scopes, source)
+
+	source = realSource
 	fileInfo, err := files.FileInfoFaster(iteminfo.FileOptions{
 		Path:    scopePath,
 		Modify:  d.user.Permissions.Modify,
@@ -97,7 +99,8 @@ func resourceGetHandler(w http.ResponseWriter, r *http.Request, d *requestContex
 		if idx == nil {
 			return http.StatusNotFound, fmt.Errorf("source %s not found", source)
 		}
-		realPath, _, _ := idx.GetRealPath(userscope, path)
+		// Use scopePath (absolute) with root scope
+		realPath, _, _ := idx.GetRealPath("/", scopePath)
 		checksums, err := files.GetChecksum(realPath, algo)
 		if err == errors.ErrInvalidOption {
 			return http.StatusBadRequest, nil
@@ -133,15 +136,15 @@ func resourceDeleteHandler(w http.ResponseWriter, r *http.Request, d *requestCon
 	if path == "/" {
 		return http.StatusForbidden, nil
 	}
-	var realSource string
-	userscope, realSource, err := settings.GetScopeFromSourceString(d.user.Scopes, source)
+	// Parse scope index and resolve path handling cross-scope permissions
+	scopePath, realSource, err := ResolveScopePath(d.user, source, path)
 	if err != nil {
 		return http.StatusForbidden, err
 	}
 	source = realSource
 
 	fileInfo, err := files.FileInfoFaster(iteminfo.FileOptions{
-		Path:   utils.JoinPathAsUnix(userscope, path),
+		Path:   scopePath,
 		Source: source,
 		Modify: d.user.Permissions.Modify,
 		Expand: false,
@@ -176,15 +179,15 @@ func resourcePostHandler(w http.ResponseWriter, r *http.Request, d *requestConte
 	if !d.user.Permissions.Modify {
 		return http.StatusForbidden, fmt.Errorf("user is not allowed to create or modify")
 	}
-	var realSource string
-	userscope, realSource, err := settings.GetScopeFromSourceString(d.user.Scopes, source)
+	// Parse scope index and resolve path handling cross-scope permissions
+	scopePath, realSource, err := ResolveScopePath(d.user, source, path)
 	if err != nil {
 		return http.StatusForbidden, err
 	}
 	source = realSource
 
 	fileOpts := iteminfo.FileOptions{
-		Path:   utils.JoinPathAsUnix(userscope, path),
+		Path:   scopePath,
 		Source: source,
 		Modify: d.user.Permissions.Modify,
 		Expand: false,
@@ -240,15 +243,15 @@ func resourcePutHandler(w http.ResponseWriter, r *http.Request, d *requestContex
 	if strings.HasSuffix(path, "/") {
 		return http.StatusMethodNotAllowed, nil
 	}
-	var realSource string
-	userscope, realSource, err := settings.GetScopeFromSourceString(d.user.Scopes, source)
+	// Parse scope index and resolve path handling cross-scope permissions
+	scopePath, realSource, err := ResolveScopePath(d.user, source, path)
 	if err != nil {
 		return http.StatusForbidden, err
 	}
 	source = realSource
 
 	fileOpts := iteminfo.FileOptions{
-		Path:   utils.JoinPathAsUnix(userscope, path),
+		Path:   scopePath,
 		Source: source,
 		Modify: d.user.Permissions.Modify,
 		Expand: false,

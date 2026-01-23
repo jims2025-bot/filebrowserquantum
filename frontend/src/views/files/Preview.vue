@@ -298,14 +298,19 @@
                
                <div style="flex: 0 0 auto;">
                    <!-- Inputs Line -->
-                   <div style="display: flex; gap: 5px; align-items: center; margin-bottom: 5px;">
-                        <div style="display: flex; gap: 5px; align-items: center; flex: 1;">
-                            <label style="font-size: 0.8em; margin: 0; white-space: nowrap;">Lat:</label>
-                            <input type="number" step="any" v-model.number="editLat" @input="handleCoordInput($event, 'editLat')" class="input input--block" style="padding: 2px 5px; height: 28px; font-size: 0.9em; min-width: 0;">
-                            <label style="font-size: 0.8em; margin: 0; white-space: nowrap;">Lon:</label>
-                            <input type="number" step="any" v-model.number="editLon" @input="handleCoordInput($event, 'editLon')" class="input input--block" style="padding: 2px 5px; height: 28px; font-size: 0.9em; min-width: 0;">
-                        </div>
-                   </div>
+                    <div style="display: flex; gap: 5px; align-items: center; margin-bottom: 5px;">
+                         <div style="display: flex; gap: 5px; align-items: center; flex: 1; flex-wrap: wrap;">
+                             <label style="font-size: 0.8em; margin: 0; white-space: nowrap;">Lat:</label>
+                             <input type="number" step="any" v-model.number="editLat" @input="handleCoordInput($event, 'editLat')" class="input input--block" style="padding: 2px 5px; height: 28px; font-size: 0.9em; min-width: 80px; flex: 1;">
+                             <label style="font-size: 0.8em; margin: 0; white-space: nowrap;">Lon:</label>
+                             <input type="number" step="any" v-model.number="editLon" @input="handleCoordInput($event, 'editLon')" class="input input--block" style="padding: 2px 5px; height: 28px; font-size: 0.9em; min-width: 80px; flex: 1;">
+                             
+                             <div v-if="matchedLocationName" style="background: #2196f3; color: white; border-radius: 4px; padding: 2px 6px; font-size: 0.75em; white-space: nowrap; display: flex; align-items: center; margin-left: auto;">
+                                <i class="material-icons" style="font-size: 14px; margin-right: 2px;">bookmark</i>
+                                {{ matchedLocationName }}
+                             </div>
+                         </div>
+                    </div>
 
                    <!-- Buttons Line -->
                    <div style="display: flex; gap: 5px; justify-content: flex-end; margin-bottom: 5px;">
@@ -365,6 +370,11 @@
                   <div style="display: flex; align-items: center; gap: 5px;">
                       <strong style="white-space: nowrap;">Coords:</strong> 
                       <span style="font-family: monospace;">{{ gpsCoordinates.lat.toFixed(8) }}, {{ gpsCoordinates.lon.toFixed(8) }}</span>
+                      
+                      <div v-if="gpsMatchedLocationName" style="background: #2196f3; color: white; border-radius: 4px; padding: 2px 6px; font-size: 0.75em; white-space: nowrap; display: flex; align-items: center; margin-left: 5px;">
+                        <i class="material-icons" style="font-size: 14px; margin-right: 2px;">bookmark</i>
+                        {{ gpsMatchedLocationName }}
+                     </div>
                   </div>
                   
                   <div style="flex: 1;"></div> <!-- Spacer -->
@@ -388,6 +398,16 @@
                       >
                         <i class="material-icons" style="font-size: 16px;">map</i>
                       </a>
+
+                      <button 
+                        v-if="!gpsMatchedLocationName" 
+                        @click="saveCurrentGpsLocation" 
+                        class="button button--flat" 
+                        title="Add to Saved Locations"
+                        style="padding: 2px 6px; min-width: auto; min-height: 26px; line-height: 1;"
+                      >
+                        <i class="material-icons" style="font-size: 16px;">bookmark_add</i>
+                      </button>
 
                       <button 
                         v-if="canEditCoordinates" 
@@ -514,7 +534,6 @@ export default {
       
       // Edit Settings Tabs
       editTab: 'location', // 'location' | 'locations'
-      mapBasemap: 'hybrid', // 'hybrid' | 'streets' | 'osm'
 
       tabs: [
         { name: "details", label: "Details" },
@@ -578,6 +597,9 @@ export default {
       //console.log("Preview type:", type);
       return type;
     },
+    currentUserSavedLocations() {
+      return state.user ? state.user.savedLocations : null;
+    },
 	availableTabs() {
 		const tabs = [
 		{ name: "details", label: "Details" },
@@ -595,6 +617,25 @@ export default {
     },
     isDarkMode() {
       return getters.isDarkMode();
+    },
+    matchedLocationName() {
+        if (!this.savedLocations || this.savedLocations.length === 0) return null;
+        // Use a small epsilon for float comparison
+        const epsilon = 0.00001;
+        const match = this.savedLocations.find(loc => 
+            Math.abs(loc.lat - this.editLat) < epsilon && 
+            Math.abs(loc.lon - this.editLon) < epsilon
+        );
+        return match ? match.name : null;
+    },
+    gpsMatchedLocationName() {
+        if (!this.gpsCoordinates || !this.savedLocations || this.savedLocations.length === 0) return null;
+        const epsilon = 0.00001;
+        const match = this.savedLocations.find(loc => 
+            Math.abs(loc.lat - this.gpsCoordinates.lat) < epsilon && 
+            Math.abs(loc.lon - this.gpsCoordinates.lon) < epsilon
+        );
+        return match ? match.name : null;
     },
     hasPrevious() {
       return this.previousLink !== "";
@@ -754,6 +795,7 @@ export default {
       this.dimensionRetryCount = 0;
       await this.updatePreview();
       this.toggleNavigation();
+      this.retrieveSavedLocations();
       await this.fetchMetadata();
       await this.updateImageDimensions();
       this.$nextTick(() => {
@@ -798,7 +840,13 @@ export default {
 		if (this.metadata && this.metadata.xmp) {
 		this.metadata.xmp['photoshop:Instructions'] = newVal;
 		}
-   	  }
+   	  },
+      currentUserSavedLocations: {
+        handler() {
+            this.retrieveSavedLocations();
+        },
+        deep: true
+      }
   },
   created() {
       // Non-reactive properties for Leaflet
@@ -819,7 +867,7 @@ export default {
       url: state.req.url,
     });
 
-	
+	this.retrieveSavedLocations();
     await this.fetchMetadata();
     await this.updateImageDimensions();
     document.addEventListener("mousemove", this.resizeMetadata);
@@ -1102,8 +1150,19 @@ export default {
             attribution: '© OpenStreetMap'
         });
 
+        // Dark Matter (CartoDB)
+        const dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+            subdomains: 'abcd',
+            maxZoom: 20
+        });
+
         // Initialize map
-        // Default to Hybrid (Aerial)
+        // Default to Hybrid (Aerial) but respect isDarkMode maybe? Or just default.
+        // Let's default to standard OSM for clarity or Hybrid as before.
+        // User asked for "Standard, Satellite, Hybrid, Dark Mode".
+        // Let's stick to Hybrid as default if set, or just add them all.
+        
         this.mapInstance = L.map(mapContainer, { 
             preferCanvas: true,
             layers: [hybrid] // Default layer
@@ -1111,9 +1170,10 @@ export default {
 
         // Add Layer Control
         const baseMaps = {
-            "Aerial (Hybrid)": hybrid,
-            "Streets": streets,
-            "OpenStreetMap": osm
+            "Satellite (Hybrid)": hybrid,
+            "Standard (Streets)": streets,
+            "OpenStreetMap": osm,
+            "Dark Mode": dark
         };
         L.control.layers(baseMaps).addTo(this.mapInstance);
 
@@ -1497,32 +1557,7 @@ findInstructionDeep(obj) {
         }
     },
 
-    updateBaseLayer() {
-        if (!this.mapInstance) return;
-        
-        // Remove existing tile layers
-        this.mapInstance.eachLayer((layer) => {
-            if (layer instanceof L.TileLayer) {
-                this.mapInstance.removeLayer(layer);
-            }
-        });
 
-        let url = '';
-        let options = { maxZoom: 20 };
-
-        if (this.mapBasemap === 'hybrid') {
-            url = 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}';
-            options.attribution = 'Google';
-        } else if (this.mapBasemap === 'streets') {
-             url = 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}';
-             options.attribution = 'Google';
-        } else { // OSM
-             url = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-             options.attribution = '&copy; OpenStreetMap contributors';
-        }
-        
-        L.tileLayer(url, options).addTo(this.mapInstance);
-    },
 
     
     async saveLocationToProfile() {
@@ -1531,28 +1566,43 @@ findInstructionDeep(obj) {
         let name = prompt("Enter a name for this location:", this.searchQuery || "My Location");
         if (!name) return;
         
+        await this.handleSaveLocation(name, this.editLat, this.editLon);
+    },
+    
+    async saveCurrentGpsLocation() {
+        if (!this.gpsCoordinates) return;
+        
+        let name = prompt("Enter a name for this location:", "New Location");
+        if (!name) return;
+        
+        await this.handleSaveLocation(name, this.gpsCoordinates.lat, this.gpsCoordinates.lon);
+    },
+
+    async handleSaveLocation(name, lat, lon) {
+        // Ensure we have the latest list from state before modifying
+        if (state.user && state.user.savedLocations) {
+             // Merge with any local component state if needed, but really we should trust state.user
+             // If we haven't loaded them yet, this prevents overwriting with empty array.
+             this.savedLocations = JSON.parse(JSON.stringify(state.user.savedLocations));
+        }
+
         const newLoc = {
             name: name,
-            lat: this.editLat,
-            lon: this.editLon
+            lat: lat,
+            lon: lon
         };
         
         if (!this.savedLocations) this.savedLocations = [];
         this.savedLocations.unshift(newLoc);
+        
+        // Limit to 10 recent locations as per existing logic
         if (this.savedLocations.length > 10) {
             this.savedLocations = this.savedLocations.slice(0, 10);
         }
         
-        // Save to user profile logic
-        // We need to call user update API.
         try {
-            // usersApi.update(user, which)
-            // We clone user to avoid mutating state directly just in case, though we updated local list.
             const userUpdate = { ...state.user, savedLocations: this.savedLocations };
-            delete userUpdate.viewMode; // prevent other things from resetting if API is sensitive
-            // Actually users.js update handles filtering.
-            
-            delete userUpdate.viewMode; // Avoid sending viewMode if it's local
+            delete userUpdate.viewMode; 
             
             await usersApi.update(userUpdate, ['savedLocations']);
             mutations.updateCurrentUser({ ...state.user, savedLocations: this.savedLocations });
@@ -1689,6 +1739,12 @@ findInstructionDeep(obj) {
       if (getters.currentPromptName() != null) {
         return;
       }
+      
+      // Ignore navigation keys if typing in an input or textarea
+      if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+          return;
+      }
+
       const { key } = event;
       switch (key) {
         case "ArrowRight":

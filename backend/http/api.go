@@ -189,16 +189,21 @@ func getMetadataHandler(w http.ResponseWriter, r *http.Request, d *requestContex
 		return http.StatusBadRequest, fmt.Errorf("source and path are required")
 	}
 
-	userScope := "/"
+	scopePath := path
+	if !strings.HasPrefix(scopePath, "/") {
+		scopePath = "/" + scopePath
+	}
+
 	if d.user.Username != "publicUser" {
-		var err error
 		var realSource string
-		userScope, realSource, err = settings.GetScopeFromSourceString(d.user.Scopes, source)
+		var err error
+		scopePath, realSource, err = ResolveScopePath(d.user, source, path)
 		if err != nil && d.share == nil {
-			return http.StatusForbidden, fmt.Errorf("source %s is not available for user %s", source, d.user.Username)
+			return http.StatusForbidden, fmt.Errorf("source %s is not available for user %s: %w", source, d.user.Username, err)
 		}
-		// Use real source name for subsequent calls
-		source = realSource
+		if err == nil {
+			source = realSource
+		}
 	}
 
 	idx := indexing.GetIndex(source)
@@ -206,10 +211,9 @@ func getMetadataHandler(w http.ResponseWriter, r *http.Request, d *requestContex
 		return http.StatusNotFound, fmt.Errorf("source '%s' not found", source)
 	}
 
-	scopedPath := filepath.Join(userScope, path)
-	log.Printf("Resolving scoped path: %s", scopedPath)
+	log.Printf("Resolving scoped path: %s", scopePath)
 
-	realPath, _, err := idx.GetRealPath(scopedPath)
+	realPath, _, err := idx.GetRealPath("/", scopePath)
 	if err != nil {
 		return http.StatusNotFound, fmt.Errorf("file not found: %w", err)
 	}
@@ -308,24 +312,19 @@ func resourceInstructionsHandler(w http.ResponseWriter, r *http.Request, d *requ
 	//		return http.StatusBadRequest, fmt.Errorf("source, path, and instructions are required")
 	//	}
 
-	userScope := "/"
-	if d.user.Username != "publicUser" {
-		var err error
-		var realSource string
-		userScope, realSource, err = settings.GetScopeFromSourceString(d.user.Scopes, source)
-		if err != nil && d.share == nil {
-			return http.StatusForbidden, fmt.Errorf("source %s is not available for user %s", source, d.user.Username)
-		}
-		source = realSource
+	// Parse scope index and resolve path handling cross-scope permissions
+	scopePath, realSource, err := ResolveScopePath(d.user, source, path)
+	if err != nil {
+		return http.StatusForbidden, err
 	}
+	source = realSource
 
 	idx := indexing.GetIndex(source)
 	if idx == nil {
 		return http.StatusNotFound, fmt.Errorf("source '%s' not found", source)
 	}
 
-	scopedPath := filepath.Join(userScope, path)
-	realPath, _, err := idx.GetRealPath(scopedPath)
+	realPath, _, err := idx.GetRealPath(scopePath)
 	if err != nil {
 		return http.StatusNotFound, fmt.Errorf("file not found: %w", err)
 	}

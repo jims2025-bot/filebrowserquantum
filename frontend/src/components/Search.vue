@@ -1,11 +1,11 @@
 <template>
   <div
-    id="search"
+    id="fb-search"
     :class="{ active, ongoing, 'dark-mode': isDarkMode }"
     @click="clearContext"
   >
     <!-- Search input section -->
-    <div id="input" @click="open">
+    <div id="fb-input" @click="open">
       <!-- Close button visible when search is active -->
       <button
         v-if="active"
@@ -20,7 +20,7 @@
       <i v-else class="material-icons">search</i>
       <!-- Input field for search -->
       <input
-        id="main-input"
+        id="fb-main-input"
         class="main-input"
         type="text"
         @keyup.exact="keyup"
@@ -34,7 +34,7 @@
     </div>
 
     <!-- Search results for desktop -->
-    <div v-show="active" id="results" ref="result">
+    <div v-show="active" id="fb-results" ref="result">
       <div class="inputWrapper" style="display: flex">
         <select
           v-if="multipleSources"
@@ -53,7 +53,7 @@
         <div class="searchContext">{{ contextText }}</div>
       </div>
 
-      <div id="result-list">
+      <div id="fb-result-list">
         <div>
           <div v-if="active">
             <div v-if="isMobile">
@@ -207,7 +207,7 @@ export default {
     },
     active(active) {
       // this is hear to allow for animation
-      const resultList = document.getElementById("result-list");
+      const resultList = document.getElementById("fb-result-list");
       if (!active) {
         resultList.classList.remove("active");
         this.value = "";
@@ -220,7 +220,7 @@ export default {
       }
       setTimeout(() => {
         resultList.classList.add("active");
-        document.getElementById("main-input").focus();
+        document.getElementById("fb-main-input").focus();
       }, 100);
     },
     value() {
@@ -535,7 +535,7 @@ export default {
 };
 </script>
 
-<style>
+<style scoped>
 .main-input {
   width: 100%;
 }
@@ -595,12 +595,12 @@ export default {
   flex-direction: column;
 }
 
-#search.active #results ul li a {
+#fb-search.active #fb-results ul li a {
   display: flex;
   align-items: center;
 }
 
-#search #result-list.active {
+#fb-search #fb-result-list.active {
   width: 1000px;
   max-width: 95vw;
 }
@@ -619,18 +619,24 @@ export default {
 }
 
 /* Search */
-#search {
-  background-color: unset !important;
-  z-index: 5;
-  position: fixed;
-  top: 0.5em;
-  min-width: 35em;
-  left: 50%;
-  -webkit-transform: translateX(-50%);
-  transform: translateX(-50%);
+#fb-search {
+  background-color: transparent !important;
+  position: relative !important;
+  flex-grow: 1;
+  width: auto !important;
+  max-width: 40em;
+  margin: 0 1em;
+  height: auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  z-index: auto !important;
+  top: auto !important;
+  left: auto !important;
+  transform: none !important;
 }
 
-#search #input {
+#fb-search #fb-input {
   background-color: rgba(100, 100, 100, 0.2);
   display: flex;
   height: 100%;
@@ -643,23 +649,23 @@ export default {
   height: 3em;
 }
 
-#search input {
+#fb-search input {
   border: 0;
   background-color: transparent;
   padding: 0;
 }
 
-#result-list p {
+#fb-result-list p {
   margin: 1em;
 }
 
 /* Hiding scrollbar for Chrome, Safari and Opera */
-#result-list::-webkit-scrollbar {
+#fb-result-list::-webkit-scrollbar {
   display: none;
 }
 
 /* Hiding scrollbar for IE, Edge and Firefox */
-#result-list {
+#fb-result-list {
   scrollbar-width: none;
   /* Firefox */
   -ms-overflow-style: none;
@@ -689,7 +695,7 @@ export default {
   direction: rtl;
 }
 
-#search #result {
+#fb-search #fb-results {
   padding-top: 1em;
   overflow: hidden;
   background: white;
@@ -705,36 +711,36 @@ export default {
   z-index: 3;
 }
 
-body.rtl #search #result {
+body.rtl #fb-search #fb-results {
   direction: ltr;
 }
 
-#search #result > div > *:first-child {
+#fb-search #fb-results > div > *:first-child {
   margin-top: 0;
 }
 
-body.rtl #search #result {
+body.rtl #fb-search #fb-results {
   direction: rtl;
   text-align: right;
 }
 
 /* Search Results */
-body.rtl #search #result ul > * {
+body.rtl #fb-search #fb-results ul > * {
   direction: ltr;
   text-align: left;
 }
 
-#search ul {
+#fb-search ul {
   margin-top: 1em;
   padding: 0;
   list-style: none;
 }
 
-#search li {
+#fb-search li {
   margin: 0.5em;
 }
 
-#search #renew {
+#fb-search #renew {
   width: 100%;
   text-align: center;
   display: none;
@@ -742,11 +748,11 @@ body.rtl #search #result ul > * {
   max-width: none;
 }
 
-#search.ongoing #renew {
+#fb-search.ongoing #renew {
   display: block;
 }
 
-#search.active #input {
+#fb-search.active #fb-input {
   background-color: var(--background);
   border-color: black;
   border-style: solid;
@@ -756,31 +762,31 @@ body.rtl #search #result ul > * {
 }
 
 /* Search Input Placeholder */
-#search::-webkit-input-placeholder {
+#fb-search::-webkit-input-placeholder {
   color: rgba(255, 255, 255, 0.5);
 }
 
-#search:-moz-placeholder {
+#fb-search:-moz-placeholder {
   opacity: 1;
   color: rgba(255, 255, 255, 0.5);
 }
 
-#search::-moz-placeholder {
+#fb-search::-moz-placeholder {
   opacity: 1;
   color: rgba(255, 255, 255, 0.5);
 }
 
-#search:-ms-input-placeholder {
+#fb-search:-ms-input-placeholder {
   color: rgba(255, 255, 255, 0.5);
 }
 
 /* Search Boxes */
-#search .boxes {
+#fb-search .boxes {
   margin: 1em;
   text-align: center;
 }
 
-#search .boxes h3 {
+#fb-search .boxes h3 {
   margin: 0;
   font-weight: 500;
   font-size: 1em;
@@ -788,7 +794,7 @@ body.rtl #search #result ul > * {
   padding: 0.5em;
 }
 
-body.rtl #search .boxes h3 {
+body.rtl #fb-search .boxes h3 {
   text-align: right;
 }
 

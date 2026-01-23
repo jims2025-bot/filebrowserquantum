@@ -193,15 +193,20 @@ func rawFilesHandler(w http.ResponseWriter, r *http.Request, d *requestContext, 
 	fileName := filepath.Base(firstFilePath)
 	var err error
 	userscope := "/"
+	// userscope declared above
 	if d.user.Username != "publicUser" {
 		var realSource string
-		userscope, realSource, err = settings.GetScopeFromSourceString(d.user.Scopes, firstFileSource)
+		var scopePath string
+		var err error
+		scopePath, realSource, err = ResolveScopePath(d.user, firstFileSource, firstFilePath)
 		if err != nil {
-			logger.Errorf("GetScopeFromSourceString failed for source %s: %v", firstFileSource, err)
+			logger.Errorf("ResolveScopePath failed for source %s: %v", firstFileSource, err)
 			return http.StatusForbidden, err
 		}
 		// Use Real Source Name
 		firstFileSource = realSource
+		// Use resolved absolute path
+		firstFilePath = scopePath
 	}
 
 	logger.Debugf("RawFilesHandler: Original Source: %s, UserScope: %s", firstFileSource, userscope)
@@ -339,24 +344,31 @@ func computeArchiveSize(fileList []string, d *requestContext) (int64, error) {
 		userScope := "/"
 		if d.user.Username != "publicUser" {
 			var realSource string
-			userScope, realSource, err = settings.GetScopeFromSourceString(d.user.Scopes, source)
+			var scopePath string
+			scopePath, realSource, err = ResolveScopePath(d.user, source, path)
 			if d.share == nil && err != nil {
 				return 0, fmt.Errorf("source %s is not available for user %s", source, d.user.Username)
 			}
 			source = realSource
+			// Use resolved path
+			path = scopePath
+		} else {
+			// For public user, ensure path doesn't have double slash issues if strictly following previous logic
+			path = utils.JoinPathAsUnix(userScope, path)
 		}
 
 		idx := indexing.GetIndex(source)
 		if idx == nil {
 			return 0, fmt.Errorf("source %s is not available", source)
 		}
-		realPath, isDir, err := idx.GetRealPath(userScope, path)
+		// Path is now absolute scope path
+		realPath, isDir, err := idx.GetRealPath("/", path)
 		if err != nil {
-			return http.StatusInternalServerError, err
+			return 0, err
 		}
 
 		// Use logical path for metadata lookup to avoid casing issues with MakeIndexPath(realPath)
-		indexPath := utils.JoinPathAsUnix(userScope, path)
+		indexPath := path
 		info, ok := idx.GetReducedMetadata(indexPath, isDir)
 		if !ok {
 			// Check if we need to try with MakeIndexPath as fallback?

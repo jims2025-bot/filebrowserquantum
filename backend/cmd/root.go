@@ -7,14 +7,15 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/gtsteffaniak/go-logger/logger"
 	"github.com/jims2025-bot/filebrowserquantum/backend/adapters/fs/fileutils"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
 	"github.com/jims2025-bot/filebrowserquantum/backend/database/storage"
+	"github.com/jims2025-bot/filebrowserquantum/backend/heatmap"
 	fbhttp "github.com/jims2025-bot/filebrowserquantum/backend/http"
 	"github.com/jims2025-bot/filebrowserquantum/backend/indexing"
 	"github.com/jims2025-bot/filebrowserquantum/backend/preview"
 	"github.com/jims2025-bot/filebrowserquantum/backend/swagger/docs"
-	"github.com/gtsteffaniak/go-logger/logger"
 	"github.com/swaggo/swag"
 
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/version"
@@ -88,6 +89,10 @@ func StartFilebrowser() {
 	}
 	validateUserInfo()
 	validateOfficeIntegration()
+
+	// Start heatmap job
+	heatmap.StartJob(store)
+
 	// Start the rootCMD in a goroutine
 	go func() {
 		if err := rootCMD(ctx, store, &serverConfig, shutdownComplete); err != nil {
