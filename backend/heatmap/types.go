@@ -2,8 +2,13 @@ package heatmap
 
 import "time"
 
+// HeatmapVersion is the current version of the heatmap.json format
+// Increment this when the JSON structure changes to force re-scanning
+const HeatmapVersion = 1
+
 // Cluster represents a group of images or sub-clusters.
 type Cluster struct {
+	ID    string     `json:"id"`
 	Lat   float64    `json:"lat"`
 	Lon   float64    `json:"lon"`
 	Count int        `json:"count"`
@@ -28,10 +33,15 @@ type ClusterPoint struct {
 	Path      string  `json:"path"`
 	PreviewID string  `json:"previewID"`
 	Source    string  `json:"source,omitempty"`
+	// Additional fields for inspection drill-down
+	Type  string `json:"type,omitempty"` // "folder" or "image"
+	Count int    `json:"count"`          // For folder count
+	ID    string `json:"id,omitempty"`   // Cluster ID to pass to next step
 }
 
 // HeatmapData represents the persistent JSON data for a folder.
 type HeatmapData struct {
+	Version     int       `json:"version"` // Format version for compatibility checking
 	GeneratedAt time.Time `json:"generatedAt"`
 	Clusters    []Cluster `json:"clusters"`
 	TotalImages int       `json:"totalImages"`

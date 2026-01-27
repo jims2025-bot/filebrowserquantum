@@ -1,12 +1,9 @@
 package heatmap
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
-	"os"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	"github.com/gtsteffaniak/go-logger/logger"
@@ -33,9 +30,12 @@ const ClusterRadius = 0.0005 // Approx 50 meters, adjust as needed
 // And store that in heatmap.json.
 // The aggregation logic (GlobalHeatmap) will read these heatmap.json files.
 
-func ScanFolder(sourceName, folderPath string, progress *ScanProgress) ([]Cluster, error) {
+// GetLocalClusters scans a specific folder for images, extracts GPS and clusters them.
+// It returns the Clusters found in this folder (local images only).
+// It does NOT write to disk. That is handled by the Recursive Orchestrator.
+func GetLocalClusters(sourceName, folderPath string, progress *ScanProgress) ([]Cluster, error) {
 	// DEBUG LOG
-	logger.Info(fmt.Sprintf("[DebugScan] Scanning Source=%s Folder=%s", sourceName, folderPath))
+	// logger.Info(fmt.Sprintf("[DebugScan] Scanning Source=%s Folder=%s", sourceName, folderPath))
 
 	idx := indexing.GetIndex(sourceName)
 	if idx == nil {
@@ -48,7 +48,7 @@ func ScanFolder(sourceName, folderPath string, progress *ScanProgress) ([]Cluste
 		logger.Error("[DebugScan] GetRealPath failed: " + err.Error())
 		return nil, err
 	}
-	logger.Info("[DebugScan] Real path resolved to: " + realPath)
+	// logger.Info("[DebugScan] Real path resolved to: " + realPath)
 
 	// 1. Find images in this folder
 	// Force index refresh
@@ -57,19 +57,21 @@ func ScanFolder(sourceName, folderPath string, progress *ScanProgress) ([]Cluste
 		IsDir: true,
 	})
 	if refreshErr != nil {
-		logger.Error("[DebugScan] RefreshFileInfo failed: " + refreshErr.Error())
-	} else {
-		logger.Info("[DebugScan] Index refreshed successfully for " + folderPath)
+		// logger.Error("[DebugScan] RefreshFileInfo failed: " + refreshErr.Error())
 	}
 
 	dirInfo, exists := idx.GetReducedMetadata(folderPath, true)
 	if !exists {
-		logger.Error("[DebugScan] GetReducedMetadata returned FALSE (not found) for " + folderPath)
+		// logger.Error("[DebugScan] GetReducedMetadata returned FALSE (not found) for " + folderPath)
 		return nil, nil
 	}
-	logger.Info(fmt.Sprintf("[DebugScan] Metadata found. Processing %d files.", len(dirInfo.Files)))
 
 	var points []Cluster
+
+	// Helper for ID generation
+	genID := func() string {
+		return fmt.Sprintf("%d-%d", time.Now().UnixNano(), len(points))
+	}
 
 	// Process files
 	for _, file := range dirInfo.Files {
@@ -90,6 +92,7 @@ func ScanFolder(sourceName, folderPath string, progress *ScanProgress) ([]Cluste
 		}
 
 		points = append(points, Cluster{
+			ID:        genID(),
 			Lat:       lat,
 			Lon:       lon,
 			Count:     1,
@@ -108,30 +111,24 @@ func ScanFolder(sourceName, folderPath string, progress *ScanProgress) ([]Cluste
 		})
 	}
 
-	logger.Info(fmt.Sprintf("[DebugScan] Found %d valid GPS points in %s", len(points), folderPath))
+	// logger.Info(fmt.Sprintf("[DebugScan] Found %d valid GPS points in %s", len(points), folderPath))
 
-	// 2. Cluster the points
-	clusters := clusterPoints(points, ClusterRadius)
-
-	// 3. Save to disk
-	data := HeatmapData{
-		GeneratedAt: time.Now(),
-		Clusters:    clusters,
-		TotalImages: len(points),
-	}
-
-	jsonBytes, err := json.Marshal(data)
-	if err == nil {
-		outPath := filepath.Join(realPath, HeatmapFilename)
-		err = os.WriteFile(outPath, jsonBytes, 0644)
-		if err != nil {
-			logger.Error("[DebugScan] Failed to write heatmap.json: " + err.Error())
-		} else {
-			logger.Info("[DebugScan] Success. Wrote " + strconv.Itoa(len(clusters)) + " clusters to " + outPath)
+	// validGPSCount := len(points)
+	totalImageCount := 0
+	for _, file := range dirInfo.Files {
+		if iteminfo.IsImage(file.Name) {
+			totalImageCount++
 		}
-	} else {
-		logger.Error("[DebugScan] Marshal failed: " + err.Error())
 	}
+
+	if totalImageCount > 0 {
+		// logger.Info(fmt.Sprintf("Heatmap: scanned %s - Total Images: %d, Valid GPS: %d", folderPath, totalImageCount, validGPSCount))
+	} else {
+		// logger.Debug(fmt.Sprintf("Heatmap: scanned %s - No images found", folderPath))
+	}
+
+	// 2. Cluster the points (local only)
+	clusters := clusterPoints(points, ClusterRadius)
 
 	return clusters, nil
 }
@@ -157,6 +154,10 @@ func clusterPoints(points []Cluster, radius float64) []Cluster {
 				c.Min[1] = math.Min(c.Min[1], p.Lon)
 				c.Max[0] = math.Max(c.Max[0], p.Lat)
 				c.Max[1] = math.Max(c.Max[1], p.Lon)
+
+				// Keep the ID of the larger cluster or generate new?
+				// Ideally stable ID if possible, but merging makes it a new entity.
+				// Re-using c.ID is fine for stability of the "anchor".
 
 				// Accumulate points
 				if len(c.Points) > 0 || len(p.Points) > 0 {

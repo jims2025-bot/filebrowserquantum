@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +23,8 @@ import (
 	"github.com/jims2025-bot/filebrowserquantum/backend/indexing/iteminfo"
 )
 
+// SafeClusterCollector removed as we are using aggregation.
+
 type ScanProgress struct {
 	Current int    `json:"current"`
 	Total   int    `json:"total"`
@@ -32,11 +35,25 @@ var (
 	// ActiveScans tracks which paths are currently being scanned to prevent duplicates.
 	// Key: "sourceName|path", Value: *ScanProgress
 	activeScans sync.Map
+
+	// MergeRadius defines the proximity threshold for merging duplicate/stacked clusters.
+	// 0.0003 degrees is approx 33 meters.
+	MergeRadius = 0.0003
+
+	// Tracker for active folder scans (for 5-min summary)
+	activeFolders sync.Map // map[string]activeFolderInfo
 )
+
+type activeFolderInfo struct {
+	Path      string
+	FileCount int
+	StartTime time.Time
+}
 
 // ScanSafe triggers a recursive scan for a given path if one is not already running.
 // It is safe to call continuously; it will reject requests for paths already being processed.
-func ScanSafe(sourceName, path string) error {
+// isManualScan: if true, forces rebuild regardless of version/timestamp
+func ScanSafe(sourceName, path string, isManualScan bool) error {
 	key := sourceName + "|" + path
 	progress := &ScanProgress{Current: 0, Total: 0, Message: "Starting scan..."}
 	if _, loaded := activeScans.LoadOrStore(key, progress); loaded {
@@ -54,7 +71,13 @@ func ScanSafe(sourceName, path string) error {
 		logger.Info(fmt.Sprintf("Heatmap: Found %d files to scan in %s", progress.Total, path))
 	}
 
-	ScanRecursive(sourceName, path, progress)
+	// Limit concurrency
+	sem := make(chan struct{}, 20)
+	_, err := ScanRecursive(sourceName, path, progress, sem, isManualScan)
+	if err == nil {
+		// Update parents
+		go PercolateUp(sourceName, path)
+	}
 	return nil
 }
 
@@ -76,10 +99,15 @@ func IsScanning(sourceName, path string) bool {
 
 func StartJob(store *storage.Storage) {
 	go func() {
+		// Start the active scan monitor
+		go monitorActiveScans()
+
 		// Wait for initial index to populate (large repos take time)
 		time.Sleep(30 * time.Second)
 		for {
 			logger.Info("Starting Heatmap Generation Job")
+			logger.Info(fmt.Sprintf("Heatmap.json version = %d", HeatmapVersion))
+			logger.Info("New heatmap version changes require update in backend/heatmap/types.go")
 
 			// Build lookup maps to resolve index names from paths
 			allIndexes := indexing.GetIndexes()
@@ -148,7 +176,9 @@ func StartJob(store *storage.Storage) {
 				for sourceName, paths := range locationsToScan {
 					for path := range paths {
 						logger.Info("Heatmap: Scanning scope " + sourceName + " " + path)
-						ScanRecursive(sourceName, path, nil)
+						// Limit concurrency
+						sem := make(chan struct{}, 20)
+						ScanRecursive(sourceName, path, nil, sem, false) // Automatic scan
 					}
 				}
 			}
@@ -160,23 +190,55 @@ func StartJob(store *storage.Storage) {
 	}()
 }
 
-// GetGlobalHeatmap aggregates all clusters from folders accessible to the user.
+// GetGlobalHeatmap aggregates pre-computed heatmap.json files from all user scopes.
 func GetGlobalHeatmap(user *users.User) (GlobalHeatmap, error) {
 	var allClusters []Cluster
 
-	// If user has restricted scopes, iterate them.
-	// If user is admin and has no scopes, they might see everything, but let's check.
 	// We'll iterate all indexes and filter by scope.
+	rawIndexes := indexing.GetIndexes()
+	visitedHeatmaps := make(map[string]bool)
+	processedRoots := []string{}
 
-	allIndexes := indexing.GetIndexes()
+	// Convert Map to Slice for sorting
+	allIndexes := make([]*indexing.Index, 0, len(rawIndexes))
+	for _, idx := range rawIndexes {
+		allIndexes = append(allIndexes, idx)
+	}
+
+	// Sort indexes by path length (Shortest first) to prioritize parents
+	for i := 0; i < len(allIndexes)-1; i++ {
+		for j := 0; j < len(allIndexes)-i-1; j++ {
+			if len(allIndexes[j].Source.Path) > len(allIndexes[j+1].Source.Path) {
+				allIndexes[j], allIndexes[j+1] = allIndexes[j+1], allIndexes[j]
+			}
+		}
+	}
 
 	for _, idx := range allIndexes {
 		validPaths := []string{}
 
-		// If user has scopes for this source, use them.
+		// Containment Deduplication:
+		// If this source is a child of an already processed source, SKIP IT.
+		sourceRoot := filepath.ToSlash(filepath.Clean(idx.Source.Path))
+		isNested := false
+		for _, parent := range processedRoots {
+			rel, err := filepath.Rel(parent, sourceRoot)
+			if err == nil && !strings.HasPrefix(rel, "..") && rel != "." {
+				// It is a subdirectory (and not the same directory, handled by validPaths logic?
+				// No, duplicate aliases are handled by visitedHeatmaps.
+				// Nested directories (e.g. /Foo vs /Foo/Bar) are handled here.
+				isNested = true
+				break
+			}
+		}
+		if isNested {
+			continue
+		}
+		processedRoots = append(processedRoots, sourceRoot)
+
+		// Scope resolution logic
 		hasSourceScope := false
 		for _, s := range user.Scopes {
-			// Strict name match OR path match
 			isMatch := (s.Name == idx.Source.Name)
 			if !isMatch && strings.Contains(s.Name, ":") {
 				parts := strings.Split(s.Name, ":")
@@ -184,7 +246,6 @@ func GetGlobalHeatmap(user *users.User) (GlobalHeatmap, error) {
 					isMatch = true
 				}
 			}
-
 			if !isMatch {
 				p1 := filepath.ToSlash(filepath.Clean(s.Name))
 				p2 := filepath.ToSlash(filepath.Clean(idx.Source.Path))
@@ -192,20 +253,17 @@ func GetGlobalHeatmap(user *users.User) (GlobalHeatmap, error) {
 					isMatch = true
 				}
 			}
-
 			if isMatch {
 				validPaths = append(validPaths, s.Scope)
 				hasSourceScope = true
 			}
 		}
 
-		// If admin and no specific scope for this source (or globally), maybe allow root?
-		// Existing behavior: Admin with no scopes usually means access to all defined sources.
-		// If user has NO scopes defined in `user.Scopes`, and is Admin, we add "/" for all sources.
-		if user.Permissions.Admin && len(user.Scopes) == 0 {
-			validPaths = append(validPaths, "/")
-		} else if !user.Permissions.Admin && !hasSourceScope {
-			// Non-admin, no scope for this source -> no access
+		// FIX: For Admin, always use Root "/" to ensure full visibility and avoid scope conflicts.
+		// This matches the override in ResolveScopePath/HeatmapHandler.
+		if user.Permissions.Admin {
+			validPaths = []string{"/"}
+		} else if !hasSourceScope {
 			continue
 		}
 
@@ -214,43 +272,106 @@ func GetGlobalHeatmap(user *users.User) (GlobalHeatmap, error) {
 		}
 
 		for _, rootPath := range validPaths {
-			var scopeClusters []Cluster
-			walkHeatmap(idx, idx.Source.Name, rootPath, &scopeClusters)
+			// Read the pre-computed heatmap.json for this scope
+			// We need a fresh index object to be safe or just use the one we have?
+			// idx is from the loop. It works.
 
-			// Trim the scope path from the cluster paths so they are relative to the user's view
-			for i := range scopeClusters {
-				if rootPath != "/" {
-					// Handle case-insensitive prefix trimming if on Windows?
-					// For now, strict trim.
-					// Ensure we check for slash consistency
-					scopeClusters[i].Path = strings.TrimPrefix(scopeClusters[i].Path, rootPath)
-					if !strings.HasPrefix(scopeClusters[i].Path, "/") && scopeClusters[i].Path != "" {
-						scopeClusters[i].Path = "/" + scopeClusters[i].Path
-					}
+			realPath, _, err := idx.GetRealPath(rootPath)
+			if err != nil {
+				continue
+			}
+			heatmapPath := filepath.Join(realPath, HeatmapFilename)
 
-					// Update Children Points too
-					for j := range scopeClusters[i].Points {
-						scopeClusters[i].Points[j].Path = strings.TrimPrefix(scopeClusters[i].Points[j].Path, rootPath)
-						if !strings.HasPrefix(scopeClusters[i].Points[j].Path, "/") && scopeClusters[i].Points[j].Path != "" {
-							scopeClusters[i].Points[j].Path = "/" + scopeClusters[i].Points[j].Path
+			// Deduplication check (Case Insensitive for Windows safety)
+			dedupKey := strings.ToLower(filepath.Clean(heatmapPath))
+			if visitedHeatmaps[dedupKey] {
+				continue
+			}
+			visitedHeatmaps[dedupKey] = true
+
+			// Read file
+			if _, err := os.Stat(heatmapPath); err == nil {
+				bytes, err := os.ReadFile(heatmapPath)
+				if err == nil {
+					var data HeatmapData
+					if err := json.Unmarshal(bytes, &data); err == nil {
+						// Inject Source and prefix paths
+						for i := range data.Clusters {
+							data.Clusters[i].Source = idx.Source.Name
+
+							// Helper to join paths
+							join := func(p string) string {
+								// Trust raw input if it looks absolute (Unix or Windows style)
+								if strings.HasPrefix(p, "/") || strings.HasPrefix(p, "\\") {
+									return filepath.ToSlash(filepath.Clean(p))
+								}
+
+								cleanP := filepath.ToSlash(filepath.Clean(p))
+								cleanRoot := filepath.ToSlash(filepath.Clean(rootPath))
+
+								// If the path ALREADY starts with the root path, return it as is.
+								if strings.HasPrefix(cleanP, cleanRoot) {
+									return cleanP
+								}
+
+								// Check cleaned path for absolute indicator
+								if strings.HasPrefix(cleanP, "/") {
+									return cleanP
+								}
+
+								// Debug why we are joining
+								res := filepath.ToSlash(filepath.Join(rootPath, p))
+								if strings.Contains(res, "PHOTOCOLLECTIONS/POWELL-COLLECTION") {
+									logger.Info(fmt.Sprintf("Manager Join: Root='%s' P='%s' CleanP='%s' -> Res='%s'", rootPath, p, cleanP, res))
+								}
+
+								// Otherwise, join them.
+								return res
+							}
+
+							if data.Clusters[i].Path != "" {
+								data.Clusters[i].Path = join(data.Clusters[i].Path)
+							}
+
+							// Points
+							for j := range data.Clusters[i].Points {
+								if data.Clusters[i].Points[j].Path != "" {
+									data.Clusters[i].Points[j].Path = join(data.Clusters[i].Points[j].Path)
+								}
+								data.Clusters[i].Points[j].Source = idx.Source.Name
+							}
 						}
+
+						allClusters = append(allClusters, data.Clusters...)
 					}
 				}
 			}
-			allClusters = append(allClusters, scopeClusters...)
 		}
 	}
+
+	// Sort clusters to ensure deterministic output
+	sort.Slice(allClusters, func(i, j int) bool {
+		if allClusters[i].ID != "" && allClusters[j].ID != "" {
+			return allClusters[i].ID < allClusters[j].ID
+		}
+		if allClusters[i].Path != allClusters[j].Path {
+			return allClusters[i].Path < allClusters[j].Path
+		}
+		return allClusters[i].Lat < allClusters[j].Lat
+	})
+
+	// Optional: Merge identical location clusters here if needed.
+	// For now, raw aggregation.
 
 	return GlobalHeatmap{Clusters: allClusters}, nil
 }
 
-// GetFolderHeatmap recursively aggregates clusters for a specific folder.
+// GetFolderHeatmap reads the pre-computed heatmap.json for a specific folder.
 func GetFolderHeatmap(sourceName, path string) (HeatmapData, error) {
-	logger.Info("Heatmap: GetFolderHeatmap for Source=" + sourceName + " Path=" + path)
+	// logger.Info("Heatmap: GetFolderHeatmap for Source=" + sourceName + " Path=" + path)
 	idx := indexing.GetIndex(sourceName)
 	if idx == nil {
 		// Try resolving alias (e.g., PHOTOS:0 -> PHOTOS)
-		// This is common if the frontend uses indexed source names
 		if strings.Contains(sourceName, ":") {
 			parts := strings.Split(sourceName, ":")
 			if len(parts) > 0 {
@@ -264,79 +385,304 @@ func GetFolderHeatmap(sourceName, path string) (HeatmapData, error) {
 		return HeatmapData{}, nil
 	}
 
-	var allClusters []Cluster
-	walkHeatmap(idx, sourceName, path, &allClusters)
-
-	// Create a synthetic HeatmapData
-	return HeatmapData{
-		GeneratedAt: time.Now(),
-		Clusters:    allClusters,
-		TotalImages: len(allClusters), // Approximate
-	}, nil
-}
-
-func walkHeatmap(idx *indexing.Index, sourceName, currentPath string, collection *[]Cluster) {
-	// Check if this folder has heatmap.json
-	realPath, _, err := idx.GetRealPath(currentPath)
-	if err == nil {
-		heatmapPath := filepath.Join(realPath, HeatmapFilename)
-		if _, err := os.Stat(heatmapPath); err == nil {
-			// Found heatmap
-			bytes, err := os.ReadFile(heatmapPath)
-			if err == nil {
-				var data HeatmapData
-				if err := json.Unmarshal(bytes, &data); err == nil {
-					// logger.Info("Heatmap: Found " + strconv.Itoa(len(data.Clusters)) + " clusters in " + heatmapPath)
-
-					// Fix paths and inject source
-					for i := range data.Clusters {
-						data.Clusters[i].Source = sourceName
-
-						// Rebase path to ensure it matches the current location (handles folder moves/renames)
-						// Helper to fix a single path string
-						fixPath := func(originalPath string) string {
-							if originalPath == "" {
-								return ""
-							}
-							return filepath.ToSlash(filepath.Join(currentPath, filepath.Base(originalPath)))
-						}
-
-						if data.Clusters[i].Path != "" {
-							data.Clusters[i].Path = fixPath(data.Clusters[i].Path)
-						}
-
-						// Rebase children points
-						for j := range data.Clusters[i].Points {
-							data.Clusters[i].Points[j].Path = fixPath(data.Clusters[i].Points[j].Path)
-							data.Clusters[i].Points[j].Source = sourceName
-						}
-					}
-					*collection = append(*collection, data.Clusters...)
-				} else {
-					logger.Error("Heatmap: Failed to unmarshal " + heatmapPath + ": " + err.Error())
-				}
-			} else {
-				logger.Error("Heatmap: Failed to read " + heatmapPath + ": " + err.Error())
-			}
-		} else {
-			// Logger might be too noisy if we log every missing file
-			// logger.Info("Heatmap: No heatmap.json in " + realPath)
-		}
-	} else {
-		logger.Error("Heatmap: Failed to get real path for " + currentPath + ": " + err.Error())
+	realPath, _, err := idx.GetRealPath(path)
+	if err != nil {
+		return HeatmapData{}, err
 	}
 
-	// Recurse
-	dirInfo, exists := idx.GetReducedMetadata(currentPath, true)
+	heatmapPath := filepath.Join(realPath, HeatmapFilename)
+	// If file doesn't exist, return empty data
+	if _, err := os.Stat(heatmapPath); err != nil {
+		return HeatmapData{
+			GeneratedAt: time.Now(),
+			Clusters:    []Cluster{},
+			TotalImages: 0,
+		}, nil
+	}
+
+	bytes, err := os.ReadFile(heatmapPath)
+	if err != nil {
+		return HeatmapData{}, err
+	}
+
+	var data HeatmapData
+	if err := json.Unmarshal(bytes, &data); err != nil {
+		return HeatmapData{}, err
+	}
+
+	// Inject Source/Paths
+	for i := range data.Clusters {
+		data.Clusters[i].Source = sourceName
+		// Points
+		for j := range data.Clusters[i].Points {
+			data.Clusters[i].Points[j].Source = sourceName
+		}
+	}
+
+	return data, nil
+}
+
+func ScanRecursive(sourceName, rootPath string, progress *ScanProgress, sem chan struct{}, isManualScan bool) ([]Cluster, error) {
+	idx := indexing.GetIndex(sourceName)
+	if idx == nil {
+		return nil, fmt.Errorf("index not found")
+	}
+
+	if progress != nil {
+		progress.Message = "Scanning " + filepath.Base(rootPath)
+	}
+
+	// 1. Scan Subfolders (Parallel)
+	dirInfo, exists := idx.GetReducedMetadata(rootPath, true)
+	var wg sync.WaitGroup
+
 	if exists {
 		for _, sub := range dirInfo.Folders {
-			// IMPORTANT: index paths typically use forward slash, but filepath.Join uses OS separator.
-			// We must ensure internal paths are slash-separated for index lookups.
-			nextPath := filepath.ToSlash(filepath.Join(currentPath, sub.Name))
-			walkHeatmap(idx, sourceName, nextPath, collection)
+			wg.Add(1)
+			go func(subName string) {
+				defer wg.Done()
+
+				// Ensure forward slashes
+				nextPath := filepath.ToSlash(filepath.Join(rootPath, subName))
+
+				// Recurse without holding local semaphore (aggregation inside will acquire it)
+				_, _ = ScanRecursive(sourceName, nextPath, progress, sem, isManualScan)
+			}(sub.Name)
 		}
-	} else {
-		// logger.Info("Heatmap: No reduced metadata for " + currentPath)
+	}
+
+	wg.Wait()
+
+	// 2. Aggregate current level (Local + Children)
+	sem <- struct{}{}
+	defer func() { <-sem }()
+	return AggregateLevel(sourceName, rootPath, progress, isManualScan)
+}
+
+// AggregateLevel scans local files and aggregates child heatmap.json files.
+// isManualScan: if true, forces rebuild regardless of version/timestamp
+func AggregateLevel(sourceName, rootPath string, progress *ScanProgress, isManualScan bool) ([]Cluster, error) {
+	idx := indexing.GetIndex(sourceName)
+	if idx == nil {
+		return nil, fmt.Errorf("index not found")
+	}
+
+	// Count files in this folder for logging
+	fileCount := 0
+	dirInfo, exists := idx.GetReducedMetadata(rootPath, true)
+	if exists {
+		for _, file := range dirInfo.Files {
+			if iteminfo.IsImage(file.Name) {
+				fileCount++
+			}
+		}
+	}
+
+	// Check if we should skip this folder (only for automatic scans)
+	// Check BEFORE logging START so we don't spam logs for skipped folders
+	if !isManualScan {
+		realPath, _, err := idx.GetRealPath(rootPath)
+		if err == nil {
+			heatmapPath := filepath.Join(realPath, HeatmapFilename)
+			if _, err := os.Stat(heatmapPath); err == nil {
+				bytes, err := os.ReadFile(heatmapPath)
+				if err == nil {
+					var existingData HeatmapData
+					if err := json.Unmarshal(bytes, &existingData); err == nil {
+						// Check version and age
+						if existingData.Version == HeatmapVersion {
+							age := time.Since(existingData.GeneratedAt)
+							if age < 24*time.Hour {
+								// Log SKIP only
+								logger.Info(fmt.Sprintf("Heatmap [SKIP ]: %s (%d files) - HeatmapJSON v%d - last run: %s",
+									rootPath, fileCount, existingData.Version, existingData.GeneratedAt.Format(time.RFC3339)))
+								return existingData.Clusters, nil
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Enhanced logging: START
+	startTime := time.Now()
+	// Track valid GPS count for the DONE log
+	var totalValidGPS int
+
+	// Track active folder for 5-minute summary
+	activeFolders.Store(rootPath, activeFolderInfo{
+		Path:      rootPath,
+		FileCount: fileCount,
+		StartTime: startTime,
+	})
+
+	if fileCount > 0 {
+		logger.Info(fmt.Sprintf("Heatmap [START]: %s (%d files)", rootPath, fileCount))
+	}
+
+	// Defer a DONE log if not skipped
+	defer func() {
+		// Remove from active tracker
+		activeFolders.Delete(rootPath)
+
+		if fileCount > 0 {
+			duration := time.Since(startTime)
+			logger.Info(fmt.Sprintf("Heatmap [DONE ]: %s (%d files, %d w/GPS) - took %s",
+				rootPath, fileCount, totalValidGPS, duration.Round(time.Millisecond)))
+		}
+	}()
+
+	// 1. Get Local Clusters
+	// This rescans local files to ensure accuracy.
+	localClusters, _ := GetLocalClusters(sourceName, rootPath, progress)
+
+	// Update valid GPS count for logging
+	for _, c := range localClusters {
+		totalValidGPS += c.Count
+	}
+
+	// 2. Read Child Clusters
+	var childClusters []Cluster
+	dirInfo, exists = idx.GetReducedMetadata(rootPath, true)
+	if exists {
+		for _, sub := range dirInfo.Folders {
+			subName := sub.Name
+			nextPath := filepath.ToSlash(filepath.Join(rootPath, subName))
+
+			// Read child heatmap.json
+			realPath, _, err := idx.GetRealPath(nextPath)
+			if err == nil {
+				heatmapPath := filepath.Join(realPath, HeatmapFilename)
+				if _, err := os.Stat(heatmapPath); err == nil {
+					bytes, err := os.ReadFile(heatmapPath)
+					if err == nil {
+						var data HeatmapData
+						if err := json.Unmarshal(bytes, &data); err == nil {
+							// Strip points and adjust paths
+							for i := range data.Clusters {
+								data.Clusters[i].Points = nil
+
+								// CRITICAL FIX: Do NOT prepend subName if path already contains it
+								// or if path is already absolute from source root
+								if data.Clusters[i].Path != "" {
+									cleanPath := filepath.ToSlash(filepath.Clean(data.Clusters[i].Path))
+
+									// Check if path already contains the subName (case-insensitive)
+									pathLower := strings.ToLower(cleanPath)
+									subLower := strings.ToLower(subName)
+
+									// If path already starts with "/" it's absolute - don't touch it
+									if strings.HasPrefix(cleanPath, "/") {
+										logger.Debug(fmt.Sprintf("AggregateLevel: Path '%s' is absolute, keeping as-is", cleanPath))
+										data.Clusters[i].Path = cleanPath
+									} else if strings.Contains(pathLower, subLower) {
+										// Path already contains subName somewhere - likely already has full structure
+										logger.Debug(fmt.Sprintf("AggregateLevel: Path '%s' already contains subName '%s', keeping as-is", cleanPath, subName))
+										data.Clusters[i].Path = cleanPath
+									} else {
+										// Path is relative and doesn't contain subName - prepend it
+										data.Clusters[i].Path = filepath.ToSlash(filepath.Join(subName, cleanPath))
+										logger.Debug(fmt.Sprintf("AggregateLevel: Joined subName '%s' + path '%s' = '%s'", subName, cleanPath, data.Clusters[i].Path))
+									}
+								}
+							}
+							childClusters = append(childClusters, data.Clusters...)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// 3. Aggregate
+	allClusters := append(localClusters, childClusters...)
+
+	// 4. Save
+	realPath, _, err := idx.GetRealPath(rootPath)
+	if err == nil {
+
+		totalCount := 0
+		for _, c := range allClusters {
+			totalCount += c.Count
+		}
+
+		data := HeatmapData{
+			Version:     HeatmapVersion,
+			GeneratedAt: time.Now(),
+			Clusters:    allClusters,
+			TotalImages: totalCount,
+		}
+
+		outPath := filepath.Join(realPath, HeatmapFilename)
+		if err := writeHeatmapFile(outPath, data); err != nil {
+			logger.Error("Heatmap: Failed to write " + outPath + ": " + err.Error())
+		}
+	}
+
+	return allClusters, nil
+}
+
+// writeHeatmapFile ensures atomic writes by writing to a temp file and renaming it.
+func writeHeatmapFile(path string, data HeatmapData) error {
+	bytes, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+
+	// Use a temp file in the same directory to ensure we are on the same filesystem for atomic rename
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, bytes, 0644); err != nil {
+		return err
+	}
+
+	// Atomic replace
+	// On Windows, os.Rename replaces the file if it exists (Go > 1.4), similar to POSIX.
+	if err := os.Rename(tmpPath, path); err != nil {
+		os.Remove(tmpPath) // Cleanup on failure
+		return err
+	}
+	return nil
+}
+
+// PercolateUp updates heatmap.json for all parents of the given path up to the source root.
+func PercolateUp(sourceName, startPath string) {
+	currentPath := startPath
+	for {
+		// Move up
+		parent := filepath.Dir(currentPath)
+		if parent == currentPath || parent == "." {
+			// Hit root or internal representation limit
+			// Check if startPath itself was root.
+			// If currentPath is "/", parent is "/". Break.
+			if currentPath == "/" {
+				break
+			}
+			// If we are at root but loop continues?
+			if parent == "." {
+				// usually indexing paths are absolute-ish like "/" or "/foo".
+				// filepath.Dir("/") is "/".
+				break
+			}
+		}
+
+		// If filepath.Dir returns "\", fix to "/"
+		parent = filepath.ToSlash(parent)
+
+		// Safety: Check if we are still within valid source scope?
+		// AggregateLevel checks GetReducedMetadata.
+
+		logger.Info("Heatmap: Percolating up to " + parent)
+		_, err := AggregateLevel(sourceName, parent, nil, false)
+		if err != nil {
+			logger.Error("Heatmap: PercolateUp failed for " + parent + ": " + err.Error())
+			break
+		}
+
+		if parent == "/" {
+			break
+		}
+		currentPath = parent
 	}
 }
 
@@ -360,35 +706,4 @@ func CountFilesRecursive(idx *indexing.Index, rootPath string) int {
 	}
 	walk(rootPath)
 	return count
-}
-
-// Recursive Scanner Wrapper
-func ScanRecursive(sourceName, rootPath string, progress *ScanProgress) {
-	idx := indexing.GetIndex(sourceName)
-	if idx == nil {
-		return
-	}
-
-	// Internal recursive function
-	var walk func(path string)
-	walk = func(path string) {
-		if progress != nil {
-			progress.Message = "Scanning " + filepath.Base(path)
-		}
-
-		// Scan current folder
-		_, _ = ScanFolder(sourceName, path, progress)
-
-		// Scan subfolders
-		dirInfo, exists := idx.GetReducedMetadata(path, true)
-		if exists {
-			for _, sub := range dirInfo.Folders {
-				// Ensure forward slashes for index compatibility
-				nextPath := filepath.ToSlash(filepath.Join(path, sub.Name))
-				walk(nextPath)
-			}
-		}
-	}
-
-	walk(rootPath)
 }

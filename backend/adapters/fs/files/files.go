@@ -340,9 +340,7 @@ func FileInfoFaster(opts iteminfo.FileOptions) (iteminfo.ExtendedFileInfo, error
 	// info path lookup uses the canonical path now
 	info, exists := index.GetReducedMetadata(opts.Path, opts.IsDir)
 	if !exists {
-		// print all keys in index to debug
-		// index.PrintAllKeys(idx.Source.Name)
-		return response, fmt.Errorf("DEBUG metadata fail. Key: %s. Real: %s. IsDir: %v", opts.Path, realPath, isDir)
+		return response, fmt.Errorf("file not found in index: %s", opts.Path)
 	}
 	if opts.Content && strings.HasPrefix(info.Type, "text") {
 		if info.Size < 20*1024*1024 {

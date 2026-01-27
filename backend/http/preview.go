@@ -60,15 +60,21 @@ func previewHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (
 			return http.StatusBadRequest, fmt.Errorf("invalid source encoding: %v", err)
 		}
 	}
+
+	logger.Debug(fmt.Sprintf("Preview: Incoming request - path='%s', source='%s'", path, source))
+
 	if path == "" {
 		return http.StatusBadRequest, fmt.Errorf("invalid request path")
 	}
 	// Parse scope index and resolve path handling cross-scope permissions
 	scopePath, realSource, err := ResolveScopePath(d.user, source, path)
 	if err != nil {
+		logger.Error(fmt.Sprintf("Preview: ResolveScopePath failed - path='%s', source='%s', error='%v'", path, source, err))
 		return http.StatusForbidden, err
 	}
 	source = realSource
+
+	logger.Debug(fmt.Sprintf("Preview: Resolved - scopePath='%s', realSource='%s'", scopePath, realSource))
 
 	fileInfo, err := files.FileInfoFaster(iteminfo.FileOptions{
 		Path:   scopePath,

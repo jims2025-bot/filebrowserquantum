@@ -389,7 +389,7 @@
               <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px; flex-wrap: wrap; font-size: 0.9em; padding: 5px; background: rgba(0,0,0,0.03); border-radius: 4px;">
                   <div style="display: flex; align-items: center; gap: 5px;">
                       <strong style="white-space: nowrap;">Coords:</strong> 
-                      <span style="font-family: monospace;">{{ gpsCoordinates.lat.toFixed(8) }}, {{ gpsCoordinates.lon.toFixed(8) }}</span>
+                      <span style="font-family: monospace;">{{ gpsCoordinates.lat.toFixed(5) }}, {{ gpsCoordinates.lon.toFixed(5) }}</span>
                       
                       <div v-if="gpsMatchedLocationName" style="background: #2196f3; color: white; border-radius: 4px; padding: 2px 6px; font-size: 0.75em; white-space: nowrap; display: flex; align-items: center; margin-left: 5px;">
                         <i class="material-icons" style="font-size: 14px; margin-right: 2px;">bookmark</i>
@@ -1023,8 +1023,8 @@ export default {
         this.editTab = 'location'; // Ensure location edit tab is active
 
         if (this.gpsCoordinates) {
-            this.editLat = parseFloat(this.gpsCoordinates.lat.toFixed(8));
-            this.editLon = parseFloat(this.gpsCoordinates.lon.toFixed(8));
+            this.editLat = parseFloat(this.gpsCoordinates.lat.toFixed(5));
+            this.editLon = parseFloat(this.gpsCoordinates.lon.toFixed(5));
         } else {
             // Default to 0,0 or map center
             this.editLat = 0;
@@ -1054,8 +1054,8 @@ export default {
             // Use the dedicated updateExif function
             // Use editLat/editLon for the NEW values
             await filesApi.updateExif(req.source, req.path, {
-                latitude: this.editLat,
-                longitude: this.editLon
+                latitude: parseFloat(this.editLat.toFixed(5)),
+                longitude: parseFloat(this.editLon.toFixed(5))
             });
 
             // Use imported 'notify' or if available globally, but import is safer.
@@ -1568,8 +1568,8 @@ findInstructionDeep(obj) {
         if (idx === null || !this.savedLocations[idx]) return;
         
         const loc = this.savedLocations[idx];
-        this.editLat = parseFloat(Number(loc.lat).toFixed(8));
-        this.editLon = parseFloat(Number(loc.lon).toFixed(8));
+        this.editLat = parseFloat(Number(loc.lat).toFixed(5));
+        this.editLon = parseFloat(Number(loc.lon).toFixed(5));
         this.updateMapMarker(loc.lat, loc.lon);
         if (this.mapInstance) {
             this.mapInstance.setView([loc.lat, loc.lon], 13);
@@ -1625,10 +1625,11 @@ findInstructionDeep(obj) {
              this.savedLocations = JSON.parse(JSON.stringify(state.user.savedLocations));
         }
 
+
         const newLoc = {
             name: name,
-            lat: lat,
-            lon: lon
+            lat: parseFloat(Number(lat).toFixed(5)),
+            lon: parseFloat(Number(lon).toFixed(5))
         };
         
         if (!this.savedLocations) this.savedLocations = [];

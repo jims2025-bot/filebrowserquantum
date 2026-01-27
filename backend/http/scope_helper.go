@@ -1,9 +1,13 @@
 package http
 
 import (
+	"fmt"
 	"net/url"
+	"path/filepath"
+	"runtime"
 	"strings"
 
+	"github.com/gtsteffaniak/go-logger/logger"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/utils"
 	"github.com/jims2025-bot/filebrowserquantum/backend/database/users"
@@ -37,27 +41,117 @@ func ResolveScopePath(user *users.User, source string, path string) (string, str
 	if err != nil {
 		return "", "", err
 	}
-	// Use the real source name derived from aliases
-	source = realSource
 
-	// Clean inputs for reliable string comparison
+	// FIX: If User is Admin, force Scope to Root "/" to avoid path conflicts.
+	// FIX: If the input path is already Absolute (e.g. from Heatmap), use it directly.
+	// Otherwise, join with the User Scope (e.g. from File Browser).
+	// This prevents "Double Joining" (Scope + AbsPath) while allowing Relative paths to work.
+	var joinedPath string
+
+	// Check for Windows Absolute path (Drive Letter) or Unix Absolute
+	isAbs := filepath.IsAbs(path)
+	if !isAbs && runtime.GOOS == "windows" {
+		// filepath.IsAbs on windows requires Drive Letter.
+		if len(path) > 2 && path[1] == ':' {
+			isAbs = true
+		}
+	}
+
+	// FIX: For Admins, we also treat paths starting with "/" or "\\" as Absolute.
+	// This handles Abstract File System paths (e.g. /Collection/File.jpg) passed from Heatmap
+	// without joining them to the Admin's default scope (which would cause duplication like /Collection/Collection/File.jpg).
+	// Normal users are restricted so we typically force join unless it's a Drive Letter (system absolute).
+	if user.Permissions.Admin && (strings.HasPrefix(path, "/") || strings.HasPrefix(path, "\\")) {
+		isAbs = true
+	}
+
+	// CRITICAL FIX: Check if path already contains the scope BEFORE joining
+	// This prevents duplication when heatmap returns paths like:
+	// "/BillPowellCollection/A01-BillPowell-1995/PHOTOCOLLECTIONS/POWELL-COLLECTION/..."
+	// where userscope is "/BillPowellCollection/A01-BillPowell-1995"
+	pathContainsScope := false
 	cleanPath := strings.Trim(strings.ReplaceAll(path, "\\", "/"), "/")
 	cleanScope := strings.Trim(strings.ReplaceAll(userscope, "\\", "/"), "/")
 
+	if cleanScope != "" {
+		// Check if path contains scope as a substring (case-insensitive)
+		pathLower := strings.ToLower(cleanPath)
+		scopeLower := strings.ToLower(cleanScope)
+
+		// Check for exact prefix match first
+		if strings.HasPrefix(pathLower, scopeLower) {
+			pathContainsScope = true
+			logger.Debug(fmt.Sprintf("ResolveScopePath: Path '%s' already starts with scope '%s'", path, userscope))
+		} else if idx := strings.Index(pathLower, scopeLower); idx != -1 {
+			// Path contains scope somewhere in the middle
+			// Verify it's a valid segment match (surrounded by slashes or at boundaries)
+			endIdx := idx + len(scopeLower)
+			validStart := (idx == 0 || pathLower[idx-1] == '/')
+			validEnd := (endIdx == len(pathLower) || pathLower[endIdx] == '/')
+
+			if validStart && validEnd {
+				pathContainsScope = true
+				logger.Debug(fmt.Sprintf("ResolveScopePath: Path '%s' contains scope '%s' at position %d", path, userscope, idx))
+			}
+		}
+	} else {
+		// Empty scope (root) - all paths implicitly contain it
+		pathContainsScope = true
+	}
+
+	if isAbs {
+		joinedPath = filepath.Clean(path)
+		logger.Debug(fmt.Sprintf("ResolveScopePath: Treating as absolute path: '%s'", joinedPath))
+	} else if pathContainsScope {
+		// Path already contains the scope - don't join, use as-is
+		joinedPath = filepath.ToSlash(filepath.Clean(path))
+		logger.Debug(fmt.Sprintf("ResolveScopePath: Path contains scope, using as-is: '%s'", joinedPath))
+	} else {
+		// Relative path: Join with Scope
+		joinedPath = filepath.ToSlash(filepath.Join(userscope, path))
+		logger.Debug(fmt.Sprintf("ResolveScopePath: Joining scope '%s' + path '%s' = '%s'", userscope, path, joinedPath))
+	}
+
+	// Use the real source name derived from aliases
+	source = realSource
+
+	// Clean inputs for reliable string comparison (for later checks)
+	cleanPath = strings.Trim(strings.ReplaceAll(path, "\\", "/"), "/")
+	cleanScope = strings.Trim(strings.ReplaceAll(userscope, "\\", "/"), "/")
+
 	// 2. Check if Path already contains the Scope (Duplication Prevention)
 	// If cleanScope is empty (Root Scope), it is implicitly a prefix of everything.
-	pathContainsScope := false
+	pathContainsScope = false
 	if cleanScope == "" {
 		pathContainsScope = true
 	} else {
+		// Log inputs for debugging
+		logger.Debug(fmt.Sprintf("Resolve: Path='%s' Scope='%s'", cleanPath, cleanScope))
+
 		// Check prefix with case-insensitivity
 		if len(cleanPath) >= len(cleanScope) && strings.EqualFold(cleanPath[:len(cleanScope)], cleanScope) {
 			pathContainsScope = true
+			logger.Debug("Resolve: Prefix Match Found")
+		} else {
+			// Aggressive Substring Check
+			// ...
+
+			// Try finding scope in path
+			searchScope := "/" + cleanScope
+			idx := strings.Index(strings.ToLower(cleanPath), strings.ToLower(searchScope))
+			if idx != -1 {
+				// Verify it's a segment match (next char is / or end of string)
+				endIdx := idx + len(searchScope)
+				if endIdx == len(cleanPath) || cleanPath[endIdx] == '/' {
+					pathContainsScope = true
+					logger.Debug("Resolve: Substring Match Found")
+				}
+			}
 		}
 	}
 
 	if pathContainsScope {
-		// The path is already "Absolute" relative to the Source Root. Use it as is.
+		// The path is already "Absolute" relative to the Source Root (or contains the scope chain). Use it as is.
 		scopePath := path
 		if !strings.HasPrefix(scopePath, "/") {
 			scopePath = "/" + scopePath

@@ -24,6 +24,7 @@ func getFolderHeatmapHandler(w http.ResponseWriter, r *http.Request, d *requestC
 	encodedPath := r.URL.Query().Get("path")
 	path, err := url.QueryUnescape(encodedPath)
 	if err != nil {
+		logger.Error("Heatmap: Invalid path (unescape failed): " + encodedPath)
 		return http.StatusBadRequest, err
 	}
 
@@ -33,9 +34,14 @@ func getFolderHeatmapHandler(w http.ResponseWriter, r *http.Request, d *requestC
 		return http.StatusForbidden, err
 	}
 
-	// We need userscope for trimming later
-	// Use original source for scope lookup logic
+	// Restore userscope for path trimming logic later
+	// We use the original source string because that's what the scopes are mapped to (or aliases)
 	userscope, _, _ := settings.GetScopeFromSourceString(d.user.Scopes, source)
+
+	// FIX: For Admin, treat scope as Root to avoid trimming/matching issues with absolute paths
+	if d.user.Permissions.Admin {
+		userscope = "/"
+	}
 
 	// scopePath is already the full absolute path
 	fullPath := scopePath
@@ -49,9 +55,29 @@ func getFolderHeatmapHandler(w http.ResponseWriter, r *http.Request, d *requestC
 	}
 
 	// Trim the user scope from the paths
+	// Trim the user scope from the paths
 	if userscope != "/" {
+		// Debug the trim operation
+		if len(data.Clusters) > 0 {
+			logger.Info(fmt.Sprintf("Heatmap: Trimming scope '%s' from path '%s'", userscope, data.Clusters[0].Path))
+		}
+
+		// Ensure we are comparing apples to apples (slashes)
+		scope := strings.TrimRight(userscope, "/")
 		for i := range data.Clusters {
-			data.Clusters[i].Path = strings.TrimPrefix(data.Clusters[i].Path, userscope)
+			// Aggressive Trimming (Same as Tiles)
+			if strings.HasPrefix(data.Clusters[i].Path, scope) {
+				data.Clusters[i].Path = strings.TrimPrefix(data.Clusters[i].Path, scope)
+			} else {
+				// Substring match for nested scopes (Case Insensitive)
+				cleanScope := strings.TrimPrefix(scope, "/")
+				if idx := strings.Index(strings.ToLower(data.Clusters[i].Path), strings.ToLower(cleanScope)); idx != -1 {
+					remainder := data.Clusters[i].Path[idx+len(cleanScope):]
+					logger.Debug(fmt.Sprintf("Heatmap: Stripped parent from '%s' -> '%s'", data.Clusters[i].Path, remainder))
+					data.Clusters[i].Path = remainder
+				}
+			}
+
 			if !strings.HasPrefix(data.Clusters[i].Path, "/") && data.Clusters[i].Path != "" {
 				data.Clusters[i].Path = "/" + data.Clusters[i].Path
 			}
@@ -82,7 +108,7 @@ func regenerateHeatmapHandler(w http.ResponseWriter, r *http.Request, d *request
 
 	// Start scan asynchronously so frontend can poll for progress
 	go func() {
-		err := heatmap.ScanSafe(realSource, scopePath)
+		err := heatmap.ScanSafe(realSource, scopePath, true) // Manual scan - force rebuild
 		if err != nil {
 			logger.Error("Heatmap scan failed: " + err.Error())
 		}
