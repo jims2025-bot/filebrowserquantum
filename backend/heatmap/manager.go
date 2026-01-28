@@ -23,6 +23,10 @@ import (
 	"github.com/jims2025-bot/filebrowserquantum/backend/indexing/iteminfo"
 )
 
+// ScanIntervalDays defines how often the full heatmap scan runs (in days)
+// Manual scans override this and percolate up immediately
+const ScanIntervalDays = 7 // Weekly scan
+
 // SafeClusterCollector removed as we are using aggregation.
 
 type ScanProgress struct {
@@ -73,6 +77,14 @@ func ScanSafe(sourceName, path string, isManualScan bool) error {
 
 	// Limit concurrency
 	sem := make(chan struct{}, 20)
+
+	// CRITICAL: Purge old clusters from parents before starting manual scan.
+	// This ensures that if the new scan produces different IDs or counts, we don't end up with "ghost" clusters
+	// remaining in the parent aggregate files (since manual scan injects into existing tree).
+	if isManualScan {
+		PurgeClustersFromParents(sourceName, path)
+	}
+
 	_, err := ScanRecursive(sourceName, path, progress, sem, isManualScan)
 	if err == nil {
 		// Update parents
@@ -81,7 +93,97 @@ func ScanSafe(sourceName, path string, isManualScan bool) error {
 	return nil
 }
 
-// GetScanProgress returns the progress of a running scan, if any.
+// PurgeClustersFromParents removes all clusters belonging to the target scopePath
+// from all parent heatmap.json files up to the root.
+func PurgeClustersFromParents(sourceName, scopePath string) {
+	idx := indexing.GetIndex(sourceName)
+	if idx == nil {
+		return
+	}
+
+	// logger.Info(fmt.Sprintf("Heatmap: Purging old clusters for scope %s in source %s", scopePath, sourceName))
+
+	currentPath := scopePath
+	// We walk UP from the target folder.
+	for {
+		parent := filepath.Dir(currentPath)
+		// Break if we hit root or top or weirdness
+		if parent == currentPath || parent == "." {
+			if currentPath == "/" {
+				break
+			}
+			// On windows filepath.Dir("C:") is "C:"?
+			// Using ToSlash/Clean helps.
+		}
+		parent = filepath.ToSlash(filepath.Clean(parent))
+
+		// If we processed root "/" last time, break now?
+		// If currentPath was "/", parent is "/". We broke above.
+
+		// 1. Calculate the relative path key we are looking for.
+		// If Parent is "/A" and Scope is "/A/B", we invoke for Parent "/A".
+		// We want to remove clusters that are inside "B".
+		// Relative path from "/A" to "/A/B" is "B".
+		rel, err := filepath.Rel(parent, scopePath)
+		if err != nil {
+			logger.Error("Heatmap: Purge Rel failed: " + err.Error())
+			break
+		}
+		cleanRel := filepath.ToSlash(rel)
+
+		// 2. Load Parent Heatmap
+		realPath, _, err := idx.GetRealPath(parent)
+		if err == nil {
+			heatmapPath := filepath.Join(realPath, HeatmapFilename)
+
+			if info, err := os.Stat(heatmapPath); err == nil && !info.IsDir() {
+				bytes, err := os.ReadFile(heatmapPath)
+				if err == nil {
+					var data HeatmapData
+					if err := json.Unmarshal(bytes, &data); err == nil {
+						originalCount := len(data.Clusters)
+						var newClusters []Cluster
+
+						for _, c := range data.Clusters {
+							// Check if this cluster belongs to the purged folder.
+							// c.Path is relative to parent.
+							// If c.Path starts with "B/" or is "B", it's from that folder.
+							cPath := filepath.ToSlash(c.Path)
+
+							// Exact match (the folder itself) or Child match
+							isTarget := false
+							if cPath == cleanRel {
+								isTarget = true
+							} else if strings.HasPrefix(cPath, cleanRel+"/") {
+								isTarget = true
+							}
+
+							if !isTarget {
+								newClusters = append(newClusters, c)
+							}
+						}
+
+						if len(newClusters) != originalCount {
+							logger.Info(fmt.Sprintf("Heatmap: Purged %d clusters from parent %s (Target=%s)", originalCount-len(newClusters), parent, cleanRel))
+
+							// Save
+							data.Clusters = newClusters
+							data.GeneratedAt = time.Now() // Mark updated
+							if err := writeHeatmapFile(heatmapPath, data); err != nil {
+								logger.Error("Heatmap: Purge Write failed: " + err.Error())
+							}
+						}
+					}
+				}
+			}
+		}
+
+		if parent == "/" || parent == "." || parent == "" {
+			break
+		}
+		currentPath = parent
+	}
+}
 func GetScanProgress(sourceName, path string) *ScanProgress {
 	key := sourceName + "|" + path
 	if val, ok := activeScans.Load(key); ok {
@@ -184,8 +286,8 @@ func StartJob(store *storage.Storage) {
 			}
 
 			logger.Info("Finished Heatmap Generation Job")
-			// Run every 24 hours
-			time.Sleep(24 * time.Hour)
+			// Run every ScanIntervalDays
+			time.Sleep(time.Duration(ScanIntervalDays) * 24 * time.Hour)
 		}
 	}()
 }
@@ -492,7 +594,7 @@ func AggregateLevel(sourceName, rootPath string, progress *ScanProgress, isManua
 						// Check version and age
 						if existingData.Version == HeatmapVersion {
 							age := time.Since(existingData.GeneratedAt)
-							if age < 24*time.Hour {
+							if age < time.Duration(ScanIntervalDays)*24*time.Hour {
 								// Log SKIP only
 								logger.Info(fmt.Sprintf("Heatmap [SKIP ]: %s (%d files) - HeatmapJSON v%d - last run: %s",
 									rootPath, fileCount, existingData.Version, existingData.GeneratedAt.Format(time.RFC3339)))
@@ -673,7 +775,9 @@ func PercolateUp(sourceName, startPath string) {
 		// AggregateLevel checks GetReducedMetadata.
 
 		logger.Info("Heatmap: Percolating up to " + parent)
-		_, err := AggregateLevel(sourceName, parent, nil, false)
+		// Force manual scan (true) to ensure we Re-Aggregate and don't skip based on cache age.
+		// Percolation implies something changed below, so we must update.
+		_, err := AggregateLevel(sourceName, parent, nil, true)
 		if err != nil {
 			logger.Error("Heatmap: PercolateUp failed for " + parent + ": " + err.Error())
 			break

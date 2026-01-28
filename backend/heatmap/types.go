@@ -4,7 +4,8 @@ import "time"
 
 // HeatmapVersion is the current version of the heatmap.json format
 // Increment this when the JSON structure changes to force re-scanning
-const HeatmapVersion = 1
+// Version 3: Reverted to random IDs (unique per geographic cluster)
+const HeatmapVersion = 3
 
 // Cluster represents a group of images or sub-clusters.
 type Cluster struct {
@@ -36,7 +37,7 @@ type ClusterPoint struct {
 	// Additional fields for inspection drill-down
 	Type  string `json:"type,omitempty"` // "folder" or "image"
 	Count int    `json:"count"`          // For folder count
-	ID    string `json:"id,omitempty"`   // Cluster ID to pass to next step
+	ID    string `json:"id"`             // Cluster ID to pass to next step
 }
 
 // HeatmapData represents the persistent JSON data for a folder.

@@ -43,9 +43,10 @@
 
           <!-- Image Grid (Inside Folder) -->
           <div v-else class="panel-grid-container">
-              <div class="panel-sub-header">
+              <div class="panel-sub-header" style="display:flex; align-items:center;">
                   <button @click="backToFolders" v-if="formattedSidePanelData.length > 1" class="back-btn"><i class="material-icons">arrow_back</i></button>
-                  <span>{{ currentInspectionFolder.path.split('/').pop() }}</span>
+                  <span style="flex:1; overflow:hidden; text-overflow:ellipsis; margin-right:5px;">{{ currentInspectionFolder.path.split('/').pop() }}</span>
+                  <button @click="regenerateHeatmap(currentInspectionFolder.path, currentInspectionFolder.source)" title="Force Re-scan" style="background:none; border:none; cursor:pointer; color:#aaa;"><i class="material-icons" style="font-size:16px;">refresh</i></button>
               </div>
               <div class="panel-grid">
                   <div v-for="file in displayedItems" :key="file.path" class="panel-item" @click="openQuickView(file)">
@@ -134,22 +135,11 @@ const displayedFolders = computed(() => {
     return formattedSidePanelData.value; 
 });
 
-const openFolderView = (folderObj) => {
-    // Drill-Down Support:
-    // If this is a "Virtual Folder" returned from a parent cluster,
-    // clicking it should trigger inspection of THAT folder's specific cluster.
-    if (folderObj.isVirtual && folderObj.clusterID) {
-        inspectLocation(folderObj.path, folderObj.source, null, { clusterID: folderObj.clusterID });
-        return;
-    }
-
-    currentInspectionFolder.value = folderObj;
-    displayedCount.value = itemsPerPage;
-};
-
 const backToFolders = () => {
     currentInspectionFolder.value = null;
 };
+
+
 
 const loadMore = () => {
     displayedCount.value += itemsPerPage;
@@ -199,14 +189,85 @@ const navToFolder = (file) => {
     window.heatmapNavigate(file.parentPath || "/", file.source, false); // Reuse existing helper logic for folder
 };
 
+const openFolderView = async (folderGroup) => {
+    console.log("[Heatmap] openFolderView called for:", folderGroup);
+    
+    // Logic: 
+    // Always drill down to fetch the full folder contents.
+    // The current 'items' list only contains the representative items from the parent cluster.
+    // To see ALL items (e.g. 28 items), we MUST fetch from backend.
+    
+    const targetPath = folderGroup.path;
+    // CRITICAL FIX: Ensure source is never undefined
+    const targetSource = folderGroup.source || state.source || route.query.source || "";
+    
+    // Explicitly Drill Down
+    console.log(`[Heatmap] Force drilling down into: ${targetPath} Source: ${targetSource} (v12-Debug)`);
+    console.log(`[Heatmap] Group Items:`, folderGroup.items);
+    
+    if (targetSource === "undefined" || !targetSource) {
+         console.error("[Heatmap] Source is MISSING for drill-down. This will likely fail.");
+         // Try to find source from items?
+         if (folderGroup.items && folderGroup.items.length > 0) {
+             const s = folderGroup.items[0].source;
+             if (s) {
+                 console.log("[Heatmap] Recovered source from items:", s);
+                 // use s... but const is immutable. Reworking logic below.
+             }
+         }
+    }
+    
+    // If we have a cluster ID, pass it for precision
+    const extraContext = {};
+    
+    // SEARCH for a valid Cluster ID in the group items
+    // The first item might be a warning or have missing ID, so check them all.
+    let cID = folderGroup.clusterID;
+    console.log(`[Heatmap] Initial Group ID:`, cID);
+    
+    // DEBUG: Print the first few items to see their structure
+    if (folderGroup.items && folderGroup.items.length > 0) {
+        console.log(`[Heatmap] Item 0 Structure:`, JSON.stringify(folderGroup.items[0]));
+        if (folderGroup.items.length > 1) {
+            console.log(`[Heatmap] Item 1 Structure:`, JSON.stringify(folderGroup.items[1]));
+        }
+    }
+
+    if (!cID && folderGroup.items && folderGroup.items.length > 0) {
+        for (const item of folderGroup.items) {
+             console.log(`[Heatmap] Checking item ID:`, item.clusterID);
+             if (item.clusterID && item.clusterID !== "warning-all-files") {
+                 cID = item.clusterID;
+                 console.log(`[Heatmap] Found Valid ID in loop:`, cID);
+                 break;
+             }
+        }
+    }
+    
+    if (cID) {
+        extraContext.clusterID = cID;
+    } else {
+        console.warn(`[Heatmap] Failed to find Cluster ID for group. This will trigger Direct Path Mode.`);
+    }
+    
+    // Call inspectLocation to load the folder data
+    // We pass null for coords to indicate this is a path-based inspection
+    inspectLocation(targetPath, targetSource, null, {
+        lat: 0, lon: 0, 
+        ...extraContext,
+        minLat: 0, maxLat: 0, minLon: 0, maxLon: 0
+    });
+};
+
 // Helper to get preview URL
 const getPreviewUrl = (path, source, size) => {
+     if (!path || path.includes("Warning:")) return ""; // Prevent 500s for warning items
      const params = new URLSearchParams();
      params.append('path', path);
      if (source) params.append('source', source);
      params.append('size', size);
      const url = '/api/preview?' + params.toString();
-     console.log(`[Heatmap] getPreviewUrl: path='${path}', source='${source}', size='${size}' => ${url}`);
+     // console.log(`[Heatmap] getPreviewUrl: path='${path}', source='${source}', size='${size}' => ${url}`);
      return url;
 };
 
@@ -243,11 +304,10 @@ const inspectLocation = async (path, source, directItems = null, coords = null) 
             // Add Cluster ID for exact match
             // DISABLED: Sending ID restricts result to single item if ID is shared/representative.
             // forcing spatial search ensures we get all items in the cluster area.
-            /*
+            // Use Cluster ID for fast lookup (with bounds-based fallback)
             if (coords.clusterID) {
                 url += `&cluster_id=${encodeURIComponent(coords.clusterID)}`;
             }
-            */
 
             const res = await fetch(url);
             if (res.ok) {
@@ -255,6 +315,7 @@ const inspectLocation = async (path, source, directItems = null, coords = null) 
                 console.log('[Heatmap] Inspect Raw Response:', rawText);
                 const items = JSON.parse(rawText);
                 if (items && items.length > 0) {
+                     console.log('[Heatmap] Parsed Item 0 ID:', items[0].id);
                      sidePanelData.value = items.map(item => ({
                         name: item.previewID || item.path.split('/').pop(),
                         path: item.path,
@@ -266,6 +327,9 @@ const inspectLocation = async (path, source, directItems = null, coords = null) 
                         count: item.count,
                         clusterID: item.id
                     }));
+                    if (sidePanelData.value.length > 0) {
+                        console.log('[Heatmap] Mapped SidePanel Item 0 ClusterID:', sidePanelData.value[0].clusterID);
+                    }
                     
                     // GROUPING LOGIC:
                     // Create formatted data: List of Folders
@@ -285,7 +349,14 @@ const inspectLocation = async (path, source, directItems = null, coords = null) 
                             };
                         } else {
                             const p = item.parentPath || "Root";
-                            if (!groups[p]) groups[p] = { path: p, count: 0, items: [] };
+                            // CAPTURE CLUSTER ID from the item so we can drill down accurately
+                            if (!groups[p]) groups[p] = { 
+                                path: p, 
+                                count: 0, 
+                                items: [], 
+                                clusterID: item.clusterID,
+                                source: item.source 
+                            };
                             // Robust count: If item has count > 1, use it. Otherwise count as 1 item.
                             groups[p].count += (item.count && item.count > 1 ? item.count : 1);
                             groups[p].items.push(item);
@@ -333,7 +404,9 @@ const inspectLocation = async (path, source, directItems = null, coords = null) 
             source: item.source,
             count: item.count,
             parentPath: item.path.substring(0, item.path.lastIndexOf('/')),
-            thumbUrl: getPreviewUrl(item.path, item.source, 'small')
+            thumbUrl: getPreviewUrl(item.path, item.source, 'small'),
+            type: item.type,
+            clusterID: item.clusterID || item.id // Ensure we capture it
         }));
         
         // Grouping
@@ -344,7 +417,10 @@ const inspectLocation = async (path, source, directItems = null, coords = null) 
              groups[p].count += (item.count && item.count > 1 ? item.count : 1);
              groups[p].items.push(item);
         });
+        
+        console.log("[Heatmap] SidePanel Groups:", groups);
         formattedSidePanelData.value = Object.values(groups);
+        console.log("[Heatmap] Formatted SidePanel Data:", formattedSidePanelData.value);
         
         if (formattedSidePanelData.value.length === 1) {
             currentInspectionFolder.value = formattedSidePanelData.value[0];
@@ -375,7 +451,9 @@ const inspectLocation = async (path, source, directItems = null, coords = null) 
                     path: item.path || (targetPath + "/" + item.name), 
                     source: item.source || source,
                     parentPath: targetPath,
-                    thumbUrl: getPreviewUrl(item.path || (targetPath + "/" + item.name), item.source || source, 'small')
+                    thumbUrl: getPreviewUrl(item.path || (targetPath + "/" + item.name), item.source || source, 'small'),
+                    type: item.type,
+                    clusterID: item.id // Use id if available
                 }));
              
              // Grouping
@@ -402,6 +480,24 @@ const inspectLocation = async (path, source, directItems = null, coords = null) 
         notify.showError("Failed to load location files");
     } finally {
         sidePanelLoading.value = false;
+    }
+};
+
+const regenerateHeatmap = async (targetPath, sourceVal) => {
+    if (!confirm("Regenerate heatmap for " + targetPath + "? This may take a moment.")) return;
+    
+    try {
+        const url = `/api/heatmap/regenerate?path=${encodeURIComponent(targetPath)}&source=${encodeURIComponent(sourceVal)}`;
+        const res = await fetch(url, { method: 'POST' });
+        if (res.ok) {
+            notify.showSuccess("Heatmap regeneration started. Please wait.");
+        } else {
+             const txt = await res.text();
+             notify.showError("Failed to start regeneration: " + txt);
+        }
+    } catch (e) {
+        console.error(e);
+        notify.showError("Error calling regenerate API");
     }
 };
 
@@ -875,8 +971,11 @@ const initMap = async () => {
                  let p = m.options.thumbPath || m.options.clusterPath; // clusterPath from badge, thumbPath from fan leaf
                  let s = m.options.thumbSource || m.options.clusterSource;
                  let c = m.options.photoCount || 1;
+                 // Capture Cluster ID from options (added in addMarkersForTile)
+                 let cid = m.options.clusterID || ""; // Ensure string
+                 
                  if (p) {
-                     directItems.push({ path: p, source: s, name: p.split('/').pop(), count: c });
+                     directItems.push({ path: p, source: s, name: p.split('/').pop(), count: c, clusterID: cid });
                  }
             });
             
@@ -1039,7 +1138,8 @@ const loadData = async () => {
                         }),
                         photoCount: c.count,
                         clusterPath: c.path,
-                        clusterSource: c.source || source
+                        clusterSource: c.source || source,
+                        clusterID: c.id // Store ID
                     });
                     
                     const onBadgeContextMenu = (e, clusterPath, clusterSource, minLat, minLon, maxLat, maxLon, clusterID) => {
@@ -1080,7 +1180,10 @@ const loadData = async () => {
                             className: 'tile-cluster-badge-large',
                             iconSize: [36, 36]
                         }),
-                        photoCount: c.count
+                        photoCount: c.count,
+                        clusterPath: c.path, // Add missing props
+                        clusterSource: c.source || source,
+                        clusterID: c.id // Store ID
                     });
                     marker.bindPopup(`<b>${c.count} photos</b>`);
                     tileMarkerList.push(marker);

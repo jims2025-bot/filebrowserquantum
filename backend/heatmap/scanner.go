@@ -106,6 +106,7 @@ func GetLocalClusters(sourceName, folderPath string, progress *ScanProgress) ([]
 					Lon:       lon,
 					Path:      filepath.ToSlash(filepath.Join(folderPath, file.Name)),
 					PreviewID: file.Name,
+					ID:        genID(), // Assign ID to point
 				},
 			},
 		})
@@ -161,6 +162,11 @@ func clusterPoints(points []Cluster, radius float64) []Cluster {
 
 				// Accumulate points
 				if len(c.Points) > 0 || len(p.Points) > 0 {
+					// Update IDs of merged points to match the parent cluster ID
+					// This ensures consistency
+					for j := range p.Points {
+						p.Points[j].ID = c.ID
+					}
 					c.Points = append(c.Points, p.Points...)
 				}
 

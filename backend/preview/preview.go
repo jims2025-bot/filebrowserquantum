@@ -14,10 +14,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gtsteffaniak/go-logger/logger"
 	"github.com/jims2025-bot/filebrowserquantum/backend/adapters/fs/diskcache"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
 	"github.com/jims2025-bot/filebrowserquantum/backend/indexing/iteminfo"
-	"github.com/gtsteffaniak/go-logger/logger"
 )
 
 var (
@@ -156,6 +156,9 @@ func (s *Service) CreatePreview(data []byte, previewSize string) ([]byte, error)
 	case "small":
 		width, height = 256, 256
 		options = []Option{WithMode(ResizeModeFit), WithQuality(QualityMedium), WithFormat(FormatJpeg)}
+	case "thumb":
+		width, height = 64, 64
+		options = []Option{WithMode(ResizeModeFit), WithQuality(QualityMedium), WithFormat(FormatJpeg)}
 	default:
 		return nil, ErrUnsupportedFormat
 	}
@@ -178,6 +181,9 @@ func DelThumbs(ctx context.Context, file iteminfo.ExtendedFileInfo) {
 	errSmall := service.fileCache.Delete(ctx, CacheKey(file.RealPath, "small", file.ItemInfo.ModTime, 0))
 	if errSmall != nil {
 		errLarge := service.fileCache.Delete(ctx, CacheKey(file.RealPath, "large", file.ItemInfo.ModTime, 0))
+		// Try to delete thumb as well
+		_ = service.fileCache.Delete(ctx, CacheKey(file.RealPath, "thumb", file.ItemInfo.ModTime, 0))
+
 		if errLarge != nil {
 			logger.Debugf("Could not delete thumbnail: %v", file.Name)
 		}
