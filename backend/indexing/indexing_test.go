@@ -36,19 +36,19 @@ func JSONBytesEqual(a, b []byte) (bool, error) {
 	return reflect.DeepEqual(j2, j), nil
 }
 
-func TestGetIndex(t *testing.T) {
-	tests := []struct {
-		name string
-		want *map[string][]string
-	}{
-		// TODO: Add test cases.
+func TestGetIndexes(t *testing.T) {
+	// Initialize with a test source
+	Initialize(settings.Source{
+		Name: "test_source",
+		Path: "/tmp",
+	}, true)
+
+	indexes := GetIndexes()
+	if indexes == nil {
+		t.Fatal("GetIndexes() returned nil")
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := GetIndex("root"); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("GetIndex() = %v, want %v", got, tt.want)
-			}
-		})
+	if _, ok := indexes["test_source"]; !ok {
+		t.Error("Expected index 'test_source' to be present")
 	}
 }
 

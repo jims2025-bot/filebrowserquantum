@@ -138,7 +138,9 @@ export default {
       return window.location.hash != "#edit" && state.user.permissions.modify;
     },
     showDelete() {
-      return state.user.permissions.modify && getters.currentView() == "preview";
+      // SECURITY: Disabled by User Request
+      return false; 
+      // return state.user.permissions.modify && getters.currentView() == "preview";
     },
     showSave() {
       return getters.currentView() == "editor" && state.user.permissions.modify;

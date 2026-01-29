@@ -1,6 +1,29 @@
 <template>
   <div id="heatmap-container" @mouseleave="cursorCoords = {lat: 999, lng: 999}"></div>
   
+  <!-- Selection Mode Overlay -->
+  <div v-if="isBoxSelectMode" 
+       ref="selectionOverlay"
+       style="position:absolute; top:0; left:0; width:100%; height:100%; z-index:10000; cursor:crosshair; touch-action:none;"
+       @mousedown="startSelection" @mousemove="updateSelection" @mouseup="endSelection"
+       @touchstart="startSelection" @touchmove="updateSelection" @touchend="endSelection">
+      <div v-if="selectionBox.visible" :style="selectionBox.style" style="position:absolute; border:2px dashed yellow; background:rgba(255,255,0,0.2); pointer-events:none;"></div>
+  </div>
+
+  <!-- Selection Mode Active Indicator / Cancel -->
+  <div v-if="isBoxSelectMode" style="position:absolute; top:10px; left:50%; transform:translateX(-50%); z-index:10001; background:rgba(0,0,0,0.8); color:white; padding:8px 16px; border-radius:20px; font-size:14px; font-weight:bold; display:flex; gap:10px; align-items:center;">
+      <span>Selection Mode Active</span>
+      <button @click="toggleSelectionMode" style="background:none; border:none; color:white; cursor:pointer; font-weight:bold;">CANCEL</button>
+  </div>
+  
+  <!-- Map Header Toolbar -->
+  <div style="position:absolute; top:10px; right:10px; z-index:2000; display:flex; gap:10px;">
+      <button @click="toggleSelectionMode" :title="isBoxSelectMode ? 'Cancel Selection' : 'Select Area'" class="button button--flat" :style="isBoxSelectMode ? 'background:rgba(255,100,0,0.8); color:white;' : 'background:rgba(255,255,255,0.9); color:#333; box-shadow:0 2px 4px rgba(0,0,0,0.2);'">
+          <i class="material-icons">{{ isBoxSelectMode ? 'close' : 'select_all' }}</i>
+          <span style="margin-left:5px; font-weight:bold; font-size:12px;">{{ isBoxSelectMode ? 'Cancel' : 'Select Area' }}</span>
+      </button>
+  </div>
+
   <!-- Back Button Overlay -->
   <div v-if="isFolderMode" style="position: absolute; top: 10px; left: 60px; z-index: 2000;">
       <button @click="goBack" class="button button--flat" style="background: rgba(0,0,0,0.6); color: white; border: 1px solid rgba(255,255,255,0.3); backdrop-filter: blur(4px);">
@@ -44,7 +67,7 @@
           <!-- Image Grid (Inside Folder) -->
           <div v-else class="panel-grid-container">
               <div class="panel-sub-header" style="display:flex; align-items:center;">
-                  <button @click="backToFolders" v-if="formattedSidePanelData.length > 1" class="back-btn"><i class="material-icons">arrow_back</i></button>
+                  <button @click="backToFolders" class="back-btn" title="Back to Folder List"><i class="material-icons">arrow_back</i></button>
                   <span style="flex:1; overflow:hidden; text-overflow:ellipsis; margin-right:5px;">{{ currentInspectionFolder.path.split('/').pop() }}</span>
                   <button @click="regenerateHeatmap(currentInspectionFolder.path, currentInspectionFolder.source)" title="Force Re-scan" style="background:none; border:none; cursor:pointer; color:#aaa;"><i class="material-icons" style="font-size:16px;">refresh</i></button>
               </div>
@@ -92,6 +115,7 @@ import { state } from "@/store";
 import { ref, computed } from 'vue'; // Import ref and computed
 
 import { notify } from "@/notify";
+import { processDirectItems } from "@/utils/heatmapInspector";
 
 const route = useRoute();
 const router = useRouter();
@@ -116,8 +140,8 @@ const sidePanelData = ref([]);
 const formattedSidePanelData = ref([]); // Array of {path, count, items}
 const currentInspectionFolder = ref(null); // Reference to currently viewing folder object
 const sidePanelLoading = ref(false);
-
-// Pagination
+const isBoxSelectMode = ref(false); // Box Selection Mode State
+const selectionBox = ref({ visible: false, startX: 0, startY: 0, currentX: 0, currentY: 0, style: {} });
 const itemsPerPage = 50;
 const displayedCount = ref(itemsPerPage);
 
@@ -135,8 +159,19 @@ const displayedFolders = computed(() => {
     return formattedSidePanelData.value; 
 });
 
+const inspectionHistory = ref([]); // Stack to store previous panel states
+
 const backToFolders = () => {
-    currentInspectionFolder.value = null;
+    if (inspectionHistory.value.length > 0) {
+        console.log("[Heatmap] Restoring previous panel state...");
+        const prev = inspectionHistory.value.pop();
+        sidePanelData.value = prev.data;
+        formattedSidePanelData.value = prev.formatted;
+        sidePanelTitle.value = prev.title;
+        currentInspectionFolder.value = null; 
+    } else {
+        currentInspectionFolder.value = null;
+    }
 };
 
 
@@ -233,30 +268,43 @@ const openFolderView = async (folderGroup) => {
         }
     }
 
-    if (!cID && folderGroup.items && folderGroup.items.length > 0) {
-        for (const item of folderGroup.items) {
-             console.log(`[Heatmap] Checking item ID:`, item.clusterID);
-             if (item.clusterID && item.clusterID !== "warning-all-files") {
-                 cID = item.clusterID;
-                 console.log(`[Heatmap] Found Valid ID in loop:`, cID);
-                 break;
-             }
-        }
+
+    // Check for Cluster IDs (Single or Multiple)
+    let finalCID = null;
+
+    if (folderGroup.clusterIDs && folderGroup.clusterIDs.size > 0) {
+        // Support for Multiple IDs (Backend now supports comma-separated)
+        const ids = Array.from(folderGroup.clusterIDs);
+        finalCID = ids.join(',');
+    } else if (folderGroup.clusterID) {
+        // Fallback for older logic / direct items
+        finalCID = folderGroup.clusterID;
     }
-    
-    if (cID) {
-        extraContext.clusterID = cID;
+
+    if (finalCID && finalCID !== "warning-all-files") {
+         console.log(`[Heatmap] Drilling down enabled for Cluster(s): ${finalCID}`);
+         
+         // SAVE STATE to History before navigating
+         inspectionHistory.value.push({
+             data: [...sidePanelData.value],
+             formatted: [...formattedSidePanelData.value],
+             title: sidePanelTitle.value
+         });
+
+         // Use Inspect API to show items from these clusters. KEEP HISTORY.
+         inspectLocation(targetPath, targetSource, null, finalCID, true);
     } else {
-        console.warn(`[Heatmap] Failed to find Cluster ID for group. This will trigger Direct Path Mode.`);
+         // No ID -> Fallback to Resource API (Show All)
+         console.log(`[Heatmap] Drilling down via Resource API (Show All) for: ${targetPath}`);
+         
+         inspectionHistory.value.push({
+             data: [...sidePanelData.value],
+             formatted: [...formattedSidePanelData.value],
+             title: sidePanelTitle.value
+         });
+
+         inspectLocation(targetPath, targetSource, null, null, true);
     }
-    
-    // Call inspectLocation to load the folder data
-    // We pass null for coords to indicate this is a path-based inspection
-    inspectLocation(targetPath, targetSource, null, {
-        lat: 0, lon: 0, 
-        ...extraContext,
-        minLat: 0, maxLat: 0, minLon: 0, maxLon: 0
-    });
 };
 
 // Helper to get preview URL
@@ -278,36 +326,70 @@ const isImageFile = (filename) => {
 };
 
 // Main Inspector Logic
-const inspectLocation = async (path, source, directItems = null, coords = null) => {
-    console.log(`[Heatmap] inspectLocation called: path='${path}', source='${source}', coords=`, coords);
+// Main Inspector Logic
+const inspectLocation = async (path, source, directItems = null, coords = null, keepHistory = false) => {
+    console.log(`[Heatmap] inspectLocation called: path='${path}', source='${source}', keepHistory=${keepHistory}`);
     
     showSidePanel.value = true;
     sidePanelLoading.value = true;
+    
+    // Manage History
+    if (!keepHistory) {
+        inspectionHistory.value = [];
+    }
+
     sidePanelData.value = [];
     currentInspectionFolder.value = null; // Reset folder view
     formattedSidePanelData.value = []; // Reset grouped data
     displayedCount.value = itemsPerPage; // Reset pagination
+    
+    // Direct Items (e.g. from Box Select)
+    if (directItems && directItems.length > 0) {
+         console.log(`[Heatmap] Loading ${directItems.length} direct items`);
+         
+         const { sidePanelData: spd, formattedSidePanelData: fspd, singleGroup } = processDirectItems(directItems, getPreviewUrl);
+         
+         sidePanelData.value = spd;
+         formattedSidePanelData.value = fspd;
+         
+         if (singleGroup) {
+             console.log("[Heatmap] Single folder via direct items (Auto-Drill).");
+             openFolderView(singleGroup);
+             return;
+         }
+
+         sidePanelTitle.value = `Selected Items (${sidePanelData.value.length})`;
+         sidePanelLoading.value = false;
+         return;
+    }
     
     // Exact location inspection via Backend API (Tile Clusters)
     if (coords) {
          try {
             // Include Zoom Level for radius search
             const currentZoom = map.getZoom();
-            let url = `/api/heatmap/inspect?lat=${coords.lat}&lon=${coords.lon}&zoom=${currentZoom}&source=${encodeURIComponent(source||'')}&path=${encodeURIComponent(path||'')}`;
+            let url = `/api/heatmap/inspect?zoom=${currentZoom}&source=${encodeURIComponent(source||'')}&path=${encodeURIComponent(path||'')}`;
+            
+            // Handle Coordinates or ID
+            if (typeof coords === 'string') {
+                 // It's a Cluster ID (or comma list)
+                 url += `&cluster_id=${encodeURIComponent(coords)}`;
+                 // Add dummy lat/lon to satisfy strict backend validation (until backend is relaxed)
+                 // Or better: ensure backend is relaxed first. 
+                 // But for robustness, I'll add 0,0.
+                 url += `&lat=0&lon=0`;
+            } else {
+                 // It's an object {lat, lon, minLat...}
+                 url += `&lat=${coords.lat}&lon=${coords.lon}`;
+                 if (coords.minLat !== undefined) {
+                     url += `&minLat=${coords.minLat}&maxLat=${coords.maxLat}&minLon=${coords.minLon}&maxLon=${coords.maxLon}`;
+                 }
+                 if (coords.clusterID) {
+                     url += `&cluster_id=${encodeURIComponent(coords.clusterID)}`;
+                 }
+            }
+            
             console.log(`[Heatmap] Inspect API URL: ${url}`);
-            
-            // Add Bounds if available
-            if (coords.minLat !== undefined) {
-                url += `&minLat=${coords.minLat}&maxLat=${coords.maxLat}&minLon=${coords.minLon}&maxLon=${coords.maxLon}`;
-            }
-            
-            // Add Cluster ID for exact match
-            // DISABLED: Sending ID restricts result to single item if ID is shared/representative.
-            // forcing spatial search ensures we get all items in the cluster area.
-            // Use Cluster ID for fast lookup (with bounds-based fallback)
-            if (coords.clusterID) {
-                url += `&cluster_id=${encodeURIComponent(coords.clusterID)}`;
-            }
 
             const res = await fetch(url);
             if (res.ok) {
@@ -411,10 +493,35 @@ const inspectLocation = async (path, source, directItems = null, coords = null) 
         
         // Grouping
         const groups = {};
+        const visitedClusters = new Set(); // Deduplication for Fan Markers
+
         sidePanelData.value.forEach(item => {
              const p = item.parentPath || "Root";
-             if (!groups[p]) groups[p] = { path: p, count: 0, items: [] };
-             groups[p].count += (item.count && item.count > 1 ? item.count : 1);
+             if (!groups[p]) groups[p] = { 
+                 path: p, 
+                 count: 0, 
+                 items: [],
+                 clusterIDs: new Set(),
+                 source: item.source       
+             };
+             
+             if (item.clusterID) {
+                 groups[p].clusterIDs.add(item.clusterID);
+             }
+
+             // Count Logic:
+             // If item has a ClusterID, ensure we only add its 'count' ONCE per group.
+             // This applies to both Fan Markers (leaves) AND Cluster Markers.
+             if (item.clusterID) {
+                 if (!visitedClusters.has(item.clusterID)) {
+                     visitedClusters.add(item.clusterID);
+                     groups[p].count += item.count;
+                 }
+             } else {
+                 // No ID? Treat as individual file.
+                 groups[p].count += (item.count || 1);
+             }
+             
              groups[p].items.push(item);
         });
         
@@ -423,7 +530,13 @@ const inspectLocation = async (path, source, directItems = null, coords = null) 
         console.log("[Heatmap] Formatted SidePanel Data:", formattedSidePanelData.value);
         
         if (formattedSidePanelData.value.length === 1) {
-            currentInspectionFolder.value = formattedSidePanelData.value[0];
+            // Auto-Drill Down:
+            // Since we selected a single folder via Box Select, we want to see the FILES,
+            // not just the Cluster Markers we grabbed from the map.
+            // Trigger the backend inspection for this group.
+            console.log("[Heatmap] Single folder selected via box. Auto-drilling...");
+            openFolderView(formattedSidePanelData.value[0]);
+            return; // openFolderView handles the rest
         }
 
         sidePanelTitle.value = `Selected Items (${sidePanelData.value.length})`;
@@ -814,8 +927,8 @@ const initMap = async () => {
         spiderfyOnMaxZoom: true, // Enable spiderfy
         showCoverageOnHover: false, // Disable hover for performance
         zoomToBoundsOnClick: true,
-        maxClusterRadius: 35, // Small radius to only cluster very close items
-        disableClusteringAtZoom: 18, // Stop frontend clustering at Z18 to stop "dancing" markers
+        maxClusterRadius: 50, // Slightly larger radius to catch overlaps
+        disableClusteringAtZoom: 18, // ENABLED: Allow clustering at max zoom to solve overlap clutter
         spiderfyDistanceMultiplier: 2, 
         spiderLegPolylineOptions: { weight: 1.5, color: '#222', opacity: 0.5 },
         iconCreateFunction: function(cluster) {
@@ -1401,7 +1514,9 @@ const loadData = async () => {
                                 className: 'tile-cluster-badge-large',
                                 iconSize: [36, 36]
                             }),
-                            photoCount: c.count
+                            photoCount: c.count,
+                            totalCount: c.count, 
+                            clusterID: c.id
                         });
                         
                         marker.bindPopup(`<b>${c.count} photos</b><br>Location: ${c.path}<br><span style="font-size:10px;color:#aaa">Right-click for Options</span>`);
@@ -1455,7 +1570,10 @@ const loadData = async () => {
                                 const marker = L.marker([c.lat + offsetLat, c.lon + offsetLon], {
                                     icon: generateMarkerIcon(p.path, c.source || source, 1),
                                     thumbPath: p.path,
-                                    thumbSource: c.source || source
+                                    thumbSource: c.source || source,
+                                    clusterID: c.id, 
+                                    totalCount: c.count, // Capture total count of the cluster this leaf belongs to
+                                    riseOnHover: true, 
                                 });
                                 marker.bindPopup(generatePopupHtml(p.path, c.source || source, 1));
                                 
@@ -1472,9 +1590,11 @@ const loadData = async () => {
                         } else {
                             // Single cluster marker
                             const marker = L.marker([c.lat, c.lon], {
-                                icon: generateMarkerIcon(c.path, c.source || source, c.count),
-                                thumbPath: c.path,
-                                thumbSource: c.source || source
+                                 icon: generateMarkerIcon(c.path, c.source || source, c.count),
+                                 thumbPath: c.path,
+                                 thumbSource: c.source || source,
+                                 clusterID: c.id, // Explicitly Store Cluster ID
+                                 totalCount: c.count // Capture count
                             });
                             marker.bindPopup(generatePopupHtml(c.path, c.source || source, c.count));
                             markers.addLayer(marker);
@@ -1586,6 +1706,159 @@ const loadData = async () => {
     }
 
     debugStatus.value = "Tile-based loading active";
+};
+
+
+// Box Selection Logic
+const toggleSelectionMode = () => {
+    isBoxSelectMode.value = !isBoxSelectMode.value;
+    if (isBoxSelectMode.value) {
+        // Disable map interaction? Leaflet usually handles this if we consume events.
+        // The overlay has touch-action: none.
+        map.dragging.disable();
+    } else {
+        map.dragging.enable();
+        selectionBox.value.visible = false;
+    }
+};
+
+const startSelection = (e) => {
+    if (!isBoxSelectMode.value) return;
+    
+    // Get coords relative to overlay itself for perfect visual alignment
+    const rect = e.currentTarget.getBoundingClientRect();
+    
+    let clientX, clientY;
+    if (e.type.startsWith('touch')) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+    } else {
+        clientX = e.clientX;
+        clientY = e.clientY;
+    }
+    
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    
+    selectionBox.value.startX = x;
+    selectionBox.value.startY = y;
+    selectionBox.value.currentX = x;
+    selectionBox.value.currentY = y;
+    selectionBox.value.visible = true;
+    selectionBox.value.style = {
+        left: x + 'px',
+        top: y + 'px',
+        width: '0px',
+        height: '0px'
+    };
+};
+
+const updateSelection = (e) => {
+    if (!isBoxSelectMode.value || !selectionBox.value.visible) return;
+    
+    // Prevent scrolling on touch
+    if (e.type.startsWith('touch')) e.preventDefault();
+    
+    const rect = e.currentTarget.getBoundingClientRect();
+    
+    let clientX, clientY;
+    if (e.type.startsWith('touch')) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+    } else {
+        clientX = e.clientX;
+        clientY = e.clientY;
+    }
+    
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    
+    selectionBox.value.currentX = x;
+    selectionBox.value.currentY = y;
+    
+    const minX = Math.min(selectionBox.value.startX, x);
+    const maxX = Math.max(selectionBox.value.startX, x);
+    const minY = Math.min(selectionBox.value.startY, y);
+    const maxY = Math.max(selectionBox.value.startY, y);
+    
+    selectionBox.value.style = {
+        left: minX + 'px',
+        top: minY + 'px',
+        width: (maxX - minX) + 'px',
+        height: (maxY - minY) + 'px'
+    };
+};
+
+const endSelection = (e) => {
+    if (!isBoxSelectMode.value || !selectionBox.value.visible) return;
+    
+    selectionBox.value.visible = false;
+    
+    // Calculate Bounds
+    const overlay = e.currentTarget;
+    const overlayRect = overlay.getBoundingClientRect();
+    
+    const mapContainer = map.getContainer();
+    const mapRect = mapContainer.getBoundingClientRect();
+    
+    // Calculate Offset: Overlay Relative -> Map Relative
+    // MapPoint = OverlayPoint + OverlayAbs - MapAbs
+    const offsetX = overlayRect.left - mapRect.left;
+    const offsetY = overlayRect.top - mapRect.top;
+    
+    // We already calculated relative x/y in updateSelection (which are Overlay Relative)
+    // Apply offset to make them Map Relative
+    const startPt = L.point(
+        selectionBox.value.startX + offsetX, 
+        selectionBox.value.startY + offsetY
+    );
+    const endPt = L.point(
+        selectionBox.value.currentX + offsetX, 
+        selectionBox.value.currentY + offsetY
+    );
+    
+    // Convert to LatLng (Leaflet expects Map Relative points)
+    const startLatLng = map.containerPointToLatLng(startPt);
+    const endLatLng = map.containerPointToLatLng(endPt);
+    
+    const bounds = L.latLngBounds(startLatLng, endLatLng);
+    
+    // Query Markers
+    const selectedItems = [];
+    
+    // Iterate ALL layers in the cluster group
+    // Note: markers.eachLayer iterates specific markers (leaves), not clusters.
+    markers.eachLayer(layer => {
+        if (bounds.contains(layer.getLatLng())) {
+             let p = layer.options.thumbPath || layer.options.clusterPath;
+             let s = layer.options.thumbSource || layer.options.clusterSource;
+             // Count: Prefer totalCount (from Cluster data) over photoCount (Badge) over 1
+             let c = layer.options.totalCount || layer.options.photoCount || 1;
+             let cid = layer.options.clusterID || ""; // Now populated for all types
+             
+             if (p) {
+                 selectedItems.push({ 
+                     path: p, 
+                     source: s, 
+                     name: p.split('/').pop(), 
+                     count: c, 
+                     clusterID: cid 
+                 });
+             }
+        }
+    });
+    
+    // Auto-disable mode
+    toggleSelectionMode();
+    
+    if (selectedItems.length > 0) {
+        // Feed to Inspection Panel
+        // Use inspectLocation with directItems. 
+        // The items now have valid 'clusterID', so openFolderView will work correctly.
+        inspectLocation(null, null, selectedItems);
+    } else {
+        notify.showInfo("No items selected in area");
+    }
 };
 
 
@@ -1931,11 +2204,17 @@ watch(() => route.query, () => {
     padding-bottom: 5px;
 }
 .back-btn {
-    background: none;
-    border: none;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 4px;
     color: white;
     cursor: pointer;
-    padding: 0;
+    padding: 2px 5px;
+    margin-right: 5px;
+    transition: background 0.2s;
+}
+.back-btn:hover {
+    background: rgba(255,255,255,0.2);
 }
 .quick-view-actions {
     margin-top: 15px;

@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -55,5 +56,58 @@ func TestCapitalizeFirst(t *testing.T) {
 					test.input, test.expectedOutput, actualOutput)
 			}
 		})
+	}
+}
+func TestHashSHA256(t *testing.T) {
+	input := "hello world"
+	expected := "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+	actual := HashSHA256(input)
+	if actual != expected {
+		t.Errorf("expected %s, got %s", expected, actual)
+	}
+}
+
+func TestGetLastComponent(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"/a/b/c", "c"},
+		{"/a/b/c/", "c"},
+		{"/", ""},
+		{"file.txt", "file.txt"},
+		{"/dir/file.txt", "file.txt"},
+	}
+	for _, test := range tests {
+		actual := GetLastComponent(test.input)
+		if actual != test.expected {
+			t.Errorf("input %s: expected %s, got %s", test.input, test.expected, actual)
+		}
+	}
+}
+
+func TestJoinPathAsUnix(t *testing.T) {
+	// This test behaves differently on Windows vs Linux, but the function normalizes to forward slashes on Windows.
+	// We simulate inputs.
+	parts := []string{"foo", "bar"}
+	result := JoinPathAsUnix(parts...)
+	if strings.Contains(result, "\\") {
+		t.Errorf("JoinPathAsUnix should not return backslashes on any OS (normalized), got: %s", result)
+	}
+	if !strings.HasSuffix(result, "foo/bar") && !strings.HasSuffix(result, "foo\\bar") {
+		// Go's filepath.Join might return backslashes on windows before our replacement
+		// But our function explicitly replaces them.
+		// So checking for forward slash presence is key if we are on windows.
+	}
+}
+
+func TestGenerateKey(t *testing.T) {
+	key1 := GenerateKey()
+	key2 := GenerateKey()
+	if len(key1) != 64 {
+		t.Errorf("expected key length 64, got %d", len(key1))
+	}
+	if key1 == key2 {
+		t.Errorf("keys should be random, got duplicate: %s", key1)
 	}
 }

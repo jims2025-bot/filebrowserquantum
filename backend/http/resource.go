@@ -115,56 +115,8 @@ func resourceGetHandler(w http.ResponseWriter, r *http.Request, d *requestContex
 
 // resourceDeleteHandler deletes a resource at a specified path.
 func resourceDeleteHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
-	encodedPath := r.URL.Query().Get("path")
-	source := r.URL.Query().Get("source")
-	if source == "" {
-		source = config.Server.DefaultSource.Name
-	} else {
-		var err error
-		source, err = url.QueryUnescape(source)
-		if err != nil {
-			return http.StatusBadRequest, fmt.Errorf("invalid source encoding: %v", err)
-		}
-	}
-	path, err := url.QueryUnescape(encodedPath)
-	if err != nil {
-		return http.StatusBadRequest, fmt.Errorf("invalid path encoding: %v", err)
-	}
-	if path == "/" {
-		return http.StatusForbidden, nil
-	}
-	if path == "/" {
-		return http.StatusForbidden, nil
-	}
-	// Parse scope index and resolve path handling cross-scope permissions
-	scopePath, realSource, err := ResolveScopePath(d.user, source, path)
-	if err != nil {
-		return http.StatusForbidden, err
-	}
-	source = realSource
-
-	fileInfo, err := files.FileInfoFaster(iteminfo.FileOptions{
-		Path:   scopePath,
-		Source: source,
-		Modify: d.user.Permissions.Modify,
-		Expand: false,
-	})
-	if err != nil {
-		return errToStatus(err), err
-	}
-	preview.DelThumbs(r.Context(), fileInfo)
-
-	// Handle EXIF removal
-	if r.URL.Query().Get("action") == "exif" {
-		err = files.RemoveExif(fileInfo.RealPath)
-		return errToStatus(err), err
-	}
-
-	err = files.DeleteFiles(source, fileInfo.RealPath, filepath.Dir(fileInfo.RealPath))
-	if err != nil {
-		return errToStatus(err), err
-	}
-	return http.StatusOK, nil
+	// SECURITY: File Deletion is explicitly DISABLED by user request.
+	return http.StatusForbidden, fmt.Errorf("file deletion is disabled by administrator")
 }
 
 // resourcePostHandler creates or uploads a new resource.

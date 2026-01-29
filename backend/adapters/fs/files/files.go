@@ -406,20 +406,8 @@ func GetChecksum(fullPath, algo string) (map[string]string, error) {
 }
 
 func DeleteFiles(source, absPath string, absDirPath string) error {
-	err := os.RemoveAll(absPath)
-	if err != nil {
-		return err
-	}
-	index := indexing.GetIndex(source)
-	if index == nil {
-		return fmt.Errorf("could not get index: %v ", source)
-	}
-	refreshConfig := iteminfo.FileOptions{Path: index.MakeIndexPath(absDirPath), IsDir: true}
-	_, err = index.RefreshFileInfo(refreshConfig)
-	if err != nil {
-		return err
-	}
-	return nil
+	// SECURITY: File deletion disabled by administrator
+	return fmt.Errorf("file deletion is disabled by administrator")
 }
 
 func MoveResource(sourceIndex, destIndex, realsrc, realdst string) error {

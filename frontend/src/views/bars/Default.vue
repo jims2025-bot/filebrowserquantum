@@ -126,7 +126,16 @@ export default {
       return window.location.hash != "#edit" && state.user.permissions.modify;
     },
     showDelete() {
-      return state.user.permissions.modify && getters.currentView() == "preview";
+      // SECURITY: Disabled by User Request
+      return false;
+      // if (
+      //   this.req.type == "directory" ||
+      //   this.view == "editor" ||
+      //   !this.user.permissions.modify
+      // ) {
+      //   return false;
+      // }
+      // return this.selectedCount > 0;
     },
     showSave() {
       return getters.currentView() == "editor" && state.user.permissions.modify;

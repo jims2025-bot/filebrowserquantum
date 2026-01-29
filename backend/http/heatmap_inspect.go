@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -19,21 +20,25 @@ import (
 // handleInspect returns the list of files for a specific cluster location
 // URL format: /api/heatmap/inspect?lat=...&lon=...&source=...&path=...
 func handleInspect(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
+	// Check for explicit Cluster ID (Hidden PK) which can be single or comma-separated
+	targetClusterIDParam := r.URL.Query().Get("cluster_id")
+	var targetClusterIDs []string
+	if targetClusterIDParam != "" {
+		targetClusterIDs = strings.Split(targetClusterIDParam, ",")
+	}
+
 	// 1. Parse coordinates
 	latStr := r.URL.Query().Get("lat")
 	lonStr := r.URL.Query().Get("lon")
-	if latStr == "" || lonStr == "" {
+
+	// VALIDATION RELAXED: If we have Cluster IDs, we can skip lat/lon
+	// But we still need them defined as float64, defaulting to 0 if missing.
+	if (latStr == "" || lonStr == "") && len(targetClusterIDs) == 0 {
 		return http.StatusBadRequest, fmt.Errorf("missing lat/lon parameter")
 	}
 
-	targetLat, err := strconv.ParseFloat(latStr, 64)
-	if err != nil {
-		return http.StatusBadRequest, fmt.Errorf("invalid lat parameter")
-	}
-	targetLon, err := strconv.ParseFloat(lonStr, 64)
-	if err != nil {
-		return http.StatusBadRequest, fmt.Errorf("invalid lon parameter")
-	}
+	targetLat, _ := strconv.ParseFloat(latStr, 64)
+	targetLon, _ := strconv.ParseFloat(lonStr, 64)
 
 	// 2. Resolve Source and Path (Scope Logic)
 	source := r.URL.Query().Get("source")
@@ -48,6 +53,7 @@ func handleInspect(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 
 	var scopePath, realSource string
 	var userscope string
+	var err error
 
 	if path != "/" || source != "" {
 		scopePath, realSource, err = ResolveScopePath(d.user, source, path)
@@ -111,9 +117,6 @@ func handleInspect(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 		}
 	}
 
-	// Check for explicit Cluster ID (Hidden PK)
-	targetClusterID := r.URL.Query().Get("cluster_id")
-
 	// Helper to robustly get ID (Moved up for shared use)
 	getOrGenID := func(c *heatmap.Cluster) string {
 		if c.ID != "" {
@@ -128,7 +131,7 @@ func handleInspect(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 	var matchPoints []heatmap.ClusterPoint
 
 	// CRITICAL: Direct Path Inspection Mode
-	if path != "" && targetClusterID == "" && (targetLat == 0 && targetLon == 0) {
+	if path != "" && len(targetClusterIDs) == 0 && (targetLat == 0 && targetLon == 0) {
 		// Use manual loading to bypass any cache
 		leafData, err := heatmap.GetFolderHeatmap(realSource, path)
 		if err == nil {
@@ -191,30 +194,22 @@ func handleInspect(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 	// Define radius variable in outer scope for error reporting fallback
 	var radius float64
 
-	if targetClusterID != "" {
+	if len(targetClusterIDs) > 0 {
 		// EXACT MATCH MODE
-		found := false
-		logger.Debug(fmt.Sprintf("Inspect: Searching for Cluster ID %s in %d clusters", targetClusterID, len(data.Clusters)))
+		logger.Debug(fmt.Sprintf("Inspect: Searching for Cluster IDs %v in %d clusters", targetClusterIDs, len(data.Clusters)))
 
 		for _, c := range data.Clusters {
-			if c.ID == targetClusterID {
+			if slices.Contains(targetClusterIDs, c.ID) {
+				logger.Debug(fmt.Sprintf("Inspect: ID Match Found: %s (Count=%d PointsInStruct=%d)", c.ID, c.Count, len(c.Points)))
+
 				// "Drill Down" Inspection:
 				// If this is an aggregated cluster (Points stripped), fetch from the source leaf folder.
 				if len(c.Points) == 0 && c.Count > 0 && c.Path != "" {
-					// c.Path is the path to the item (file or folder).
-					// If it has an extension, it's a file -> take Dir.
-					// If it has no extension, it's a folder -> use as is.
-					// We do NOT use PreviewID because it might be just a filename (e.g. "img.jpg").
 					leafFolder := c.Path
 					if filepath.Ext(leafFolder) != "" {
 						leafFolder = filepath.Dir(leafFolder)
 					}
 					leafFolder = filepath.ToSlash(leafFolder)
-
-					logger.Debug(fmt.Sprintf("Inspect: Found Target Cluster. Path='%s' Leaf='%s'", c.Path, leafFolder))
-
-					// DRILL DOWN LOGIC:
-					// If the request came from "Drill Down" (cluster_id is set), we always want to return the contents.
 
 					// Use c.Source if available (it should be), otherwise fallback to realSource
 					targetSource := c.Source
@@ -223,10 +218,6 @@ func handleInspect(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 					}
 
 					// Fix for Path Duplication during Hydration:
-					// The c.Path usually contains the Source Name (Virtual Path).
-					// GetFolderHeatmap -> GetRealPath joins SourceRoot + Path.
-					// If we pass "/SOURCE/Folder", it becomes "ROOT/SOURCE/SOURCE/Folder" -> 404.
-					// We must strip the Source prefix if it exists in the path.
 					prefix := "/" + targetSource
 					prefixUpper := strings.ToUpper(prefix)
 					leafUpper := strings.ToUpper(leafFolder)
@@ -240,66 +231,22 @@ func handleInspect(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 						if leafFolder == "" {
 							leafFolder = "/"
 						}
-						logger.Debug(fmt.Sprintf("Inspect: Stripped Source Prefix: '%s' -> '%s' (Source: %s)", originalLeaf, leafFolder, targetSource))
 					} else {
-						// Also check without leading slash just in case
 						prefixNoSlash := targetSource
 						if strings.HasPrefix(leafUpper, strings.ToUpper(prefixNoSlash)+"/") {
 							leafFolder = leafFolder[len(prefixNoSlash):]
 							if !strings.HasPrefix(leafFolder, "/") {
 								leafFolder = "/" + leafFolder
 							}
-							logger.Debug(fmt.Sprintf("Inspect: Stripped Source Prefix (NoSlash): '%s' -> '%s'", originalLeaf, leafFolder))
 						}
 					}
 
-					// Normalize paths for comparison (trim trailing slashes) (Optional debug info)
-					cleanScope := strings.TrimRight(scopePath, "/")
-					cleanLeaf := strings.TrimRight(leafFolder, "/")
-
-					logger.Debug(fmt.Sprintf("Inspect: Scope='%s' CleanScope='%s' CleanLeaf='%s'", scopePath, cleanScope, cleanLeaf))
-
-					// If we are at Global (empty cleanScope) or parent, return folder.
-					// Only hydrate if we are specifically inspecting the leaf folder.
-					// WAIT: The user wants IMMEDIATE drill down.
-					// "The clusterid is ... and only has one image. Currently the inspection panel is showing every image in that folder."
-					// So if we find the cluster ID, we SHOULD return the points, regardless of scope level?
-					// The user complained about "It does not seem to be drilling down...".
-					// So I will ALWAYS hydrate if ID matches.
-
-					/*
-						if cleanScope != cleanLeaf {
-							logger.Debug(fmt.Sprintf("Inspect: returning folder node for %s (Leaf: %s)", c.ID, leafFolder))
-							finalPoints := []heatmap.ClusterPoint{{
-								Type:      "folder",
-								Path:      leafFolder,
-								Count:     c.Count,
-								ID:        c.ID, // Pass same ID to allow drill-down
-								PreviewID: c.PreviewID,
-								Lat:       c.Lat,
-								Lon:       c.Lon,
-								Source:    realSource, // Ensure source is passed
-							}}
-							return renderJSON(w, r, finalPoints)
-						}
-					*/
-
-					// Use c.Source if available (it should be), otherwise fallback to realSource
-					// targetSource is already defined and calculated above for stripping logic.
-					// Just ensure it's not empty if we fell through?
-					if targetSource == "" {
-						targetSource = realSource
-					}
-
-					logger.Debug(fmt.Sprintf("Inspect: Hydrating aggregated cluster %s from leaf %s (Source: %s)", c.ID, leafFolder, targetSource))
-
-					// Helper function to load data
+					// Helper function to load data - CACHE BYPASSED
 					loadData := func(src, path string) (heatmap.HeatmapData, error) {
-						ck := fmt.Sprintf("user:%v:%s", d.user.ID, src)
-						return getCachedHeatmap(ck, path, func() (heatmap.HeatmapData, error) {
-							return heatmap.GetFolderHeatmap(src, path)
-						})
+						logger.Debug(fmt.Sprintf("Inspect: Direct Load (No Cache) for %s : %s", src, path))
+						return heatmap.GetFolderHeatmap(src, path)
 					}
+
 					// Helper to search for match in loaded clusters
 					findMatch := func(clusters []heatmap.Cluster, targetID string, targetPath string) ([]heatmap.ClusterPoint, bool, string) {
 						// 1. Try Exact ID Match first
@@ -308,19 +255,32 @@ func handleInspect(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 								return lc.Points, true, "ID Match"
 							}
 						}
-						// 2. Try Path/Content Match
-						// If the target path (preview image) is in the cluster, that's our cluster!
-						// The targetPath comes from the cluster we clicked on.
+
+						// 2. Try Path/Content Match (Robust)
 						if targetPath != "" {
+							normTarget := filepath.ToSlash(targetPath)
 							for _, lc := range clusters {
-								// Check the cluster's main path first
-								if lc.Path == targetPath {
-									return lc.Points, true, "Path Match (Cluster)"
+								normLC := filepath.ToSlash(lc.Path)
+
+								// 2a. Exact Path
+								if normLC == normTarget {
+									return lc.Points, true, "Path Match (Cluster Exact)"
 								}
-								// Check points if hydrated (should be for leaf)
+								// 2b. Suffix Match (Cluster)
+								// Check if one ends with the other to handle prefix differences
+								if strings.HasSuffix(normLC, normTarget) || strings.HasSuffix(normTarget, normLC) {
+									return lc.Points, true, "Path Match (Cluster Suffix)"
+								}
+
 								for _, p := range lc.Points {
-									if p.Path == targetPath {
-										return lc.Points, true, "Path Match (Point)"
+									normP := filepath.ToSlash(p.Path)
+									// 2c. Exact Point Path
+									if normP == normTarget {
+										return lc.Points, true, "Path Match (Point Exact)"
+									}
+									// 2d. Suffix Match (Point)
+									if strings.HasSuffix(normP, normTarget) || strings.HasSuffix(normTarget, normP) {
+										return lc.Points, true, "Path Match (Point Suffix)"
 									}
 								}
 							}
@@ -328,22 +288,23 @@ func handleInspect(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 						return nil, false, ""
 					}
 
-					// Attempt 1: Smart Stripped Path (calculated above)
-					logger.Info(fmt.Sprintf("Inspect: Attempt 1 - Loading data for Source='%s' Path='%s'", targetSource, leafFolder))
-					leafData, err := loadData(targetSource, leafFolder)
+					var currentPoints []heatmap.ClusterPoint
 
+					// Attempt 1: Smart Stripped Path
+					fmt.Println(fmt.Sprintf("INSPECT_DEBUG: Attempt 1 - Loading leaf '%s' (Source: %s)", leafFolder, targetSource))
+					leafData, err := loadData(targetSource, leafFolder)
 					foundMatch := false
 					if err == nil {
-						logger.Info(fmt.Sprintf("Inspect: Attempt 1 - Loaded %d clusters. Searching for ID %s or Path %s", len(leafData.Clusters), c.ID, c.Path))
+						fmt.Println(fmt.Sprintf("INSPECT_DEBUG: Attempt 1 - Loaded %d clusters from leaf. Searching for %s", len(leafData.Clusters), c.ID))
 						var method string
-						matchPoints, foundMatch, method = findMatch(leafData.Clusters, c.ID, c.Path)
+						currentPoints, foundMatch, method = findMatch(leafData.Clusters, c.ID, c.Path)
 						if foundMatch {
-							logger.Info(fmt.Sprintf("Inspect: Hydrated %d points via %s (Attempt 1)", len(matchPoints), method))
+							fmt.Println(fmt.Sprintf("INSPECT_DEBUG: Hydrated %d points via %s (Attempt 1)", len(currentPoints), method))
 						} else {
-							logger.Info(fmt.Sprintf("Inspect: Attempt 1 - No match found for ID %s", c.ID))
+							fmt.Println("INSPECT_DEBUG: Attempt 1 - ID/Path Match FAILED.")
 						}
 					} else {
-						logger.Info(fmt.Sprintf("Inspect: Attempt 1 - Load Failed: %v", err))
+						fmt.Println(fmt.Sprintf("INSPECT_DEBUG: Attempt 1 - Load Failed: %v", err))
 					}
 
 					// Attempt 2: Blind Strip (Fallback)
@@ -352,107 +313,92 @@ func handleInspect(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 						segments := strings.Split(cleanLeaf, "/")
 						if len(segments) > 1 {
 							blindPath := "/" + strings.Join(segments[1:], "/")
-							logger.Info(fmt.Sprintf("Inspect: Attempt 2 - Blind Strip: '%s' -> '%s'", originalLeaf, blindPath))
-
+							fmt.Println(fmt.Sprintf("INSPECT_DEBUG: Attempt 2 - Blind Strip '%s' -> '%s'", originalLeaf, blindPath))
 							leafData2, err2 := loadData(targetSource, blindPath)
 							if err2 == nil {
-								logger.Info(fmt.Sprintf("Inspect: Attempt 2 - Loaded %d clusters", len(leafData2.Clusters)))
+								fmt.Println(fmt.Sprintf("INSPECT_DEBUG: Attempt 2 - Loaded %d clusters", len(leafData2.Clusters)))
 								var method string
-								matchPoints, foundMatch, method = findMatch(leafData2.Clusters, c.ID, c.Path)
+								currentPoints, foundMatch, method = findMatch(leafData2.Clusters, c.ID, c.Path)
 								if foundMatch {
-									logger.Info(fmt.Sprintf("Inspect: Hydrated %d points via %s (Attempt 2)", len(matchPoints), method))
+									fmt.Println(fmt.Sprintf("INSPECT_DEBUG: Hydrated %d points via %s (Attempt 2)", len(currentPoints), method))
 								}
 							} else {
-								logger.Info(fmt.Sprintf("Inspect: Attempt 2 - Load Failed: %v", err2))
+								fmt.Println(fmt.Sprintf("INSPECT_DEBUG: Attempt 2 - Load Failed: %v", err2))
 							}
-						} else {
-							logger.Info("Inspect: Attempt 2 - Skipped (not enough segments)")
 						}
 					}
 
 					// Attempt 3: Raw Relative Path
 					if !foundMatch {
 						rawRel := strings.TrimLeft(filepath.ToSlash(originalLeaf), "/")
-						logger.Info(fmt.Sprintf("Inspect: Attempt 3 - Raw Relative: '%s' -> '%s'", originalLeaf, rawRel))
+						fmt.Println(fmt.Sprintf("INSPECT_DEBUG: Attempt 3 - Raw Relative '%s'", rawRel))
 						leafData3, err3 := loadData(targetSource, rawRel)
 						if err3 == nil {
-							logger.Info(fmt.Sprintf("Inspect: Attempt 3 - Loaded %d clusters", len(leafData3.Clusters)))
+							fmt.Println(fmt.Sprintf("INSPECT_DEBUG: Attempt 3 - Loaded %d clusters", len(leafData3.Clusters)))
 							var method string
-							matchPoints, foundMatch, method = findMatch(leafData3.Clusters, c.ID, c.Path)
+							currentPoints, foundMatch, method = findMatch(leafData3.Clusters, c.ID, c.Path)
 							if foundMatch {
-								logger.Info(fmt.Sprintf("Inspect: Hydrated %d points via %s (Attempt 3)", len(matchPoints), method))
+								fmt.Println(fmt.Sprintf("INSPECT_DEBUG: Hydrated %d points via %s (Attempt 3)", len(currentPoints), method))
 							}
 						} else {
-							logger.Info(fmt.Sprintf("Inspect: Attempt 3 - Load Failed: %v", err3))
+							fmt.Println(fmt.Sprintf("INSPECT_DEBUG: Attempt 3 - Load Failed: %v", err3))
+						}
+					}
+
+					// Append found points
+					if foundMatch {
+						for _, p := range currentPoints {
+							if filepath.Base(p.Path) == "heatmap.json" {
+								continue
+							}
+							p.ID = c.ID
+							matchPoints = append(matchPoints, p)
 						}
 					} else {
-						logger.Error("Inspect: Failed to load leaf data: " + err.Error())
+						// Hydration failed
+						logger.Error(fmt.Sprintf("Inspect: Failed to hydrate cluster %s - No match found in leaf data", c.ID))
+						matchPoints = append(matchPoints, heatmap.ClusterPoint{
+							Type:   "folder",
+							Path:   c.Path,
+							Count:  c.Count,
+							ID:     c.ID,
+							Source: c.Source,
+						})
 					}
-				} else {
-					matchPoints = c.Points
-					logger.Debug(fmt.Sprintf("Inspect: Using existing points (Count=%d)", len(matchPoints)))
-				}
 
-				// Post-hydration check
-				if len(matchPoints) == 0 {
-					logger.Info("Inspect: Match found but points empty. Falling back to Folder Node.")
-					// Debug: Why?
-					if len(c.Points) == 0 {
-						logger.Debug("Inspect: Original cluster points empty.")
+				} else {
+					// Use existing points (already hydrated or leaf)
+					currentPoints := c.Points
+					logger.Debug(fmt.Sprintf("Inspect: Using existing points for %s (Count=%d)", c.ID, len(currentPoints)))
+
+					// Post-hydration check
+					if len(currentPoints) == 0 {
+						logger.Info("Inspect: Match found but points empty. Falling back to Folder Node.")
+						// ... fallback code ...
+						currentPoints = append(currentPoints, heatmap.ClusterPoint{
+							Type:   "folder",
+							Path:   c.Path,
+							Count:  c.Count,
+							ID:     c.ID,
+							Source: c.Source,
+						})
 					}
-					// If Hydration failed (e.g. leaf load error, or empty leaf), fall back to returning the folder information itself.
-					// This ensures the frontend doesn't get a 404 and can at least show the folder.
-					matchPoints = append(matchPoints, heatmap.ClusterPoint{
-						Type:      "folder",
-						Path:      c.Path, // Points to the file or folder
-						Count:     c.Count,
-						ID:        c.ID,
-						PreviewID: c.PreviewID,
-						Lat:       c.Lat,
-						Lon:       c.Lon,
-						Source:    c.Source,
-					})
-					// Make the error message appear INSIDE the folder by using the folder path as prefix
-					errorMsg := "Leaf cluster not found - trigger manual scan to rebuild"
-					errorPath := filepath.ToSlash(filepath.Join(c.Path, errorMsg))
 
-					matchPoints = append(matchPoints, heatmap.ClusterPoint{
-						Type:      "file",
-						Path:      errorPath,
-						Count:     1, // Set to 1 to ensure visibility in counts
-						ID:        "error-msg",
-						PreviewID: "",
-						Lat:       c.Lat,
-						Lon:       c.Lon,
-						Source:    c.Source,
-					})
-				} else {
-					// CRITICAL: Inject the Cluster ID into all found points so the frontend
-					// can preserve context for further drill-downs.
-					// Also filter out "heatmap.json" just in case.
-
-					var cleanPoints []heatmap.ClusterPoint
-					for _, p := range matchPoints {
+					for _, p := range currentPoints {
 						if filepath.Base(p.Path) == "heatmap.json" {
 							continue
 						}
 						// Always override/set the ID to the Cluster ID (c.ID)
 						p.ID = c.ID
-						cleanPoints = append(cleanPoints, p)
+						matchPoints = append(matchPoints, p)
 					}
-					matchPoints = cleanPoints
+					logger.Debug(fmt.Sprintf("Inspect: Appended %d points from cluster %s. Total matchPoints=%d", len(currentPoints), c.ID, len(matchPoints)))
 				}
-
-				found = true
-				logger.Debug(fmt.Sprintf("Inspect: Exact Match for Cluster ID=%s Count=%d", targetClusterID, len(matchPoints)))
-				break
 			}
 		}
-		if !found {
-			// Fallback or Error?
-			// If ID provided but not found, it might be stale data.
-			// We could fallback to location search, but let's log it.
-			logger.Info(fmt.Sprintf("Inspect: Cluster ID %s not found in current view. Falling back to spatial search.", targetClusterID))
+		logger.Debug(fmt.Sprintf("Inspect: Finished Loop. Total matches: %d", len(matchPoints)))
+		if len(matchPoints) == 0 {
+			logger.Info(fmt.Sprintf("Inspect: Cluster IDs %v not found in current view. Falling back to spatial search.", targetClusterIDs))
 		}
 	}
 

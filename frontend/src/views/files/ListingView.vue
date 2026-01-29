@@ -622,10 +622,11 @@ export default {
           mutations.resetSelected();
           break;
 
-        case "Delete":
-          if (!state.user.permissions.modify || state.selected.length === 0) return;
-          mutations.showHover("delete");
-          break;
+        // Delete disabled by user request
+        // case "Delete":
+        //   if (!state.user.permissions.modify || state.selected.length === 0) return;
+        //   mutations.showHover("delete");
+        //   break;
 
         case "F2":
           if (!state.user.permissions.modify || state.selected.length !== 1) return;

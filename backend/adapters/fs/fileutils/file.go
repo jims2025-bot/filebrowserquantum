@@ -6,8 +6,8 @@ import (
 	"path"
 	"path/filepath"
 
-	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
 	"github.com/gtsteffaniak/go-logger/logger"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
 )
 
 // MoveFile moves a file from src to dst.
@@ -27,10 +27,11 @@ func MoveFile(src, dst string) error {
 	}
 
 	go func() {
-		err = os.RemoveAll(src)
-		if err != nil {
-			logger.Errorf("os.Remove failed %v %v ", src, err)
-		}
+		// SECURITY: Deletion disabled
+		// err = os.RemoveAll(src)
+		// if err != nil {
+		// 	logger.Errorf("os.Remove failed %v %v ", src, err)
+		// }
 	}()
 
 	return nil
