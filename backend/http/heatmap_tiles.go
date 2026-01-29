@@ -148,27 +148,41 @@ func getTileHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (
 
 	logger.Debug(fmt.Sprintf("Tiles: Processing %d clusters for tile %d/%d/%d. Path='%s' UserScope='%s'", len(simplifiedClusters), z, x, y, path, userscope))
 
-	for i := range simplifiedClusters {
+	// Create a fresh slice for the response to avoid mutating the cache
+	// (SimplifyClustersByZoom might return the original slice at high zoom)
+	responseClusters := make([]heatmap.Cluster, len(simplifiedClusters))
+
+	for i, c := range simplifiedClusters {
+		// Copy the cluster struct (Shallow copy is fine for non-slice fields, Points is slice but handled below)
+		responseClusters[i] = c
+
 		// DO NOT TRIM PATHS
 		// Paths from heatmap.json are already correct absolute paths from source root
-		// They should work as-is when passed to the preview API
-		// Example: /PHOTOCOLLECTIONS/POWELL-COLLECTION/BillPowellCollection/A01-BillPowell-1995/IMG_20200604_0004.jpg
-		logger.Debug(fmt.Sprintf("Tiles: Cluster[%d] path='%s' (keeping as-is)", i, simplifiedClusters[i].Path))
+		logger.Debug(fmt.Sprintf("Tiles: Cluster[%d] path='%s' (keeping as-is)", i, c.Path))
 
 		// Round coordinates to 5 decimal places for bandwidth optimization
-		simplifiedClusters[i].Lat = round5(simplifiedClusters[i].Lat)
-		simplifiedClusters[i].Lon = round5(simplifiedClusters[i].Lon)
+		// This modifies the COPY in responseClusters, not the cache.
+		responseClusters[i].Lat = round5(c.Lat)
+		responseClusters[i].Lon = round5(c.Lon)
 
 		// Optimization: Remove Points array to reduce JSON size.
-		// Detailed file lists are now fetched via /api/heatmap/inspect on demand.
-		simplifiedClusters[i].Points = nil
+		// Detailed file lists are mostly fetched via /api/heatmap/inspect.
+		// BUT: For High Zoom (Fan View), frontend needs points.
+		// Frontend Logic:
+		// - Zoom < 15: Uses Badges (Points not needed)
+		// - Zoom >= 15: Uses Fans (Points REQUIRED)
+
+		if z < 15 {
+			responseClusters[i].Points = nil
+		}
+		// If z >= 15, we keep points (passed through from SimplifyClustersByZoom)
 	}
 
-	logger.Debug(fmt.Sprintf("Tiles: Returning %d clusters for tile %d/%d/%d", len(simplifiedClusters), z, x, y))
+	logger.Debug(fmt.Sprintf("Tiles: Returning %d clusters for tile %d/%d/%d", len(responseClusters), z, x, y))
 
 	// Return tile data
 	tileData := map[string]interface{}{
-		"clusters": simplifiedClusters,
+		"clusters": responseClusters,
 		"zoom":     z,
 		"tile":     map[string]int{"x": x, "y": y, "z": z},
 		"bounds":   bounds,
