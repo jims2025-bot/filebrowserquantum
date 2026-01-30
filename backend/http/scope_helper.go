@@ -42,6 +42,26 @@ func ResolveScopePath(user *users.User, source string, path string) (string, str
 		return "", "", err
 	}
 
+	// FIX: If the path starts with the Source Alias (e.g. /SHANTON-VA/Subfolder),
+	// and the mapped Scope is /PHOTOCOLLECTIONS/SHANTONVA-COLLECTION,
+	// we should strip the alias from the path to avoid duplication like:
+	// /PHOTOCOLLECTIONS/SHANTONVA-COLLECTION/SHANTON-VA/Subfolder.
+	if source != "" {
+		cleanedPath := strings.Trim(strings.ReplaceAll(path, "\\", "/"), "/")
+		cleanedSource := strings.Trim(strings.ReplaceAll(source, "\\", "/"), "/")
+
+		if strings.HasPrefix(strings.ToLower(cleanedPath), strings.ToLower(cleanedSource)+"/") {
+			path = cleanedPath[len(cleanedSource):]
+			if !strings.HasPrefix(path, "/") {
+				path = "/" + path
+			}
+			logger.Debug(fmt.Sprintf("ResolveScopePath: Stripped source alias '%s' from path. New path: '%s'", source, path))
+		} else if strings.EqualFold(cleanedPath, cleanedSource) {
+			path = "/"
+			logger.Debug(fmt.Sprintf("ResolveScopePath: Path equals source alias '%s'. New path: '/'", source))
+		}
+	}
+
 	// FIX: If User is Admin, force Scope to Root "/" to avoid path conflicts.
 	// FIX: If the input path is already Absolute (e.g. from Heatmap), use it directly.
 	// Otherwise, join with the User Scope (e.g. from File Browser).

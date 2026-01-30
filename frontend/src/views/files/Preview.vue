@@ -143,22 +143,11 @@
             {{ tab.label }}
             </button>
         </div>
-        
-        <!-- Toggle Height Button -->
-        <button 
-          @click="toggleMetadataHeight" 
-          class="button button--flat" 
-          :title="isMetadataExpanded ? 'Collapse' : 'Expand'"
-          style="padding: 0 10px;"
-        >
-          <i class="material-icons">{{ isMetadataExpanded ? 'expand_more' : 'expand_less' }}</i>
-        </button>
       </div>
-
-      <!-- Tabs Content -->
+      
       <div class="tabs-content">
         <div v-if="activeTab === 'details'" class="tab-pane">
-          <h3>File Details</h3>
+          <h3>FILE</h3>
           <ul>
             <li><strong>Name:</strong> {{ req.name }}</li>
             <li><strong>Path:</strong> {{ req.path }}</li>
@@ -191,7 +180,7 @@
         </div>
 
         <div v-if="activeTab === 'iptc'" class="tab-pane">
-          <h3>IPTC Metadata</h3>
+          <h3>NOTES</h3>
 
 			<!-- photoshop:Instructions (XMP) Section -->
 			<div style="margin-top: 1rem; display: flex; flex-direction: column;">
@@ -237,12 +226,10 @@
           </div>
           <p v-else-if="metadata && Object.keys(metadata.iptc).length === 0">No IPTC data found for this file.</p>
           <p v-else>Loading IPTC metadata...</p>
-
-		<!-- REMOVED overlay-modal-bottom from here -->	
-		</div> <!--  close IPTC tab-pane -->
+		</div> 
 
         <div v-if="activeTab === 'xmp'" class="tab-pane">
-          <h3>XMP Metadata</h3>
+          <h3>FACE</h3>
           
           <!-- Font Size Control for Face Boxes -->
           <div v-if="metadata.xmp && metadata.xmp.Regions && metadata.xmp.Regions.length > 0" style="margin-bottom: 1rem; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 4px;">
@@ -292,184 +279,169 @@
           <p v-else>Loading XMP metadata...</p>
         </div>
 
-          <div v-if="activeTab === 'map'" class="tab-pane" style="height: 100%; display: flex; flex-direction: column;">
-
+          <div v-show="activeTab === 'map'" class="tab-pane" style="height: 100%; display: flex; flex-direction: column; overflow: hidden;">
             
-            <div v-if="isEditingCoordinates" class="coordinate-editor" style="margin-bottom: 0px; padding: 5px; background: rgba(0,0,0,0.05); border-radius: 4px; display: flex; flex-direction: column; height: 100%; overflow: hidden;">
-               
-               <div style="flex: 0 0 auto;">
-                   <!-- Inputs Line -->
-                    <div style="display: flex; gap: 5px; align-items: center; margin-bottom: 5px;">
-                         <div style="display: flex; gap: 5px; align-items: center; flex: 1; flex-wrap: wrap;">
-                             <label style="font-size: 0.8em; margin: 0; white-space: nowrap;">Lat:</label>
-                             <input type="number" step="any" v-model.number="editLat" @input="handleCoordInput($event, 'editLat')" @keydown.stop class="input input--block" style="padding: 2px 5px; height: 28px; font-size: 0.9em; min-width: 80px; flex: 1;">
-                             <label style="font-size: 0.8em; margin: 0; white-space: nowrap;">Lon:</label>
-                             <input type="number" step="any" v-model.number="editLon" @input="handleCoordInput($event, 'editLon')" @keydown.stop class="input input--block" style="padding: 2px 5px; height: 28px; font-size: 0.9em; min-width: 80px; flex: 1;">
+            <!-- 1. Embedded Location Info -->
+            <div style="flex: 0 0 auto; padding: 10px; border-bottom: 2px solid #eee; background: #fafafa; color: #333;">
+                <div style="display: flex; gap: 10px; align-items: start; flex-wrap: wrap;">
+                    
+                    <h3 style="margin: 0; font-size: 0.85em; text-transform: uppercase; color: #777; letter-spacing: 0.5px; white-space: nowrap; margin-top: 3px;">Current Embedded Location</h3>
+
+                    <div v-if="gpsCoordinates" style="display: flex; flex-direction: column; gap: 4px; flex: 1;">
+                         <div style="display: flex; align-items: center; gap: 8px;">
+                             <div 
+                                @click="panToEmbedded" 
+                                title="Click to view on map"
+                                style="font-family: monospace; font-size: 0.9em; font-weight: bold; color: #333; white-space: nowrap; cursor: pointer; text-decoration: underline; text-decoration-style: dotted;"
+                             >
+                                 {{ gpsCoordinates.lat.toFixed(6) }}, {{ gpsCoordinates.lon.toFixed(6) }}
+                             </div>
                              
-                             <div v-if="matchedLocationName" style="background: #2196f3; color: white; border-radius: 4px; padding: 2px 6px; font-size: 0.75em; white-space: nowrap; display: flex; align-items: center; margin-left: auto;">
-                                <i class="material-icons" style="font-size: 14px; margin-right: 2px;">bookmark</i>
-                                {{ matchedLocationName }}
+                             <div style="display: flex; gap: 2px;">
+                                 <!-- Moved Clear Button here as Icon -->
+                                 <button @click="handleClearLocation" class="button button--flat" title="Clear embedded location" style="padding: 2px; height: 20px; line-height: 1; min-width: 24px;">
+                                     <i class="material-icons" style="font-size: 16px; color: #f44336;">delete</i>
+                                 </button>
+                                 
+                                 <button @click="copyCoordinates" class="button button--flat" title="Copy" style="padding: 2px; height: 20px; line-height: 1; min-width: 24px;">
+                                     <i class="material-icons" style="font-size: 14px;">content_copy</i>
+                                 </button>
+                                 <button @click="saveEmbeddedLocationToProfile" class="button button--flat" title="Save this location to My Locations" style="padding: 2px; height: 20px; line-height: 1; min-width: 24px;">
+                                     <i class="material-icons" style="font-size: 16px; color: #2196f3;">bookmark_add</i>
+                                 </button>
+                                 <a :href="'https://www.google.com/maps/search/?api=1&query=' + gpsCoordinates.lat + ',' + gpsCoordinates.lon" 
+                                    target="_blank" 
+                                    class="button button--flat" 
+                                    title="Open in Google Maps"
+                                    style="padding: 2px; height: 20px; line-height: 1; display: flex; align-items: center; min-width: 24px; color: inherit; text-decoration: none;">
+                                    <i class="material-icons" style="font-size: 16px;">map</i>
+                                 </a>
                              </div>
                          </div>
+
+                         <!-- Match Badge (Embedded) -->
+                         <div v-if="gpsMatchedLocationName" style="padding: 2px 6px; background: #e3f2fd; color: #1565c0; border-radius: 4px; font-size: 0.75em; font-weight: 500; display: flex; align-items: center; white-space: nowrap; align-self: flex-start;">
+                             <i class="material-icons" style="font-size: 12px; margin-right: 3px;">bookmark</i>
+                             Matches: {{ gpsMatchedLocationName }}
+                         </div>
                     </div>
-
-                   <!-- Buttons Line -->
-                   <div style="display: flex; gap: 5px; justify-content: flex-end; margin-bottom: 5px;">
-                        <div style="display: flex; gap: 3px;">
-                             <button 
-                                @click="saveCoordinates" 
-                                class="button button--flat"
-                                :class="{'button--primary': hasUnsavedCoordinates}"
-                                :style="hasUnsavedCoordinates ? 'background-color: #2196f3; color: white;' : ''"
-                                style="padding: 2px 6px; min-height: 28px; line-height: 1; font-size: 0.9em;"
-                             >Save to Image</button>
-                            <button @click="cancelEditCoordinates" class="button button--flat" style="opacity: 0.7; padding: 2px 6px; min-height: 28px; line-height: 1; font-size: 0.9em;">Cancel</button>
-                             <button @click="saveLocationToProfile" class="button button--flat" title="Save to My Locations" style="padding: 2px 6px; min-height: 28px;">
-                                <i class="material-icons" style="font-size: 16px;">bookmark_add</i>
-                            </button>
-                            <button 
-                                v-if="gpsCoordinates"
-                                @click="handleClearLocation" 
-                                class="button button--flat button--warn" 
-                                title="Clear Location Data"
-                                style="color: #f44336; padding: 2px 6px; min-height: 28px;"
-                            >
-                                <i class="material-icons" style="font-size: 16px;">location_off</i>
-                            </button>
-                       </div>
-                   </div>
-
-                    <!-- No Data Warning -->
-                    <div v-if="!gpsCoordinates" style="padding: 5px; margin-bottom: 5px; background: rgba(255, 152, 0, 0.1); border-left: 3px solid #ff9800; font-size: 0.8em; color: #e65100;">
-                        No location data embedded in this file.
-                    </div>
-
-                    <!-- Matched Location Info -->
-                    <div v-if="gpsCoordinates && gpsMatchedLocationName" style="padding: 5px; margin-bottom: 5px; background: rgba(33, 150, 243, 0.1); border-left: 3px solid #2196f3; font-size: 0.8em; color: #1976d2;">
-                        Location matches saved: <strong>{{ gpsMatchedLocationName }}</strong>
-                    </div>
-
-                    <div style="display: flex; gap: 5px; border-bottom: 1px solid rgba(0,0,0,0.1); margin-bottom: 5px; padding-bottom: 5px; align-items: center;">
-                        <button @click="editTab = 'location'" class="button button--flat" :style="editTab === 'location' ? 'font-weight: bold; border-bottom: 2px solid #2196f3;' : ''" style="padding: 2px 8px; min-height: 24px; line-height: 1; font-size: 0.9em;">Map Search</button>
-                        <button @click="editTab = 'locations'" class="button button--flat" :style="editTab === 'locations' ? 'font-weight: bold; border-bottom: 2px solid #2196f3;' : ''" style="padding: 2px 8px; min-height: 24px; line-height: 1; font-size: 0.9em;">My Locations</button>
+                    
+                    <div v-else style="color: #d32f2f; font-style: italic; font-weight: 500; display: flex; align-items: center; font-size: 0.9em;">
+                         <i class="material-icons" style="font-size: 14px; margin-right: 5px;">location_off</i>
+                         NONE
                     </div>
                 </div>
-
-                <div v-show="editTab === 'location'" style="flex: 1; min-height: 0; display: flex; flex-direction: column;">
-                     <!-- Search Box Moved Here -->
-                     <div style="display: flex; gap: 5px; margin-bottom: 5px;">
-                        <input type="text" v-model="searchQuery" @keyup.enter="searchLocation" @keydown.stop placeholder="Search..." class="input input--block" style="flex: 1; padding: 2px 5px; height: 28px; font-size: 0.9em;">
-                        <button @click="searchLocation" class="button button--flat" title="Search" style="padding: 0 8px; min-height: 28px;"><i class="material-icons" style="font-size: 18px;">search</i></button>
-                     </div>
-                     <!-- Explicit height to fix 0px issue: flex-none with static height -->
-                     <div class="map-container" style="flex: 0 0 300px; width: 100%; position: relative; background: #f0f0f0; border: 1px solid #ccc; height: 300px;">
-                        <div id="leafletMap" ref="leafletMap" style="width: 100%; height: 100%; z-index: 1;"></div>
-                     </div>
-                    <div style="font-size: 0.7em; color: #888; margin-top: 2px; display: flex; justify-content: space-between;">
-                        <span>{{ mapStatus }}</span>
-                        <span style="opacity: 0.7;">Click map to set.</span>
-                    </div>
-               </div>
-               
-               <div v-if="editTab === 'locations'" style="flex: 1; overflow-y: auto;">
-                   <div v-if="savedLocations.length === 0" style="padding: 10px; opacity: 0.6; font-style: italic; font-size: 0.9em;">No saved locations.</div>
-                   <div v-for="(loc, idx) in savedLocations" :key="idx" style="display: flex; justify-content: space-between; align-items: center; padding: 5px 10px; border-bottom: 1px solid #eee; cursor: pointer;" @click="loadSavedLocationIdx(idx)">
-                       <span style="font-weight: bold; color: #2196f3; font-size: 0.9em;">{{ loc.name }}</span>
-                       <div @click.stop>
-                            <button @click="deleteSavedLocationIdx(idx)" class="button button--flat" title="Delete" style="color: #f44336; padding: 2px; min-height: 24px;">
-                               <i class="material-icons" style="font-size: 16px;">delete</i>
-                            </button>
-                       </div>
-                   </div>
-               </div>
             </div>
 
-            <div v-else-if="gpsCoordinates" style="display: flex; flex-direction: column; height: 100%;">
-              <!-- Compact Toolbar -->
-              <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px; flex-wrap: wrap; font-size: 0.9em; padding: 5px; background: rgba(0,0,0,0.03); border-radius: 4px;">
-                  <div style="display: flex; align-items: center; gap: 5px;">
-                      <strong style="white-space: nowrap;">Coords:</strong> 
-                      <span style="font-family: monospace;">{{ gpsCoordinates.lat.toFixed(5) }}, {{ gpsCoordinates.lon.toFixed(5) }}</span>
+            <!-- 2. Interactive Area -->
+            <div style="flex: 1; display: flex; flex-direction: column; min-height: 0; position: relative;">
+                 
+                 <!-- Map Container (Fixed Height 50% - pushes list down) -->
+                 <div class="map-wrapper" style="flex: 0 0 50%; position: relative; background: #e0e0e0; min-height: 150px; display: flex; flex-direction: column;">
+                      <div id="leafletMap" ref="leafletMap" style="flex: 1; width: 100%; height: 100%; z-index: 1; display: block;"></div>
                       
-                      <div v-if="gpsMatchedLocationName" style="background: #2196f3; color: white; border-radius: 4px; padding: 2px 6px; font-size: 0.75em; white-space: nowrap; display: flex; align-items: center; margin-left: 5px;">
-                        <i class="material-icons" style="font-size: 14px; margin-right: 2px;">bookmark</i>
-                        {{ gpsMatchedLocationName }}
-                     </div>
-                  </div>
-                  
-                  <div style="flex: 1;"></div> <!-- Spacer -->
+                      <!-- Overlay Status -->
+                      <div v-if="canEditCoordinates" style="position: absolute; bottom: 10px; left: 10px; right: 10px; z-index: 400; pointer-events: none;">
+                          <div style="background: rgba(255,255,255,0.9); padding: 4px 10px; border-radius: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.2); display: inline-block; font-size: 0.8em; color: #333; pointer-events: auto;">
+                              <i class="material-icons" style="font-size: 12px; vertical-align: text-top; color: #2e7d32;">touch_app</i>
+                              Click map to set proposed coordinates
+                          </div>
+                      </div>
+                 </div>
 
-                  <div style="display: flex; gap: 5px;">
-                      <button 
-                        @click="copyCoordinates" 
-                        class="button button--flat" 
-                        title="Copy"
-                        style="padding: 2px 6px; min-width: auto; min-height: 26px; line-height: 1;"
-                      >
-                        <i class="material-icons" style="font-size: 16px;">content_copy</i>
-                      </button>
+                 <!-- Dedicated Search Bar (Below Map) -->
+                 <div v-if="canEditCoordinates" style="flex: 0 0 auto; padding: 8px 10px; background: #fff; border-bottom: 1px solid #eee; display: flex; gap: 5px;">
+                      <input ref="searchInput" type="text" v-model="searchQuery" @keyup.enter="searchLocation" placeholder="Search places..." class="input input--block" style="flex: 1; height: 30px; font-size: 0.9em; background: #f9f9f9; padding: 2px 8px; color: #333;">
+                      <button @click="searchLocation" class="button button--flat" :disabled="!searchQuery" style="padding: 0 8px; min-width: 30px; height: 30px;" title="Search"><i class="material-icons" style="font-size: 18px;">search</i></button>
+                 </div>
+
+                 <!-- Editable Header & Inputs -->
+                 <div class="edit-toolbar" style="flex: 0 0 auto; padding: 10px; background: white; border-bottom: 1px solid #ddd; border-top: 1px solid #ddd; box-shadow: 0 2px 4px rgba(0,0,0,0.05); z-index: 10; color: #333;">
                       
-                      <a 
-                        :href="'https://www.google.com/maps/search/?api=1&query=' + gpsCoordinates.lat + ',' + gpsCoordinates.lon" 
-                        target="_blank" 
-                        class="button button--flat" 
-                        title="Open Google Maps"
-                        style="padding: 2px 6px; min-width: auto; min-height: 26px; line-height: 1; display: flex; align-items: center; text-decoration: none; color: inherit;"
-                      >
-                        <i class="material-icons" style="font-size: 16px;">map</i>
-                      </a>
+                      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                          <h3 style="margin: 0; font-size: 0.85em; color: #2196f3; display: flex; align-items: center; font-weight: 600;">
+                               <span v-if="canEditCoordinates">EDITABLE LOCATION (PROPOSED)</span>
+                               <span v-else>MAP PREVIEW</span>
+                               
+                               <span v-if="canEditCoordinates" style="margin-left: 10px; font-size: 0.7em; background: #e8f5e9; color: #2e7d32; padding: 1px 6px; border-radius: 4px; border: 1px solid #c8e6c9;">
+                                   EDIT MODE
+                               </span>
+                          </h3>
+                          
+                          <!-- Save Actions -->
+                          <div v-if="canEditCoordinates" style="display: flex; gap: 5px;">
+                               <!-- Removed 'Clear' Button from here -->
+                               
+                               <button 
+                                  @click="saveCoordinates" 
+                                  :disabled="!hasUnsavedCoordinates" 
+                                  class="button" 
+                                  :class="hasUnsavedCoordinates ? 'button--primary' : 'button--flat'" 
+                                  style="padding: 2px 8px; font-size: 0.8em; transition: all 0.2s; height: 24px;"
+                               >
+                                   {{ hasUnsavedCoordinates ? 'Save' : 'Saved' }}
+                               </button>
+                          </div>
+                      </div>
 
-                      <button 
-                        v-if="!gpsMatchedLocationName" 
-                        @click="saveCurrentGpsLocation" 
-                        class="button button--flat" 
-                        title="Add to Saved Locations"
-                        style="padding: 2px 6px; min-width: auto; min-height: 26px; line-height: 1;"
-                      >
-                        <i class="material-icons" style="font-size: 16px;">bookmark_add</i>
-                      </button>
+                      <!-- Inputs Row -->
+                      <div style="display: flex; gap: 10px; align-items: center;">
+                           <div style="display: flex; gap: 5px; align-items: center;">
+                               <label style="font-size: 0.85em; color: #666; font-weight: bold;">Lat:</label>
+                               <input type="number" step="any" :value="editLat ? editLat.toFixed(6) : ''" @input="updateEditCoord($event, 'editLat')" :disabled="!canEditCoordinates" class="input" style="width: 110px; height: 26px; font-size: 0.9em; padding: 2px 5px;">
+                           </div>
+                           <div style="display: flex; gap: 5px; align-items: center;">
+                               <label style="font-size: 0.85em; color: #666; font-weight: bold;">Lon:</label>
+                               <input type="number" step="any" :value="editLon ? editLon.toFixed(6) : ''" @input="updateEditCoord($event, 'editLon')" :disabled="!canEditCoordinates" class="input" style="width: 110px; height: 26px; font-size: 0.9em; padding: 2px 5px;">
+                           </div>
+                           
+                           <!-- Search Box MOVED from here -->
+                      </div>
+                      
+                      <!-- Proposed Matches Status -->
+                      <div v-if="canEditCoordinates" style="margin-top: 6px; font-size: 0.8em; color: #555; display: flex; align-items: center;">
+                          <span style="font-weight: bold; margin-right: 4px;">Proposed Matches:</span>
+                          <span v-if="matchedLocationName || gpsMatchedLocationName" 
+                                @click="applyMatchedLocation(matchedLocationName || gpsMatchedLocationName)"
+                                style="color: #1565c0; background: #e3f2fd; padding: 0 4px; border-radius: 3px; cursor: pointer; text-decoration: underline;"
+                                title="Click to apply this location">
+                               {{ matchedLocationName || gpsMatchedLocationName }}
+                          </span>
+                          <span v-else style="font-style: italic; color: #777;">None</span>
+                      </div>
+                 </div>
 
-                      <button 
-                        v-if="canEditCoordinates" 
-                        @click="startEditCoordinates" 
-                        class="button button--flat" 
-                        title="Edit"
-                        style="padding: 2px 6px; min-width: auto; min-height: 26px; line-height: 1;"
-                      >
-                        <i class="material-icons" style="font-size: 16px;">edit</i>
-                      </button>
-                  </div>
-              </div>
-
-              <!-- Map iframe: Flex 1 to fill height (Taller) -->
-              <div style="flex: 1; width: 100%; position: relative; min-height: 400px;">
-                 <iframe 
-                    width="100%" 
-                    height="100%" 
-                    frameborder="0" 
-                    scrolling="no" 
-                    marginheight="0" 
-                    marginwidth="0" 
-                    :src="'https://maps.google.com/maps?q=' + gpsCoordinates.lat + ',' + gpsCoordinates.lon + '&z=15&output=embed'"
-                    style="position: absolute; top: 0; left: 0;"
-                 ></iframe>
-              </div>
+                 <!-- Saved Locations Footer (Stretches to bottom) -->
+                 <div style="flex: 1; display: flex; flex-direction: column; background: white; color: #333; overflow: hidden; border-top: 1px solid #ddd; min-height: 0;">
+                      <div @click="editTab = editTab === 'locations' ? 'location' : 'locations'" style="flex: 0 0 auto; padding: 6px 10px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: #f5f5f5; border-bottom: 1px solid #eee;">
+                           <div style="display: flex; align-items: center; gap: 5px;">
+                                <i class="material-icons" style="font-size: 18px; color: #2196f3;">bookmark</i>
+                                <span style="font-weight: 600; font-size: 0.9em; color: #333;">Saved Locations</span>
+                           </div>
+                           <i class="material-icons" style="transform: rotate(0deg); transition: transform 0.2s;" :style="editTab === 'locations' ? 'transform: rotate(180deg)' : ''">expand_less</i>
+                      </div>
+                      
+                      <!-- Scrollable Area fills ALL remaining height -->
+                      <div v-if="editTab === 'locations'" style="flex: 1; overflow-y: auto; padding: 0; min-height: 0;">
+                            <div v-if="!savedLocations || savedLocations.length === 0" style="padding: 15px; opacity: 0.6; font-style: italic; font-size: 0.9em; text-align: center; color: #666;">
+                                No saved locations. <br>Use 'Add to Saved Locations' button above or on embedded data.
+                            </div>
+                            <div v-for="(loc, idx) in savedLocations" :key="idx" 
+                                style="padding: 8px 10px; border-bottom: 1px solid #eee; cursor: pointer; font-size: 0.9em; display: flex; justify-content: space-between; align-items: center; color: #333;"
+                                @click="editLat = loc.lat; editLon = loc.lon; updateMapMarker(loc.lat, loc.lon);"
+                            >
+                                <span style="font-weight: 500;">{{ loc.name }}</span>
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <span style="font-size: 0.8em; color: #777;">{{ loc.lat.toFixed(4) }}, {{ loc.lon.toFixed(4) }}</span>
+                                    <button @click.stop="deleteSavedLocationIdx(idx)" class="button button--flat" title="Delete" style="color: #f44336; padding: 2px; min-height: 20px; line-height: 1;">
+                                        <i class="material-icons" style="font-size: 16px;">delete</i>
+                                    </button>
+                                </div>
+                            </div>
+                      </div>
+                 </div>
             </div>
-            
-            <!-- Empty State / Add Location -->
-            <div v-else style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px; text-align: center; height: 100%; opacity: 0.6;">
-                 <i class="material-icons" style="font-size: 48px; margin-bottom: 10px;">location_off</i>
-                 <div style="margin-bottom: 20px;">No location data.</div>
-                 <button 
-                    v-if="canEditCoordinates" 
-                    @click="startEditCoordinates" 
-                    class="button button--flat"
-                    style="border: 1px solid currentColor; padding: 5px 15px;"
-                 >
-                    <i class="material-icons">add_location</i> Add Location
-                 </button>
-            </div>
-      </div>
+          </div>
     </div>
   </div>
 
@@ -541,10 +513,10 @@ export default {
       nextRaw: "",
       currentPrompt: null,
       subtitlesList: [],
-      activeTab: "details",
+      activeTab: "iptc",
       
       // Map Editing
-      isEditingCoordinates: false,
+      // isEditingCoordinates removed
       searchQuery: "",
       editLat: 0,
       editLon: 0,
@@ -556,11 +528,11 @@ export default {
       editTab: 'location', // 'location' | 'locations'
 
       tabs: [
-        { name: "details", label: "Details" },
-        { name: "exif", label: "EXIF" },
-        { name: "iptc", label: "IPTC" },
+        { name: "iptc", label: "NOTES" },
+        { name: "map", label: "MAP" },
         { name: "xmp", label: "XMP" },
-        { name: "map", label: "Map" },
+        { name: "details", label: "FILE" },
+        { name: "exif", label: "EXIF" },
       ],
       metadata: null,
       isResizing: false,
@@ -622,11 +594,11 @@ export default {
     },
 	availableTabs() {
 		const tabs = [
-		{ name: "details", label: "Details" },
+		{ name: "iptc", label: "NOTES" },
+		{ name: "map", label: "MAP" },
+		{ name: "xmp", label: "FACE" },
 		{ name: "exif", label: "EXIF" },
-		{ name: "iptc", label: "IPTC" },
-		{ name: "xmp", label: "XMP" },
-		{ name: "map", label: "Map" },
+		{ name: "details", label: "FILE" },
 		];
 		return tabs;
 	},
@@ -828,6 +800,51 @@ export default {
       });
     },
 
+    gpsCoordinates(newVal) {
+       if (!this.mapInstance) return;
+
+       // 1. Update Embedded Marker (Gold)
+       if (newVal) {
+           const lat = newVal.lat;
+           const lon = newVal.lon;
+           
+           if (this.embeddedMarker) {
+               this.embeddedMarker.setLatLng([lat, lon]);
+           } else {
+               const goldIcon = new L.Icon({
+                    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-gold.png',
+                    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+                    iconSize: [25, 41],
+                    iconAnchor: [12, 41],
+                    popupAnchor: [1, -34],
+                    shadowSize: [41, 41]
+                });
+               this.embeddedMarker = L.marker([lat, lon], { icon: goldIcon })
+                   .addTo(this.mapInstance)
+                   .bindPopup("Embedded Location");
+           }
+           
+           // 2. Pan Map to new location
+           this.mapInstance.setView([lat, lon], 16);
+
+           // REMOVED: Sync Edit Marker & Inputs (User wants to keep previous inputs)
+           // this.editLat = parseFloat(lat.toFixed(6));
+           // this.editLon = parseFloat(lon.toFixed(6));
+           // this.updateMapMarker(this.editLat, this.editLon);
+
+       } else {
+           if (this.embeddedMarker) {
+               this.mapInstance.removeLayer(this.embeddedMarker);
+               this.embeddedMarker = null;
+           }
+           // Optionally reset view/inputs if no GPS, but maybe better to leave map where it is?
+           // For inputs, we should probably reset to 0 or clear them to avoid confusion
+           // this.editLat = 0;
+           // this.editLon = 0;
+           // this.updateMapMarker(0, 0); // This removes the blue marker
+       }
+    },
+
     activeTab(newTab) {
       if (newTab === "xmp") {
          // Only update dimensions if we don't have a panzoom instance, 
@@ -839,6 +856,7 @@ export default {
          this.$nextTick(() => this.updateImageDimensions());
       }
       if (newTab === "map") {
+         // Initialize map immediately when switching to tab
          this.$nextTick(() => {
              this.initMap();
          });
@@ -852,6 +870,11 @@ export default {
           // For now, let's reset transform
           this.panzoomInstance.moveTo(0, 0);
           this.panzoomInstance.zoomAbs(0, 0, 1);
+        }
+        
+        // Init map if starting on map tab
+        if (this.activeTab === 'map') {
+            this.$nextTick(() => this.initMap());
         }
       }
       this.$nextTick(() => this.updateImageDimensions());
@@ -897,6 +920,13 @@ export default {
     window.addEventListener("resize", this.updateImageDimensions);
   },
   beforeUnmount() {
+    // Clean up player
+    if (this.$refs.player && typeof this.$refs.player.pause === "function") {
+        this.$refs.player.pause();
+        this.$refs.player.src = "";
+        this.$refs.player.load();
+    }
+  
     window.removeEventListener("keydown", this.key);
     document.removeEventListener("mousemove", this.resizeMetadata);
     document.removeEventListener("mouseup", this.stopResize);
@@ -1017,35 +1047,10 @@ export default {
     },
     
     startEditCoordinates() {
-        this.retrieveSavedLocations();
-        this.isEditingCoordinates = true;
-        this.activeTab = 'map'; // Ensure map tab is active
-        this.editTab = 'location'; // Ensure location edit tab is active
-
-        if (this.gpsCoordinates) {
-            this.editLat = parseFloat(this.gpsCoordinates.lat.toFixed(5));
-            this.editLon = parseFloat(this.gpsCoordinates.lon.toFixed(5));
-        } else {
-            // Default to 0,0 or map center
-            this.editLat = 0;
-            this.editLon = 0;
-        }
-        
-        // Wait for DOM to render the map container
-        this.$nextTick(() => {
-             this.initMap(this.editLat, this.editLon); // Initialize map with current/default coords
-             this.updateMapMarker(this.editLat, this.editLon);
-        });
+        // Deprecated - logic merged into initMap / created
     },
     cancelEditCoordinates() {
-        this.isEditingCoordinates = false;
-        // Reset marker to actual GPS if exists
-        if (this.gpsCoordinates) {
-             this.updateMapMarker(this.gpsCoordinates.lat, this.gpsCoordinates.lon);
-        } else if (this.mapMarker) {
-            this.mapInstance.removeLayer(this.mapMarker);
-            this.mapMarker = null;
-        }
+        // Deprecated - logic merged into initMap
     },
     async saveCoordinates() {
         try {
@@ -1128,26 +1133,96 @@ export default {
         }
     },
 
-    handleCoordInput(event, field) {
-        let val = event.target.value;
-        if (val.indexOf('.') > -1) {
-            const parts = val.split('.');
-            if (parts[1].length > 8) {
-                // Truncate to 8 decimals
-                val = parts[0] + '.' + parts[1].substring(0, 8);
-                // Update component data
-                this[field] = parseFloat(val);
-                // Force update input value visually if needed (Vue's v-model might lag on raw string edit)
-                this.$forceUpdate();
-            }
+    saveEmbeddedLocationToProfile() {
+        if (!this.gpsCoordinates) return;
+        this.saveLocationToProfile(this.gpsCoordinates.lat, this.gpsCoordinates.lon);
+    },
+    
+    updateEditCoord(event, field) {
+        const val = parseFloat(event.target.value);
+        if (!isNaN(val)) {
+            // Store raw value but formatted
+            this[field] = parseFloat(val.toFixed(6));
+        }
+    },
+    
+    // Updated helper to accept optional lat/lon
+    async saveLocationToProfile(overrideLat, overrideLon) {
+         let lat, lon;
+         // Check if called from button click (event object) or with coords
+         if (typeof overrideLat === 'number' && typeof overrideLon === 'number') {
+             lat = overrideLat;
+             lon = overrideLon;
+         } else {
+             lat = this.editLat;
+             lon = this.editLon;
+         }
+
+         if (lat === 0 && lon === 0) {
+             notify.showError("Invalid coordinates");
+             return;
+         }
+         
+         const name = prompt("Enter a name for this location:", this.matchedLocationName || "New Location");
+         if (!name) return;
+         
+         try {
+             const newLoc = { name, lat, lon };
+             // Use API to save to profile
+             // Assuming explicit API method exists or updating user object
+             // Let's assume we need to update the whole savedLocations array
+             
+             let currentLocs = this.currentUserSavedLocations ? JSON.parse(JSON.stringify(this.currentUserSavedLocations)) : [];
+             currentLocs.push(newLoc);
+             
+             // Optimistically update local
+             this.savedLocations = currentLocs;
+             
+             // Push to backend
+             await usersApi.update({ savedLocations: currentLocs }); 
+             notify.showSuccess("Location saved to profile");
+         } catch(e) {
+             console.error(e);
+             notify.showError("Failed to save location");
+         }
+    },
+
+    async deleteSavedLocationIdx(idx) {
+        if (!confirm("Delete this saved location?")) return;
+        try {
+             let currentLocs = this.currentUserSavedLocations ? JSON.parse(JSON.stringify(this.currentUserSavedLocations)) : [];
+             currentLocs.splice(idx, 1);
+             this.savedLocations = currentLocs;
+             await usersApi.update({ savedLocations: currentLocs });
+             notify.showSuccess("Location deleted");
+        } catch(e) {
+             console.error(e);
+             notify.showError("Failed to delete location");
+        }
+    },
+
+    applyMatchedLocation(nameToApply) {
+        if (!this.savedLocations || this.savedLocations.length === 0) return;
+        
+        // Use passed name if available, otherwise fallback to GPS match logic (for safety)
+        const targetName = nameToApply || this.gpsMatchedLocationName;
+
+        if (targetName) {
+             const loc = this.savedLocations.find(l => l.name === targetName);
+             if (loc) {
+                 this.editLat = loc.lat;
+                 this.editLon = loc.lon;
+                 this.updateMapMarker(loc.lat, loc.lon);
+                 notify.showSuccess("Applied location: " + loc.name);
+             }
         }
     },
     initMap() {
         // Use ref instead of ID
         const mapContainer = this.$refs.leafletMap;
         if (!mapContainer) {
-             console.warn("Leaflet container ref not found, retrying...");
-             return;
+             // If tab is not active, container won't exist yet.
+             return; 
         }
 
         if (this.mapInstance) {
@@ -1155,23 +1230,33 @@ export default {
                  this.mapInstance.remove(); 
              } catch(e) { /* ignore */ }
              this.mapInstance = null;
-             this.mapMarker = null; // Important: Reset marker so it gets recreated on new map
+             this.editMarker = null; 
+             this.embeddedMarker = null;
+        }
+        
+        // Define Gold Icon for Embedded Location
+        const goldIcon = new L.Icon({
+            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-gold.png',
+            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+            iconSize: [25, 41],
+            iconAnchor: [12, 41],
+            popupAnchor: [1, -34],
+            shadowSize: [41, 41]
+        });
+
+        // Always sync inputs with current GPS on map init for this file
+        if (this.gpsCoordinates) {
+            this.editLat = parseFloat(this.gpsCoordinates.lat.toFixed(6));
+            this.editLon = parseFloat(this.gpsCoordinates.lon.toFixed(6));
+        } else {
+             this.editLat = 0;
+             this.editLon = 0;
         }
 
         // Default view
-        let lat = 0;
-        let lon = 0;
-        let zoom = 2;
-
-        if (this.gpsCoordinates) {
-            lat = this.gpsCoordinates.lat;
-            lon = this.gpsCoordinates.lon;
-            zoom = 13;
-        } else if (this.editLat !== 0 || this.editLon !== 0) {
-            lat = this.editLat;
-            lon = this.editLon;
-            zoom = 13;
-        }
+        let lat = this.editLat;
+        let lon = this.editLon;
+        let zoom = (lat === 0 && lon === 0) ? 2 : 13;
 
         // Create Layers
         const hybrid = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',{
@@ -1197,14 +1282,10 @@ export default {
         });
 
         // Initialize map
-        // Default to Hybrid (Aerial) but respect isDarkMode maybe? Or just default.
-        // Let's default to standard OSM for clarity or Hybrid as before.
-        // User asked for "Standard, Satellite, Hybrid, Dark Mode".
-        // Let's stick to Hybrid as default if set, or just add them all.
-        
         this.mapInstance = L.map(mapContainer, { 
             preferCanvas: true,
-            layers: [hybrid] // Default layer
+            layers: [hybrid], // Default layer
+            attributionControl: false
         }).setView([lat, lon], zoom);
 
         // Add Layer Control
@@ -1216,21 +1297,31 @@ export default {
         };
         L.control.layers(baseMaps).addTo(this.mapInstance);
 
+        // 1. Add Embedded Marker (Gold) if exists
+        if (this.gpsCoordinates) {
+            this.embeddedMarker = L.marker([this.gpsCoordinates.lat, this.gpsCoordinates.lon], { icon: goldIcon })
+                .addTo(this.mapInstance)
+                .bindPopup("Embedded Location");
+        }
+
+        // 2. Add Edit Marker (Blue) - initially at same spot if syncing
         this.updateMapMarker(lat, lon);
         
-        this.mapStatus = `Map initialized. Size: ${mapContainer.offsetWidth}x${mapContainer.offsetHeight}`;
+        this.mapStatus = `Map initialized.`;
 
-        this.mapInstance.on('click', (e) => {
-             this.editLat = parseFloat(e.latlng.lat.toFixed(8));
-             this.editLon = parseFloat(e.latlng.lng.toFixed(8));
-             this.updateMapMarker(this.editLat, this.editLon);
-        });
+        // Only allow clicking to set coordinates if user has permission
+        if (this.canEditCoordinates) {
+            this.mapInstance.on('click', (e) => {
+                 this.editLat = parseFloat(e.latlng.lat.toFixed(6));
+                 this.editLon = parseFloat(e.latlng.lng.toFixed(6));
+                 this.updateMapMarker(this.editLat, this.editLon);
+            });
+        }
         
         // Force resize
         setTimeout(() => {
             if (this.mapInstance) {
                 this.mapInstance.invalidateSize();
-                this.mapStatus += " -> Resized";
             }
         }, 500);
     },
@@ -1239,18 +1330,45 @@ export default {
         this.initMap();
     },
 
-
+    panToEmbedded() {
+        if (this.gpsCoordinates && this.mapInstance) {
+            this.mapInstance.setView([this.gpsCoordinates.lat, this.gpsCoordinates.lon], 16);
+            if (this.embeddedMarker) {
+                this.embeddedMarker.openPopup();
+            }
+        }
+    },
 
     updateMapMarker(lat, lon) {
         if (!this.mapInstance) return;
 
-        if (this.mapMarker) {
-            this.mapMarker.setLatLng([lat, lon]);
-        } else {
-            this.mapMarker = L.marker([lat, lon]).addTo(this.mapInstance);
+        // If invalid coords, remove marker
+        if (lat === 0 && lon === 0) {
+            if (this.editMarker) {
+                this.mapInstance.removeLayer(this.editMarker);
+                this.editMarker = null;
+            }
+            return;
         }
-        // Pan map to marker if it's far off?
-        // Maybe optional.
+
+        const blueIcon = new L.Icon({
+            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png',
+            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+            iconSize: [18, 30], // Smaller size (orig: 25, 41)
+            iconAnchor: [9, 30], // Adjusted anchor (orig: 12, 41)
+            popupAnchor: [1, -25],
+            shadowSize: [30, 30] // Smaller shadow
+        });
+
+        if (this.editMarker) {
+            this.editMarker.setLatLng([lat, lon]);
+            this.editMarker.setIcon(blueIcon);
+        } else {
+            this.editMarker = L.marker([lat, lon], { icon: blueIcon, zIndexOffset: 1000 }).addTo(this.mapInstance); // Keep blue on top but smaller
+        }
+        
+        // Pan map to new proposed location
+        this.mapInstance.setView([lat, lon]);
     },
     
     // Resume existing getMetadata
@@ -1808,6 +1926,14 @@ findInstructionDeep(obj) {
       if (this.$refs.player && this.$refs.player.paused && !this.$refs.player.ended) {
         this.autoPlay = false;
       }
+
+      // Explicitly pause legacy player to prevent background audio
+      if (this.$refs.player && typeof this.$refs.player.pause === "function") {
+          this.$refs.player.pause();
+          this.$refs.player.currentTime = 0;
+          this.$refs.player.src = ""; // Detach source
+          this.$refs.player.load();   // Force cleanup
+      }
       if (!this.listing) {
         const path = url.removeLastDir(getters.routePath());
         const res = await filesApi.fetchFiles(path);
@@ -1889,6 +2015,7 @@ toggleNavigation: throttle(function () {
       window.open(this.downloadUrl);
     },
   },
+
 };
 </script>
 
@@ -2179,7 +2306,11 @@ toggleNavigation: throttle(function () {
   /* Mobile Pattern (Default) */
   width: 100%;
   border-top: 1px solid var(--dark-theme-2);
-  /* Remove max-height constraint to start, control via style binding or default */
+  
+  /* Flexbox for layout */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden; /* Hide global scroll, let children scroll */
 }
 
 @media (min-width: 1024px) {
@@ -2187,6 +2318,7 @@ toggleNavigation: throttle(function () {
     width: 350px; /* Default width on desktop */
     height: 100% !important; /* Force full height on desktop, overriding inline styles if any */
     max-height: none !important;
+    border-top: none;
     border-top: none;
     border-left: 1px solid var(--dark-theme-2);
   }
@@ -2216,9 +2348,10 @@ toggleNavigation: throttle(function () {
 .tabs-header {
   display: flex;
   justify-content: center;
-  margin-bottom: 1rem;
+  margin-bottom: 0.5rem; /* Reduced margin */
   border-bottom: 1px solid var(--dark-theme-2);
   padding-bottom: 0.5rem;
+  flex: 0 0 auto; /* Fixed height for header */
 
   button {
     background: none;
@@ -2253,8 +2386,18 @@ toggleNavigation: throttle(function () {
 }
 
 .tabs-content {
+  flex: 1; /* Take remaining height */
+  min-height: 0; /* Important for scroll */
+  overflow: hidden; /* Prevent container scroll */
+  display: flex; /* To stretch children */
+  flex-direction: column;
+
   .tab-pane {
     position:relative;
+    flex: 1; /* Fill parent */
+    overflow-y: auto; /* Scroll internally by default */
+    overflow-x: hidden;
+    padding-bottom: 1rem;
 	
     h3 {
       margin-top: 0;
@@ -2263,8 +2406,8 @@ toggleNavigation: throttle(function () {
     }
 
     .metadata-table {
-      max-height: 400px; /* Increased height */
-      overflow-y: auto;
+      max-height: none; /* Let the container handle scroll */
+      overflow-y: visible; /* Let the pane handle scroll */
 
       table {
         width: 100%;

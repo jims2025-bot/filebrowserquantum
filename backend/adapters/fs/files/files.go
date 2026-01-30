@@ -110,7 +110,7 @@ var OnlyOfficeCache = cache.NewCache(48 * time.Hour)
 // GetMetadata fetches EXIF, IPTC, and XMP metadata for a given file path using exiftool.
 func GetMetadata(filePath string) (map[string]interface{}, error) {
 	// Step 1: Get general metadata as JSON
-	cmd := exec.Command("exiftool", "-j", "-EXIF:All", "-IPTC:All", "-s", "-G", filePath)
+	cmd := exec.Command("exiftool", "-m", "-j", "-EXIF:All", "-IPTC:All", "-s", "-G", filePath)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		logger.Errorf("Error executing exiftool for %s: %v\nOutput: %s", filePath, err, string(output))
@@ -151,7 +151,7 @@ func GetMetadata(filePath string) (map[string]interface{}, error) {
 	}
 
 	// Step 2: Get specific structured XMP metadata (e.g., face regions) as XML
-	cmdXMP := exec.Command("exiftool", "-b", "-XMP", filePath)
+	cmdXMP := exec.Command("exiftool", "-m", "-b", "-XMP", filePath)
 	xmpOutput, err := cmdXMP.CombinedOutput()
 	if err != nil {
 		logger.Errorf("Error reading raw XMP for %s: %v\nOutput: %s", filePath, err, string(xmpOutput))
@@ -246,6 +246,7 @@ func WriteXMPInstructions(filePath, instructions string) error {
 	log.Printf("WriteXMPInstructions called on %s with %s", filePath, instructions)
 
 	cmd := exec.Command("exiftool",
+		"-m",
 		"-overwrite_original",
 		fmt.Sprintf("-XMP-photoshop:Instructions=%s", instructions),
 		fmt.Sprintf("-IPTC:SpecialInstructions=%s", instructions),

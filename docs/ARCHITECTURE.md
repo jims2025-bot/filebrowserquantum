@@ -5,6 +5,8 @@
 2. [Backend Architecture](#backend-architecture)
 3. [Frontend Architecture](#frontend-architecture)
 4. [Data Flow](#data-flow)
+5. [Image Editing Features](#image-editing-features)
+    - [Map Tab Details](#2-location-editing-map-tab)
 
 ---
 
@@ -549,6 +551,7 @@ saveLocationToProfile() → Prompts for name
 - **Handler**: `backend/http/exif.go`
 - **Payload**: `{ lat: number, lon: number }`
 - **Updates**: EXIF `GPSLatitude`, `GPSLongitude`, `GPSLatitudeRef`, `GPSLongitudeRef`
+- **Delete**: `DELETE /api/resources?action=exif&path=...&source=...` -> Removes GPS metadata
 
 #### User Locations
 - **Endpoint**: `PUT /api/users/:id`

@@ -34,6 +34,7 @@ func UpdateExif(path string, lat, lon float64) error {
 	// We need to pass the values.
 
 	cmd := exec.Command("exiftool",
+		"-m", // Ignore minor errors (e.g. missing EOI)
 		"-overwrite_original",
 		fmt.Sprintf("-GPSLatitude=%f", lat),
 		fmt.Sprintf("-GPSLatitudeRef=%s", latRef),
@@ -80,6 +81,7 @@ func GetGPS(path string) (float64, float64, error) {
 // RemoveExif removes GPS coordinates from an image file using exiftool.
 func RemoveExif(path string) error {
 	cmd := exec.Command("exiftool",
+		"-m", // Ignore minor errors
 		"-overwrite_original",
 		"-GPSLatitude=",
 		"-GPSLatitudeRef=",
