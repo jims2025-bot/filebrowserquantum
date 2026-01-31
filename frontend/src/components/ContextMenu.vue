@@ -68,7 +68,7 @@
       show="share"
     />
     <action
-      v-if="!showCreate && selectedCount == 1 && userPerms.modify && !isSearchActive"
+      v-if="false"
       icon="mode_edit"
       :label="$t('buttons.rename')"
       show="rename"
@@ -80,13 +80,13 @@
       show="copy"
     />
     <action
-      v-if="!showCreate && selectedCount > 0 && userPerms.modify"
+      v-if="false"
       icon="forward"
       :label="$t('buttons.moveFile')"
       show="move"
     />
     <action
-      v-if="!showCreate && selectedCount > 0 && userPerms.modify"
+      v-if="false"
       icon="delete"
       :label="$t('buttons.delete')"
       show="delete"

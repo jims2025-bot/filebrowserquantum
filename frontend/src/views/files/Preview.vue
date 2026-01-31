@@ -388,11 +388,11 @@
                       <div style="display: flex; gap: 10px; align-items: center;">
                            <div style="display: flex; gap: 5px; align-items: center;">
                                <label style="font-size: 0.85em; color: #666; font-weight: bold;">Lat:</label>
-                               <input type="number" step="any" :value="editLat ? editLat.toFixed(6) : ''" @input="updateEditCoord($event, 'editLat')" :disabled="!canEditCoordinates" class="input" style="width: 110px; height: 26px; font-size: 0.9em; padding: 2px 5px;">
+                               <input type="number" step="any" v-model.lazy.number="editLat" :disabled="!canEditCoordinates" class="input" style="width: 110px; height: 26px; font-size: 0.9em; padding: 2px 5px;">
                            </div>
                            <div style="display: flex; gap: 5px; align-items: center;">
                                <label style="font-size: 0.85em; color: #666; font-weight: bold;">Lon:</label>
-                               <input type="number" step="any" :value="editLon ? editLon.toFixed(6) : ''" @input="updateEditCoord($event, 'editLon')" :disabled="!canEditCoordinates" class="input" style="width: 110px; height: 26px; font-size: 0.9em; padding: 2px 5px;">
+                               <input type="number" step="any" v-model.lazy.number="editLon" :disabled="!canEditCoordinates" class="input" style="width: 110px; height: 26px; font-size: 0.9em; padding: 2px 5px;">
                            </div>
                            
                            <!-- Search Box MOVED from here -->
