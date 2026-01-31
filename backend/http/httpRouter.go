@@ -139,6 +139,10 @@ func StartHttp(ctx context.Context, storage *storage.Storage, shutdownComplete c
 	api.HandleFunc("GET /heatmap/tiles/{z}/{x}/{y}", withUser(getTileHandler))
 	api.HandleFunc("GET /heatmap/inspect", withUser(handleInspect))
 
+	// Integrity routes
+	api.HandleFunc("POST /integrity/scan", withUser(integrityScanHandler))
+	api.HandleFunc("GET /integrity/issues", withUser(getIntegrityIssuesHandler))
+
 	// XMP Instructions routes
 	api.HandleFunc("GET /resources/instructions", withUser(resourceGetInstructionsHandler))
 	api.HandleFunc("POST /resources/instructions", withUser(resourceInstructionsHandler))

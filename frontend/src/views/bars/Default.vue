@@ -27,6 +27,12 @@
       @action="handleRegenerateHeatmap"
     />
     <action
+      v-if="showIntegrityCheck"
+      icon="security"
+      label="Integrity Check"
+      @action="handleIntegrityCheck"
+    />
+    <action
       v-if="isListingView"
       :icon="viewIcon"
       :label="$t('buttons.switchView')"
@@ -50,6 +56,13 @@
       label="Metadata"
       @action="toggleMetadata"
     />
+    <action
+      v-if="showFileIssueButton"
+      icon="warning"
+      label="View Issue"
+      @action="showFileIssue"
+    />
+
 	<!--
 	<action
       v-if="!isShare && isPreviewView"
@@ -90,6 +103,7 @@ export default {
       isRegenerating: false,
       regenerationLabel: "Regenerate Heatmap",
       regenInterval: null,
+      currentFileIssue: null,
     };
   },
   computed: {
@@ -167,22 +181,69 @@ export default {
     isMetadataToggleVisible() {
       return getters.currentView() === 'preview';
     },
+    showIntegrityCheck() {
+      // Show for admins in listing view, but not for root if we want to be safe, or just folder level
+      // FIX: Use permissions, not perm.
+      return getters.currentView() === 'listingView' && state.user.permissions.admin;
+    },
+    showFileIssueButton() {
+      // Show for all users in preview mode if current file has integrity issues
+      return this.isPreviewView && this.currentFileIssue !== null;
+    },
   },
   watch: {
     req: {
       handler() {
         this.checkRegenerationStatus();
+        this.checkFileIntegrity();
       },
       deep: true
     }
   },
   mounted() {
     this.checkRegenerationStatus();
+    this.checkFileIntegrity();
+    this.showHeader = true;
   },
   beforeDestroy() {
     if (this.regenInterval) clearInterval(this.regenInterval);
   },
   methods: {
+    async handleIntegrityCheck() {
+        notify.showSuccess("Starting Integrity Check...");
+        try {
+            await filesApi.scanIntegrity(this.req.source, this.req.path);
+            notify.showSuccess("Integrity Check Complete. Check logs/files.");
+        } catch (e) {
+            notify.showError(e.message);
+        }
+    },
+    async checkFileIntegrity() {
+      if (!this.isPreviewView || !this.req || !this.req.source || !this.req.path) {
+        this.currentFileIssue = null;
+        return;
+      }
+      
+      const issue = await filesApi.getIntegrityIssues(this.req.source, this.req.path);
+      this.currentFileIssue = issue;
+    },
+    showFileIssue() {
+      if (!this.currentFileIssue) return;
+      
+      let message = 'Integrity Issues Detected:\n\n';
+      
+      if (this.currentFileIssue.Error) {
+        message += `Error: ${this.currentFileIssue.Error}\n`;
+      }
+      if (this.currentFileIssue.Warning) {
+        message += `Warning: ${this.currentFileIssue.Warning}\n`;
+      }
+      if (this.currentFileIssue.FileSize && this.currentFileIssue.FileSize < 20000) {
+        message += `File Size: ${this.currentFileIssue.FileSize} bytes (below 20KB threshold)\n`;
+      }
+      
+      alert(message);
+    },
     async checkRegenerationStatus() {
         if (!this.req || !this.isListingView) {
             this.isRegenerating = false;
@@ -321,9 +382,6 @@ export default {
         }
       }
     },
-  },
-  mounted() {
-    this.showHeader = true;
   },
   beforeUnmount() {
     // Clean up

@@ -33,7 +33,15 @@
     </div>
 
     <div class="text" :class="{ activecontent: isMaximized && isSelected }">
-      <p :class="{ adjustment: quickDownloadEnabled }" class="name">{{ name }}</p>
+      <p :class="{ adjustment: quickDownloadEnabled }" class="name">
+        {{ name }}
+        <i v-if="issueData && issueData.Severity === 'minor'" 
+           class="material-icons file-issue-icon file-issue-minor" 
+           title="Minor metadata issues detected">warning</i>
+        <i v-else-if="issueData && issueData.Severity === 'critical'" 
+           class="material-icons file-issue-icon file-issue-critical" 
+           title="Critical integrity issues detected">error</i>
+      </p>
       <p
         class="size"
         :class="{ adjustment: quickDownloadEnabled }"
@@ -94,6 +102,7 @@ export default {
     "readOnly",
     "path",
     "reducedOpacity",
+    "issueData",
   ],
   computed: {
     galleryView() {
@@ -435,5 +444,19 @@ export default {
 .activetitle {
   width: 9em !important;
   margin-right: 1em !important;
+}
+
+.file-issue-icon {
+  font-size: 0.85em !important;
+  vertical-align: middle;
+  margin-left: 0.5em;
+}
+
+.file-issue-minor {
+  color: #FFC107; /* Amber/Yellow for minor issues */
+}
+
+.file-issue-critical {
+  color: #F44336; /* Red for critical issues */
 }
 </style>

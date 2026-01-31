@@ -199,7 +199,7 @@ func IsScanning(sourceName, path string) bool {
 	return loaded
 }
 
-func StartJob(store *storage.Storage) {
+func StartJob(store *storage.Storage, onComplete func()) {
 	go func() {
 		// Start the active scan monitor
 		go monitorActiveScans()
@@ -286,6 +286,12 @@ func StartJob(store *storage.Storage) {
 			}
 
 			logger.Info("Finished Heatmap Generation Job")
+
+			// Custom callback (e.g. Integrity Scan)
+			if onComplete != nil {
+				onComplete()
+			}
+
 			// Run every ScanIntervalDays
 			time.Sleep(time.Duration(ScanIntervalDays) * 24 * time.Hour)
 		}

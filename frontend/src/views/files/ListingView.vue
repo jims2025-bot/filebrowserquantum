@@ -132,6 +132,7 @@
             v-bind:size="item.size"
             v-bind:path="item.path"
             v-bind:reducedOpacity="item.hidden || isDragging"
+            v-bind:issueData="integrityIssues[item.name] || null"
           />
         </div>
 
@@ -163,6 +164,7 @@ import * as upload from "@/utils/upload";
 import throttle from "@/utils/throttle";
 import { state, mutations, getters } from "@/store";
 import { url } from "@/utils";
+import * as files from "@/api/files";
 
 import Item from "@/components/files/ListingItem.vue";
 export default {
@@ -179,9 +181,18 @@ export default {
       lastSelected: {}, // Add this to track the currently focused item
       contextTimeout: null, // added for safari context menu
       ctrKeyPressed: false,
+      integrityIssues: {}, // Map of filename -> issue details
     };
   },
   watch: {
+    req: {
+      handler() {
+        console.log('[Integrity] Req watcher triggered, path:', this.req?.path);
+        // Reload integrity issues when req changes (folder navigation)
+        this.loadIntegrityIssues();
+      },
+      deep: true
+    },
     gallerySize() {
       this.columnWidth = 250 + state.user.gallerySize * 50;
       this.colunmsResize();
@@ -339,8 +350,10 @@ export default {
     },
   },
   mounted() {
+    console.log('[Integrity] Component mounted!');
     mutations.setSearch(false);
     this.lastSelected = state.selected;
+    this.loadIntegrityIssues();
     // Check the columns size for the first time.
     this.colunmsResize();
     // Add the needed event listeners to the window and document.
@@ -387,6 +400,19 @@ export default {
     }
   },
   methods: {
+    async loadIntegrityIssues() {
+      if (!state.req || !state.req.source || !state.req.path) {
+        this.integrityIssues = {};
+        console.log('[Integrity] No req data, skipping load');
+        return;
+      }
+      
+      console.log('[Integrity] Loading issues for:', state.req.source, state.req.path);
+      const issues = await files.getIntegrityIssues(state.req.source, state.req.path);
+      console.log('[Integrity] Received issues:', issues);
+      this.integrityIssues = issues || {};
+      console.log('[Integrity] Set integrityIssues to:', this.integrityIssues);
+    },
     cancelContext() {
       if (this.contextTimeout) {
         clearTimeout(this.contextTimeout);

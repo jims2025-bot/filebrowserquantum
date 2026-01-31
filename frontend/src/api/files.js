@@ -410,9 +410,45 @@ export async function getHeatmapStatus(source, path) {
   return data;
 }
 
-export async function updateMetadata(source, path, metadata) {
-  // Placeholder implementation to fix build. 
-  // Real implementation depends on backend support for generic metadata updates.
-  console.warn("updateMetadata not fully implemented");
-  return Promise.resolve();
+export async function scanIntegrity(source, path) {
+  try {
+    const apiPath = getApiPath('api/integrity/scan');
+    const res = await fetchURL(apiPath, {
+      method: 'POST',
+      body: JSON.stringify({ source, path }),
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Auth': state.jwt
+      }
+    });
+
+    if (!res.ok) {
+      throw new Error(`Integrity scan failed: ${res.statusText}`);
+    }
+    return res;
+  } catch (err) {
+    notify.showError(err.message || 'Error starting integrity scan');
+    throw err;
+  }
 }
+
+export async function getIntegrityIssues(source, path) {
+  try {
+    const apiPath = getApiPath(`api/integrity/issues?source=${encodeURIComponent(source)}&path=${encodeURIComponent(path)}`);
+    const res = await fetchURL(apiPath, {
+      headers: {
+        'X-Auth': state.jwt
+      }
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to fetch integrity issues: ${res.statusText}`);
+    }
+
+    return await res.json();
+  } catch (err) {
+    console.error('Error fetching integrity issues:', err);
+    return null; // Return null on error (treat as no issues)
+  }
+}
+

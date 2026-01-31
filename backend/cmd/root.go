@@ -14,6 +14,7 @@ import (
 	"github.com/jims2025-bot/filebrowserquantum/backend/heatmap"
 	fbhttp "github.com/jims2025-bot/filebrowserquantum/backend/http"
 	"github.com/jims2025-bot/filebrowserquantum/backend/indexing"
+	"github.com/jims2025-bot/filebrowserquantum/backend/integrity"
 	"github.com/jims2025-bot/filebrowserquantum/backend/preview"
 	"github.com/jims2025-bot/filebrowserquantum/backend/swagger/docs"
 	"github.com/swaggo/swag"
@@ -90,8 +91,10 @@ func StartFilebrowser() {
 	validateUserInfo()
 	validateOfficeIntegration()
 
-	// Start heatmap job
-	heatmap.StartJob(store)
+	// Start heatmap job (and chain integrity scan after)
+	heatmap.StartJob(store, func() {
+		integrity.RunScan(store)
+	})
 
 	// Start the rootCMD in a goroutine
 	go func() {
