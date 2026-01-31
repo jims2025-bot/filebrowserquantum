@@ -452,3 +452,23 @@ export async function getIntegrityIssues(source, path) {
   }
 }
 
+export async function getHeatmapForFolder(source, folderPath) {
+  try {
+    const heatmapPath = folderPath + (folderPath.endsWith('/') ? '' : '/') + 'heatmap.json';
+    const params = {
+      files: source + '::' + encodeURIComponent(heatmapPath),
+      inline: 'true'
+    };
+    const apiPath = getApiPath('api/raw', params);
+    const res = await fetchURL(apiPath, {
+      headers: { 'X-Auth': state.jwt }
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (err) {
+    console.error('Error fetching heatmap.json:', err);
+    return null;
+  }
+}
+
+

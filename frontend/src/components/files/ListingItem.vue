@@ -35,6 +35,11 @@
     <div class="text" :class="{ activecontent: isMaximized && isSelected }">
       <p :class="{ adjustment: quickDownloadEnabled }" class="name">
         {{ name }}
+        <i v-if="gpsData" 
+           class="material-icons file-gps-icon" 
+           :title="`Location: ${gpsData.lat.toFixed(4)}, ${gpsData.lon.toFixed(4)}`">
+          public
+        </i>
         <i v-if="issueData && issueData.Severity === 'minor'" 
            class="material-icons file-issue-icon file-issue-minor" 
            title="Minor metadata issues detected">warning</i>
@@ -103,6 +108,7 @@ export default {
     "path",
     "reducedOpacity",
     "issueData",
+    "gpsData",
   ],
   computed: {
     galleryView() {
@@ -458,5 +464,12 @@ export default {
 
 .file-issue-critical {
   color: #F44336; /* Red for critical issues */
+}
+
+.file-gps-icon {
+  font-size: 0.85em !important;
+  vertical-align: middle;
+  margin-left: 0.5em;
+  color: #4CAF50; /* Green globe */
 }
 </style>

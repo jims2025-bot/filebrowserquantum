@@ -40,8 +40,7 @@
 
           <audio
             v-else-if="previewType == 'audio'"
-            ref="player"
-            :src="raw"
+            :ref="(el) => { if (el) { el.src = raw; el.load(); } }"
             controls
             :autoplay="autoPlay"
             @play="autoPlay = true"
@@ -49,8 +48,8 @@
 
           <video
             v-else-if="previewType == 'video'"
-            ref="player"
-            :src="raw"
+            :ref="(el) => { if (el) { el.src = raw; el.load(); } }"
+            :key="req.path"
             controls
             :autoplay="autoPlay"
             @play="autoPlay = true"
@@ -66,6 +65,10 @@
           </video>
 
           <object v-else-if="previewType == 'pdf'" class="pdf" :data="raw"></object>
+
+          <div v-else-if="previewType == 'text'" class="text-preview">
+            <pre><code>{{ textContent }}</code></pre>
+          </div>
 
           <div v-else class="info">
             <div class="title">
@@ -279,7 +282,7 @@
           <p v-else>Loading XMP metadata...</p>
         </div>
 
-          <div v-show="activeTab === 'map'" class="tab-pane" style="height: 100%; display: flex; flex-direction: column; overflow: hidden;">
+          <div v-show="activeTab === 'map'" class="tab-pane" style="height: 100%; display: flex; flex-direction: column; overflow-y: auto;">
             
             <!-- 1. Embedded Location Info -->
             <div style="flex: 0 0 auto; padding: 10px; border-bottom: 2px solid #eee; background: #fafafa; color: #333;">
@@ -297,16 +300,16 @@
                                  {{ gpsCoordinates.lat.toFixed(6) }}, {{ gpsCoordinates.lon.toFixed(6) }}
                              </div>
                              
-                             <div style="display: flex; gap: 2px;">
+                             <div style="display: flex; gap: 8px;">
                                  <!-- Moved Clear Button here as Icon -->
-                                 <button @click="handleClearLocation" class="button button--flat" title="Clear embedded location" style="padding: 2px; height: 20px; line-height: 1; min-width: 24px;">
-                                     <i class="material-icons" style="font-size: 16px; color: #f44336;">delete</i>
+                                 <button @click="handleClearLocation" class="button button--flat" title="Clear embedded location" style="padding: 6px; height: 32px; line-height: 1; min-width: 32px;">
+                                     <i class="material-icons" style="font-size: 20px; color: #f44336;">delete</i>
                                  </button>
                                  
-                                 <button @click="copyCoordinates" class="button button--flat" title="Copy" style="padding: 2px; height: 20px; line-height: 1; min-width: 24px;">
+                                 <button @click="copyCoordinates" class="button button--flat" title="Copy" style="padding: 6px; height: 32px; line-height: 1; min-width: 32px;">
                                      <i class="material-icons" style="font-size: 14px;">content_copy</i>
                                  </button>
-                                 <button @click="saveEmbeddedLocationToProfile" class="button button--flat" title="Save this location to My Locations" style="padding: 2px; height: 20px; line-height: 1; min-width: 24px;">
+                                 <button @click="saveEmbeddedLocationToProfile" class="button button--flat" title="Save this location to My Locations" style="padding: 6px; height: 32px; line-height: 1; min-width: 32px;">
                                      <i class="material-icons" style="font-size: 16px; color: #2196f3;">bookmark_add</i>
                                  </button>
                                  <a :href="'https://www.google.com/maps/search/?api=1&query=' + gpsCoordinates.lat + ',' + gpsCoordinates.lon" 
@@ -334,16 +337,16 @@
             </div>
 
             <!-- 2. Interactive Area -->
-            <div style="flex: 1; display: flex; flex-direction: column; min-height: 0; position: relative;">
+            <div style="flex: 1; display: flex; flex-direction: column; min-height: 0; position: relative; overflow-y: auto;">
                  
-                 <!-- Map Container (Fixed Height 50% - pushes list down) -->
-                 <div class="map-wrapper" style="flex: 0 0 50%; position: relative; background: #e0e0e0; min-height: 150px; display: flex; flex-direction: column;">
+                 <!-- Map Container (Fixed Height 40% - reduced from 50%) -->
+                 <div class="map-wrapper" style="flex: 0 0 40%; position: relative; background: #e0e0e0; min-height: 150px; display: flex; flex-direction: column;">
                       <div id="leafletMap" ref="leafletMap" style="flex: 1; width: 100%; height: 100%; z-index: 1; display: block;"></div>
                       
                       <!-- Overlay Status -->
                       <div v-if="canEditCoordinates" style="position: absolute; bottom: 10px; left: 10px; right: 10px; z-index: 400; pointer-events: none;">
                           <div style="background: rgba(255,255,255,0.9); padding: 4px 10px; border-radius: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.2); display: inline-block; font-size: 0.8em; color: #333; pointer-events: auto;">
-                              <i class="material-icons" style="font-size: 12px; vertical-align: text-top; color: #2e7d32;">touch_app</i>
+                              <i class="material-icons" style="font-size: 16px; vertical-align: text-top; color: #2e7d32;">touch_app</i>
                               Click map to set proposed coordinates
                           </div>
                       </div>
@@ -352,7 +355,7 @@
                  <!-- Dedicated Search Bar (Below Map) -->
                  <div v-if="canEditCoordinates" style="flex: 0 0 auto; padding: 8px 10px; background: #fff; border-bottom: 1px solid #eee; display: flex; gap: 5px;">
                       <input ref="searchInput" type="text" v-model="searchQuery" @keyup.enter="searchLocation" placeholder="Search places..." class="input input--block" style="flex: 1; height: 30px; font-size: 0.9em; background: #f9f9f9; padding: 2px 8px; color: #333;">
-                      <button @click="searchLocation" class="button button--flat" :disabled="!searchQuery" style="padding: 0 8px; min-width: 30px; height: 30px;" title="Search"><i class="material-icons" style="font-size: 18px;">search</i></button>
+                      <button @click="searchLocation" class="button button--flat" :disabled="!searchQuery" style="padding: 0 8px; min-width: 30px; height: 30px;" title="Search"><i class="material-icons" style="font-size: 22px;">search</i></button>
                  </div>
 
                  <!-- Editable Header & Inputs -->
@@ -415,7 +418,7 @@
                  <div style="flex: 1; display: flex; flex-direction: column; background: white; color: #333; overflow: hidden; border-top: 1px solid #ddd; min-height: 0;">
                       <div @click="editTab = editTab === 'locations' ? 'location' : 'locations'" style="flex: 0 0 auto; padding: 6px 10px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: #f5f5f5; border-bottom: 1px solid #eee;">
                            <div style="display: flex; align-items: center; gap: 5px;">
-                                <i class="material-icons" style="font-size: 18px; color: #2196f3;">bookmark</i>
+                                <i class="material-icons" style="font-size: 22px; color: #2196f3;">bookmark</i>
                                 <span style="font-weight: 600; font-size: 0.9em; color: #333;">Saved Locations</span>
                            </div>
                            <i class="material-icons" style="transform: rotate(0deg); transition: transform 0.2s;" :style="editTab === 'locations' ? 'transform: rotate(180deg)' : ''">expand_less</i>
@@ -544,6 +547,7 @@ export default {
       isMetadataExpanded: false,
       faceFontSize: 24, // Default font size
       metadataCache: {}, // Cache for pre-fetched metadata
+      textContent: '', // For text/JSON file preview
     };
   },
   computed: {
@@ -603,9 +607,10 @@ export default {
 		return tabs;
 	},
     raw() {
-      const url = filesApi.getDownloadURL(state.req.source, state.req.path, true);
-      //console.log("Image src URL:", url);
-      return url;
+      return filesApi.getDownloadURL(state.req.source, state.req.path, true);
+    },
+    req() {
+      return state.req;
     },
     isDarkMode() {
       return getters.isDarkMode();
@@ -776,20 +781,91 @@ export default {
       return null;
     },
   },
+  methods: {
+    async fetchTextContent() {
+      console.log('fetchTextContent called, previewType:', this.previewType, 'req.type:', state.req.type);
+      
+      // Only fetch for text files
+      if (this.previewType !== 'text') {
+        this.textContent = '';
+        return;
+      }
+
+      try {
+        console.log('Fetching text content from:', this.raw);
+        const response = await fetch(this.raw);
+        if (!response.ok) {
+          throw new Error('Failed to fetch text content');
+        }
+        let text = await response.text();
+        console.log('Fetched text, length:', text.length);
+
+        // Pretty-print JSON
+        if (state.req.type === 'application/json') {
+          console.log('Pretty-printing JSON');
+          try {
+            const json = JSON.parse(text);
+            text = JSON.stringify(json, null, 2);
+          } catch (e) {
+            // If JSON parsing fails, just show raw text
+            console.warn('Failed to parse/stringify JSON:', e);
+          }
+        }
+
+        this.textContent = text;
+        console.log('Text content set, preview should render');
+      } catch (error) {
+        console.error('Error fetching text content:', error);
+        this.textContent = 'Error loading file content';
+      }
+    },
+  },
+  mounted() {
+    this.fetchTextContent();
+  },
   watch: {
-    async req() {
+    async raw() {
+      console.log('🔥 RAW WATCHER TRIGGERED!', this.raw);
+      
       if (!getters.isLoggedIn()) {
         return;
       }
+      
       // Reset panzoom on new file
       this.disposePanzoom();
       
       this.dimensionRetryCount = 0;
-      await this.updatePreview();
-      this.toggleNavigation();
-      this.retrieveSavedLocations();
-      await this.fetchMetadata();
-      await this.updateImageDimensions();
+      
+      try {
+        if (this.updatePreview) await this.updatePreview();
+      } catch (e) {
+        console.warn('updatePreview error:', e);
+      }
+      
+      try {
+        if (this.toggleNavigation) this.toggleNavigation();
+      } catch (e) {
+        console.warn('toggleNavigation error:', e);
+      }
+      
+      try {
+        if (this.retrieveSavedLocations) this.retrieveSavedLocations();
+      } catch (e) {
+        console.warn('retrieveSavedLocations error:', e);
+      }
+      
+      try {
+        await this.fetchTextContent();
+      } catch (e) {
+        console.error('fetchTextContent error:', e);
+      }
+      
+      try {
+        if (this.updateImageDimensions) await this.updateImageDimensions();
+      } catch (e) {
+        console.warn('updateImageDimensions error:', e);
+      }
+      
       this.$nextTick(() => {
         const availableTabNames = this.availableTabs.map(tab => tab.name);
         //console.log("Validating activeTab:", this.activeTab, "Available:", availableTabNames);
@@ -2236,6 +2312,32 @@ toggleNavigation: throttle(function () {
     object-fit: contain;
     display: block;
     transform-origin: 0 0; /* Important for panzoom */
+  }
+
+  .text-preview {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    overflow: auto;
+    background: #1e1e1e;
+    color: #d4d4d4;
+    padding: 1rem;
+    box-sizing: border-box;
+  }
+
+  .text-preview pre {
+    margin: 0;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .text-preview code {
+    font-family: inherit;
   }
 
   .face-overlay {

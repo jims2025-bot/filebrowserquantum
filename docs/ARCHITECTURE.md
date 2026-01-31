@@ -805,9 +805,305 @@ To support complex drill-down workflows (e.g., Box Select -> Multi-Folder View -
 
 **Problem**: When drilling down from a list of folders (e.g., "Vacation" and "Work") into a single folder ("Vacation"), the `sidePanelData` is overwritten. Standard "Back" logic would fail or require re-fetching.
 
-**Solution**: `inspectionHistory` Stack.
-1.  **Push State**: Before drilling down (via `openFolderView` or `inspectLocation`), the current state (Data, Formatted Groups, Title) is pushed to `inspectionHistory`.
-2.  **Navigation**: The `inspectLocation` function accepts a `keepHistory` flag.
-    - **Drill Down**: `keepHistory=true`.
     - **New Selection**: `keepHistory=false` (Stack is cleared).
 3.  **Back Action**: `backToFolders` pops the last state from the stack and restores `sidePanelData` and `formattedSidePanelData`, instantly returning the user to the previous view without an API call.
+
+---
+
+## Media Playback Architecture
+
+### Overview
+The FileBrowser Quantum application supports viewing images and playing videos directly in the browser using native HTML5 elements (`<img>`, `<video>`, `<audio>`). The backend provides media streaming and MIME type detection, while the frontend handles rendering.
+
+### Supported Image Formats
+
+#### Standard Image Formats
+
+| Format | Extensions | MIME Type | Browser Support | Notes |
+|--------|-----------|-----------|----------------|-------|
+| **JPEG** | `.jpg`, `.jpeg`, `.jpe`, `.jfif` | `image/jpeg` | ✅ Universal | Most common format |
+| **PNG** | `.png`, `.x-png` | `image/png` | ✅ Universal | Supports transparency |
+| **GIF** | `.gif` | `image/gif` | ✅ Universal | Supports animation |
+| **BMP** | `.bmp` | `image/bmp` | ✅ Universal | Uncompressed bitmap |
+| **WebP** | `.webp` | `image/webp` | ✅ Modern browsers | Google format, excellent compression |
+| **SVG** | `.svg` | `image/svg+xml` | ✅ Universal | Vector graphics, scalable |
+| **TIFF** | `.tif`, `.tiff` | `image/tiff` | ⚠️ Limited | May require download |
+| **ICO** | `.ico` | `image/x-icon` | ✅ Universal | Icon format |
+
+#### Legacy & Specialized Formats
+
+| Format | Extensions | MIME Type | Browser Support | Notes |
+|--------|-----------|-----------|----------------|-------|
+| **PCX** | `.pcx` | `image/x-pcx` | ❌ Very limited | DOS-era format |
+| **PICT** | `.pict`, `.pic`, `.pct` | `image/pict` | ❌ Limited | Mac Classic format |
+| **XBM** | `.xbm` | `image/x-xbitmap` | ⚠️ Some browsers | X Window bitmap |
+| **XPM** | `.xpm` | `image/x-xpixmap` | ⚠️ Some browsers | X Window pixmap |
+| **XWD** | `.xwd` | `image/x-xwd` | ❌ Not supported | X Window dump |
+| **PGM/PPM/PNM** | `.pgm`, `.ppm`, `.pnm` | `image/x-portable-*` | ❌ Not supported | Netpbm formats |
+| **RGB** | `.rgb` | `image/x-rgb` | ❌ Not supported | SGI format |
+| **RAS** | `.ras`, `.rast` | `image/cmu-raster` | ❌ Not supported | Sun raster |
+
+**Note**: Unsupported formats can still be downloaded and viewed in dedicated image viewers like IrfanView, XnView, or GIMP.
+
+#### RAW Camera Formats
+
+RAW formats are **not directly viewable** in browsers and require download to view in specialized RAW processors (Adobe Lightroom, Capture One, RawTherapee, darktable).
+
+| Camera Brand | Extensions | MIME Type | Status |
+|--------------|-----------|-----------|--------|
+| **Canon** | `.cr2`, `.cr3`, `.crw` | `image/x-canon-cr2` | ❌ Download required |
+| **Nikon** | `.nef`, `.nrw` | `image/x-nikon-nef` | ❌ Download required |
+| **Sony** | `.arw`, `.srf`, `.sr2` | `image/x-sony-arw` | ❌ Download required |
+| **Fuji** | `.raf` | `image/x-fuji-raf` | ❌ Download required |
+| **Olympus** | `.orf` | `image/x-olympus-orf` | ❌ Download required |
+| **Panasonic** | `.rw2` | `image/x-panasonic-rw2` | ❌ Download required |
+| **Pentax** | `.pef` | `image/x-pentax-pef` | ❌ Download required |
+| **Adobe** | `.dng` | `image/x-adobe-dng` | ❌ Download required |
+| **Generic** | `.raw` | `image/x-raw` | ❌ Download required |
+
+**FileBrowser Quantum Workflow for RAW**:
+1. Browser shows file icon (not preview)
+2. User downloads RAW file
+3. Opens in Lightroom/Capture One/etc
+4. Edits and exports to JPEG/PNG
+5. Uploads edited version back to FileBrowser
+
+### Supported Document Formats
+
+#### Text & Document Files
+
+| Format | Extensions | MIME Type | Browser Support | Viewing Method |
+|--------|-----------|-----------|----------------|----------------|
+| **PDF** | `.pdf` | `application/pdf` | ✅ Universal | Inline PDF viewer |
+| **Plain Text** | `.txt` | `text/plain` | ✅ Universal | Inline text viewer |
+| **Markdown** | `.md`, `.markdown` | `text/markdown` | ✅ Universal | Rendered or plain text |
+| **HTML** | `.html`, `.htm` | `text/html` | ✅ Universal | Rendered in browser |
+| **XML** | `.xml` | `text/xml` | ✅ Universal | Syntax-highlighted view |
+| **JSON** | `.json` | `application/json` | ✅ Universal | Formatted JSON viewer |
+| **CSV** | `.csv` | `text/csv` | ✅ Universal | Table view or download |
+| **Log Files** | `.log` | `text/plain` | ✅ Universal | Inline text viewer |
+| **Code Files** | `.js`, `.py`, `.java`, `.c`, etc. | `text/plain` | ✅ Universal | Syntax-highlighted viewer |
+
+**PDF Viewing**:
+- Most browsers have built-in PDF viewers
+- Supports zooming, page navigation, searching
+- Can download if browser viewer has issues
+- Large PDFs may require download for better performance
+
+**Text File Viewing**:
+- Plain text displayed with original formatting
+- Line numbers available in code editor view
+- Syntax highlighting for code files
+- Large text files (>10MB) may require download
+
+### Supported Video Formats
+
+#### Format Support Matrix
+
+| Format | Container | Codec | Browser Support | Notes |
+|--------|-----------|-------|----------------|-------|
+| **MP4** | `.mp4` | H.264 (AVC) | ✅ All modern browsers | Most compatible |
+| **MP4** | `.mp4` | H.265 (HEVC) | ⚠️ Safari, some Edge | Limited support |
+| **WebM** | `.webm` | VP8/VP9 | ✅ All modern browsers | Open format |
+| **MOV** | `.mov` | H.264 (AVC) | ✅ All modern browsers | QuickTime container |
+| **MOV** | `.mov` | H.265 (HEVC) | ⚠️ Safari, some Edge | Limited support |
+| **MOV** | `.mov` | ProRes | ❌ Very limited | Download recommended |
+| **AVI** | `.avi` | Various | ⚠️ Depends on codec | Legacy format |
+
+**Note**: If a video doesn't play in the browser, users can always use the download button to play it in VLC or other native media players.
+
+### Backend: MIME Type Detection
+
+**Location**: `backend/adapters/fs/files/mime.go`
+
+The backend uses a large map of file extensions to MIME types:
+
+```go
+var mimeTypes = map[string]string{
+    ".mp4":  "video/mp4",
+    ".webm": "video/webm",
+    ".mov":  "video/quicktime",
+    ".MOV":  "video/quicktime",
+    ".qt":   "video/quicktime",
+    ".avi":  "video/x-msvideo",
+    ".wmv":  "video/x-ms-wmv",
+    ".flv":  "video/x-flv",
+    ".mkv":  "video/x-matroska",
+    // ... more formats
+}
+```
+
+**Case Sensitivity**: The map includes both lowercase and uppercase variants of common extensions (e.g., `.mov` and `.MOV`) to handle files from different operating systems.
+
+### Frontend: Type Classification
+
+**Location**: `frontend/src/utils/mimetype.js`
+
+The frontend classifies MIME types into simple categories:
+
+```javascript
+export function getTypeInfo(mimeType) {
+  if (mimeType.startsWith('video/')) {
+    return { simpleType: 'video', icon: 'videocam' }
+  }
+  // ... other types
+}
+```
+
+**Video MIME Types Recognized**:
+- `video/mp4`
+- `video/quicktime` (.mov files)
+- `video/webm`
+- `video/x-msvideo` (.avi files)
+- `video/x-matroska` (.mkv files)
+- All other `video/*` types
+
+### Frontend: Video Player Implementation
+
+**Location**: `frontend/src/views/files/Preview.vue` (lines 50-66)
+
+#### Standard Implementation (Doesn't Work)
+
+The expected Vue approach would be:
+
+```vue
+<video
+  v-else-if="previewType == 'video'"
+  :src="raw"
+  controls
+></video>
+```
+
+However, this **does not work** due to a Vue 3 reactivity bug.
+
+#### Actual Implementation (Ref Callback Workaround)
+
+**The Fix**:
+
+```vue
+<video
+  v-else-if="previewType == 'video'"
+  :ref="(el) => { if (el) { el.src = raw; el.load(); } }"
+  :key="req.path"
+  controls
+  :autoplay="autoPlay"
+  @play="autoPlay = true"
+>
+  <track
+    kind="captions"
+    v-for="(sub, index) in subtitlesList"
+    :key="index"
+    :src="sub.src"
+    :label="'Subtitle ' + sub.name"
+    :default="index === 0"
+  />
+</video>
+```
+
+**Why This Works**:
+
+1. **Vue Reactivity Bug**: Vue 3's reactive binding system fails to properly bind computed properties to media element (`<video>`, `<audio>`) `src` attributes. The attribute remains empty even when the computed property has a valid value.
+
+2. **Ref Callback Solution**: Instead of using `:src="raw"`, we use a ref callback function:
+   ```javascript
+   :ref="(el) => { if (el) { el.src = raw; el.load(); } }"
+   ```
+
+3. **How It Works**:
+   - Vue calls the ref callback when creating the video element
+   - The callback receives the DOM element (`el`)
+   - We directly set `el.src = raw` using vanilla JavaScript
+   - We call `el.load()` to initiate video loading
+   - This bypasses Vue's reactive binding entirely
+
+4. **Key Attribute**: `:key="req.path"` ensures the video element is recreated when navigating between different video files
+
+### Data Flow
+
+```
+User clicks .mov file
+  ↓
+Frontend: fetchData() loads file metadata
+  ↓
+store/getters.js: previewType = getTypeInfo('video/quicktime').simpleType
+  ↓
+Preview.vue: Renders video element (v-else-if="previewType == 'video'")
+  ↓
+Ref callback executes:
+  - Computes raw URL: api/raw?files=SOURCE::PATH&inline=true
+  - Sets el.src = raw
+  - Calls el.load()
+  ↓
+Browser attempts to load video
+  ↓
+Backend: Streams video file with correct MIME type
+  ↓
+If codec supported: Video plays
+If codec unsupported: Browser shows error (user can download)
+```
+
+### URL Generation
+
+**Location**: `frontend/src/api/files.js`
+
+```javascript
+export function getDownloadURL(source, path, inline, useExternal) {
+  const params = {
+    files: source + '::' + encodeURIComponent(path),
+    ...(inline && { inline: 'true' })
+  }
+  return getApiPath('api/raw', params)
+}
+```
+
+**Example URL**:
+```
+http://localhost:8080/api/raw?files=PHOTOS::%2Fvacation%2Fvideo.MOV&inline=true
+```
+
+The `inline=true` parameter tells the backend to set `Content-Disposition: inline` instead of `attachment`, allowing the browser to play the video instead of downloading it.
+
+### Codec Detection Limitations
+
+**Important**: The application cannot detect video codecs at the application level. Codec detection would require:
+- Parsing video container headers (complex)
+- Using external libraries (overhead)
+- Server-side transcoding (resource intensive)
+
+**Current Approach**: 
+- Rely on browser's native codec support
+- If video doesn't play, user can download to play in VLC/native player
+- Most modern videos use H.264, which has universal browser support
+
+### Troubleshooting
+
+**Issue**: Video player shows black screen with controls
+
+**Diagnosis**:
+1. Check browser console for errors
+2. Inspect video element's `src` attribute (should not be empty)
+3. Check Network tab for 200 response on video URL
+4. Verify MIME type in response headers
+
+**Common Causes**:
+- **Unsupported codec**: H.265/HEVC, ProRes → Solution: Download and use VLC
+- **Empty src**: Vue binding bug → Solution: Already fixed with ref callback
+- **CORS issues**: Rare, but check if external URLs are used
+- **File permissions**: Backend can't read file → Check logs
+
+### Audio Playback
+
+Audio files use the same architecture but with the `<audio>` element:
+
+```vue
+<audio
+  v-else-if="previewType == 'audio'"
+  :ref="(el) => { if (el) { el.src = raw; el.load(); } }"
+  controls
+  :autoplay="autoPlay"
+></audio>
+```
+
+**Supported Formats**: MP3, WAV, OGG, M4A, AAC
+
+---

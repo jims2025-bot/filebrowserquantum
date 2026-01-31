@@ -3,6 +3,7 @@ package http
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 
@@ -50,18 +51,28 @@ func integrityScanHandler(w http.ResponseWriter, r *http.Request, d *requestCont
 // Returns integrity issues for a file or folder
 func getIntegrityIssuesHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
 	source := r.URL.Query().Get("source")
-	path := r.URL.Query().Get("path")
+	encodedPath := r.URL.Query().Get("path")
+	path, err := url.QueryUnescape(encodedPath)
+	if err != nil {
+		return http.StatusBadRequest, err
+	}
 
 	if source == "" || path == "" {
 		return http.StatusBadRequest, nil
 	}
 
-	idx := indexing.GetIndex(source)
+	// Validate user has access to this source/path
+	scopePath, realSource, err := ResolveScopePath(d.user, source, path)
+	if err != nil {
+		return http.StatusForbidden, err
+	}
+
+	idx := indexing.GetIndex(realSource)
 	if idx == nil {
 		return http.StatusNotFound, nil
 	}
 
-	realPath, isDir, err := idx.GetRealPath(path)
+	realPath, isDir, err := idx.GetRealPath(scopePath)
 	if err != nil {
 		return http.StatusNotFound, err
 	}

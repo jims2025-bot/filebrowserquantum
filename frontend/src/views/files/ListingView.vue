@@ -133,6 +133,7 @@
             v-bind:path="item.path"
             v-bind:reducedOpacity="item.hidden || isDragging"
             v-bind:issueData="integrityIssues[item.name] || null"
+            v-bind:gpsData="filesWithGPS[item.name] || null"
           />
         </div>
 
@@ -182,6 +183,7 @@ export default {
       contextTimeout: null, // added for safari context menu
       ctrKeyPressed: false,
       integrityIssues: {}, // Map of filename -> issue details
+      filesWithGPS: {}, // Map of filename -> GPS coordinates
     };
   },
   watch: {
@@ -190,6 +192,7 @@ export default {
         console.log('[Integrity] Req watcher triggered, path:', this.req?.path);
         // Reload integrity issues when req changes (folder navigation)
         this.loadIntegrityIssues();
+        this.loadFilesWithGPS();
       },
       deep: true
     },
@@ -354,6 +357,7 @@ export default {
     mutations.setSearch(false);
     this.lastSelected = state.selected;
     this.loadIntegrityIssues();
+    this.loadFilesWithGPS();
     // Check the columns size for the first time.
     this.colunmsResize();
     // Add the needed event listeners to the window and document.
@@ -412,6 +416,33 @@ export default {
       console.log('[Integrity] Received issues:', issues);
       this.integrityIssues = issues || {};
       console.log('[Integrity] Set integrityIssues to:', this.integrityIssues);
+    },
+    async loadFilesWithGPS() {
+      if (!state.req || !state.req.source || !state.req.path) {
+        this.filesWithGPS = {};
+        return;
+      }
+      
+      const heatmapData = await files.getHeatmapForFolder(state.req.source, state.req.path);
+      if (!heatmapData || !heatmapData.clusters) {
+        this.filesWithGPS = {};
+        return;
+      }
+      
+      const gpsMap = {};
+      heatmapData.clusters.forEach(cluster => {
+        if (cluster.points && cluster.points.length > 0) {
+          cluster.points.forEach(point => {
+            const filename = point.path.split('/').pop();
+            gpsMap[filename] = {
+              lat: point.lat,
+              lon: point.lon
+            };
+          });
+        }
+      });
+      
+      this.filesWithGPS = gpsMap;
     },
     cancelContext() {
       if (this.contextTimeout) {
