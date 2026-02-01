@@ -457,7 +457,8 @@ export async function getHeatmapForFolder(source, folderPath) {
     const heatmapPath = folderPath + (folderPath.endsWith('/') ? '' : '/') + 'heatmap.json';
     const params = {
       files: source + '::' + encodeURIComponent(heatmapPath),
-      inline: 'true'
+      inline: 'true',
+      _: Date.now() // Cache buster
     };
     const apiPath = getApiPath('api/raw', params);
     const res = await fetchURL(apiPath, {
