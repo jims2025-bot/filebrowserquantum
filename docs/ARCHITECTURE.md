@@ -7,6 +7,7 @@
 4. [Data Flow](#data-flow)
 5. [Image Editing Features](#image-editing-features)
     - [Map Tab Details](#2-location-editing-map-tab)
+6. [Server Permissions](#collection-folder-permissions)
 
 ---
 
@@ -787,6 +788,7 @@ Right-clicking a cluster badge follows a similar path but for a single item:
 3.  **Trigger**: Clicking "Inspect" calls `inspectLocation` with that single cluster's ID and coordinates.
 4.  **Backend**: Follows the same Hydration flow as above to resolve that single cluster into its constituent images.
 
+
 ### 4. Key Components
 
 #### Frontend (`Heatmap.vue`)
@@ -798,6 +800,45 @@ Right-clicking a cluster badge follows a similar path but for a single item:
 - `handleInspect`: Main HTTP handler.
 - `findMatch`: Helper to locate clusters by ID or Path (includes Suffix Matching).
 - **Hydration Block**: The specific logic branch that detects empty points and loads child data.
+
+---
+
+## Collection Folder Permissions
+
+This section documents the required filesystem permissions for the main collection folder (e.g., `PHOTOCOLLECTIONS`) to ensure proper access for the backend services and the `archive-rw` group.
+
+**Example Path**: `mnt/exp8T/archive/PHOTOS/PHOTOCOLLECTIONS`
+
+### ACL Settings (Access Control List)
+
+The following ACL configuration ensures that the root user (owner) and the `archive-rw` group have full Read/Write/Execute permissions, while others have Read/Execute access. The default entries ensure that new files and directories inherit these permissions.
+
+```bash
+# file: mnt/exp8T/archive/PHOTOS/PHOTOCOLLECTIONS
+# owner: root
+# group: archive-rw
+# flags: -s-
+user::rwx
+group::rwx
+group:archive-rw:rwx
+mask::rwx
+other::r-x
+default:user::rwx
+default:group::rwx
+default:group:archive-rw:rwx
+default:mask::rwx
+default:other::r-x
+```
+
+**Key Settings:**
+- **Owner**: `root`
+- **Group**: `archive-rw`
+- **Flags**: `-s-` (SetGID bit) ensures new files inherit the group ownership.
+- **Default ACLs**: `default:user::rwx`, `default:group::rwx`, etc., ensure inheritance for new subdirectories and files.
+
+**Important for Copy Operations:**
+These ACLs (specifically the `default` entries) are critical when copying files and folders to the server using external tools like **Beyond Compare**. They ensure that all new incoming content automatically inherits the correct group permissions (`archive-rw`), preventing access issues for the file browser and other services.
+
 
 ### 5. Inspection Navigation (History Stack)
 
