@@ -111,6 +111,12 @@ func regenerateHeatmapHandler(w http.ResponseWriter, r *http.Request, d *request
 		err := heatmap.ScanSafe(realSource, scopePath, true) // Manual scan - force rebuild
 		if err != nil {
 			logger.Error("Heatmap scan failed: " + err.Error())
+		} else {
+			// CRITICAL FIX: Clear the cache so tiles update immediately with new Cluster IDs
+			// The tile cache keys are formatted as "user:ID:SOURCE"
+			userSourceKey := fmt.Sprintf("user:%v:%s", d.user.ID, realSource)
+			ClearHeatmapCache(userSourceKey, scopePath)
+			logger.Info("Heatmap regenerated and cache cleared for: " + scopePath)
 		}
 	}()
 
