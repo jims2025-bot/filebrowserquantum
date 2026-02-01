@@ -781,48 +781,7 @@ export default {
       return null;
     },
   },
-  methods: {
-    async fetchTextContent() {
-      console.log('fetchTextContent called, previewType:', this.previewType, 'req.type:', state.req.type);
-      
-      // Only fetch for text files
-      if (this.previewType !== 'text') {
-        this.textContent = '';
-        return;
-      }
 
-      try {
-        console.log('Fetching text content from:', this.raw);
-        const response = await fetch(this.raw);
-        if (!response.ok) {
-          throw new Error('Failed to fetch text content');
-        }
-        let text = await response.text();
-        console.log('Fetched text, length:', text.length);
-
-        // Pretty-print JSON
-        if (state.req.type === 'application/json') {
-          console.log('Pretty-printing JSON');
-          try {
-            const json = JSON.parse(text);
-            text = JSON.stringify(json, null, 2);
-          } catch (e) {
-            // If JSON parsing fails, just show raw text
-            console.warn('Failed to parse/stringify JSON:', e);
-          }
-        }
-
-        this.textContent = text;
-        console.log('Text content set, preview should render');
-      } catch (error) {
-        console.error('Error fetching text content:', error);
-        this.textContent = 'Error loading file content';
-      }
-    },
-  },
-  mounted() {
-    this.fetchTextContent();
-  },
   watch: {
     async raw() {
       console.log('🔥 RAW WATCHER TRIGGERED!', this.raw);
@@ -856,8 +815,9 @@ export default {
       
       try {
         await this.fetchTextContent();
+        await this.fetchMetadata();
       } catch (e) {
-        console.error('fetchTextContent error:', e);
+        console.error('fetchTextContent/metadata error:', e);
       }
       
       try {
@@ -988,6 +948,7 @@ export default {
 
 	this.retrieveSavedLocations();
     await this.fetchMetadata();
+    await this.fetchTextContent();
     await this.updateImageDimensions();
     document.addEventListener("mousemove", this.resizeMetadata);
     document.addEventListener("mouseup", this.stopResize);
@@ -1017,6 +978,41 @@ export default {
     }
   },
   methods: {
+    async fetchTextContent() {
+      // console.log('fetchTextContent called, previewType:', this.previewType, 'req.type:', state.req.type);
+      
+      // Only fetch for text files
+      if (this.previewType !== 'text') {
+        this.textContent = '';
+        return;
+      }
+
+      try {
+        // console.log('Fetching text content from:', this.raw);
+        const response = await fetch(this.raw);
+        if (!response.ok) {
+          throw new Error('Failed to fetch text content');
+        }
+        let text = await response.text();
+        // console.log('Fetched text, length:', text.length);
+
+        // Pretty-print JSON
+        if (state.req.type === 'application/json') {
+          try {
+            const json = JSON.parse(text);
+            text = JSON.stringify(json, null, 2);
+          } catch (e) {
+            console.warn('Failed to parse/stringify JSON:', e);
+          }
+        }
+
+        this.textContent = text;
+      } catch (error) {
+        console.error('Error fetching text content:', error);
+        this.textContent = 'Error loading file content';
+      }
+    },
+
     handlePreviewClick(event) {
         // Desktop & Mobile Click Navigation (Edge Tapping)
         
