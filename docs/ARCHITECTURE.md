@@ -7,6 +7,7 @@
 4. [Data Flow](#data-flow)
 5. [Image Editing Features](#image-editing-features)
     - [Map Tab Details](#2-location-editing-map-tab)
+    - [Rotation](#3-image-rotation-temporary)
 6. [Server Permissions](#collection-folder-permissions)
 
 ---
@@ -525,6 +526,32 @@ saveLocationToProfile() → Prompts for name
 
 **Location**: Lines 459-471
 
+#### Persistent Pinning Architecture
+**Problem**: When navigating between folders, the VueX state (user profile) is reloaded, causing a transient "unpinned" state. If the Map component initializes during this gap (race condition), it would mistakenly overwrite the pinned location with the new image's embedded GPS.
+
+**Solution**: A "Bulletproof" initialization strategy in `Preview.vue`.
+
+1. **Synchronous Data Initialization**:
+   - The `localStorage` key `pinnedLocation` is read **directly inside the `data()` function**.
+   - This ensures `editLat` and `editLon` are populated with the pinned values *before* the component is even created and before any watchers (e.g., `gpsCoordinates`) can fire.
+   - Code:
+     ```javascript
+     data() {
+         return {
+             localPinValue: (() => { try { return JSON.parse(localStorage.getItem(...)) } ... })(),
+             editLat: (() => { ... })(), // Initialized from LS immediately
+         }
+     }
+     ```
+
+2. **Map Initialization Guard**:
+   - The `initMap()` function is explicitly prevented from overwriting input fields if a pin is active.
+   - Logic: `if (!this.isPinned) { overwrite_inputs_with_gps() }`
+
+3. **Polyfill Strategy**:
+   - `localPinValue` acts as a synchronous bridge while the async VueX `state.user` loads.
+   - The `activePin` computed property merges `state.user.pinnedLocation` (authoritative) and `localPinValue` (fast fallback).
+
 ---
 
 ### Map Tab Sub-Tab Navigation
@@ -580,6 +607,39 @@ For easy reference when requesting changes:
 | Coordinate inputs | "Map Search → Coordinate Inputs" |
 | Search box | "Map Search → Search Box" |
 | Saved locations list | "My Locations → Saved Locations List" |
+
+---
+
+### 3. Image Rotation (Temporary)
+
+**Top-Level Label**: "Image Preview Rotation"
+
+**Purpose**: Allows users to temporarily rotate images for proper viewing without permanently modifying the file.
+
+**Features**:
+- **Button**: "Rotate" button in the global header (next to Download) when viewing an image.
+- **State**: 
+  - Stored in Vuex (`state.previewRotation`)
+  - Resets to 0° on file navigation (new file loaded).
+  - Applies to 90° increments (0, 90, 180, 270).
+- **Visuals**:
+  - Rotates the image element via CSS `transform: rotate(Ndeg)`.
+  - **Crucial**: Also rotates the Face Box Overlay (`.face-overlay`) simultaneously so face regions match the rotated image.
+
+**Data Flow**:
+```javascript
+// User Clicks Rotate
+Header (Default.vue) → mutations.rotatePreview() 
+  → updates state.previewRotation
+
+// Preview Component
+Preview.vue (watch)
+  → Computed property 'rotation' reads store
+  → Applies style to wrapper div (image + overlay)
+
+// Navigation
+Preview.vue (watch raw) → mutations.resetPreviewRotation()
+```
 
 ---
 
@@ -739,7 +799,7 @@ When a user draws a box on the map to select multiple items, the following flow 
     - The code iterates over `markers.eachLayer(layer)` to find every object within the bounds.
 3.  **Data Extraction**:
     - Each `L.Marker` object contains options attached during creation:
-        - `clusterID`: Uniquely identifies the cluster (or single item).
+        - `clusterID`: Uniquely identifies the cluster (or single item). **CRITICAL**: This ID is propagated to all marker types (clusters, fan leaves, single points) during creation to ensure correct drill-down.
         - `path` & `source`: File location.
         - `count`: Number of items in this marker (e.g., 1 for a photo, 15 for a cluster).
 4.  **Auto-Drill Decision**:

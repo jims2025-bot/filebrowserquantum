@@ -20,6 +20,7 @@ export const state = reactive({
   realtimeActive: undefined,
   realtimeDownCount: 0,
   popupPreviewSource: "",
+  previewRotation: 0,
   sources: {
     current: "",
     count: 1,
@@ -38,6 +39,7 @@ export const state = reactive({
     quickDownloadEnabled: false,
     gallarySize: 0,
     disableSingleClick: false,
+    pinnedLocation: pinnedLocationStartup(),
     stickySidebar: stickyStartup(),
     locale: detectLocale(), // Default to the locale from moment
     viewMode: 'normal', // Default to mosaic view
@@ -104,4 +106,14 @@ export const state = reactive({
 function stickyStartup() {
   const stickyStatus = localStorage.getItem("stickySidebar");
   return stickyStatus == "true"
+}
+
+function pinnedLocationStartup() {
+  try {
+    const val = localStorage.getItem("pinnedLocation");
+    if (val) return JSON.parse(val);
+  } catch (e) {
+    console.error("Failed to parse pinnedLocation", e);
+  }
+  return null;
 }

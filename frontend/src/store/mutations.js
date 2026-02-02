@@ -37,6 +37,14 @@ export const mutations = {
     state.popupPreviewSource = value;
     emitStateChanged();
   },
+  rotatePreview: () => {
+    state.previewRotation = (state.previewRotation + 90) % 360;
+    emitStateChanged();
+  },
+  resetPreviewRotation: () => {
+    state.previewRotation = 0;
+    emitStateChanged();
+  },
   updateListing: (value) => {
     state.listing = value;
     emitStateChanged();
@@ -269,9 +277,17 @@ export const mutations = {
         mutations.setSources(value);
       }
       // Ensure locale exists and is valid
+      // Ensure locale exists and is valid
       if (!value.locale) {
         value.locale = i18n.detectLocale();
       }
+
+      // Preserve pinnedLocation from local state if not present/null in incoming value
+      // This is crucial because backend might not stick it, but localStorage has it.
+      if (!value.pinnedLocation && state.user && state.user.pinnedLocation) {
+        value.pinnedLocation = state.user.pinnedLocation;
+      }
+
       state.user = { ...state.user, ...value };
     } catch (error) {
       console.log(error);
@@ -335,6 +351,115 @@ export const mutations = {
       localStorage.setItem("userLocale", state.user.locale);
     }
 
+    // Update localStorage if pinnedLocation is updated
+    // CRITICAL FIX: Only update if strictly present. 
+    // If state.user.pinnedLocation becomes undefined/null during a reload, we should NOT wipe localStorage blindly.
+    // We only wipe if the value is explicitly null (meaning "unpin")
+    if (state.user.pinnedLocation !== undefined) {
+      if (state.user.pinnedLocation) {
+        localStorage.setItem("pinnedLocation", JSON.stringify(state.user.pinnedLocation));
+      } else {
+        // If it is explicitly null, we wipe. 
+        // But wait, if backend sends null, we wipe? 
+        // We need to be careful. The user might have a local pin.
+        // If we wipe here, we kill the polyfill.
+        // Ideally, we only wipe if the USER requested an unpin.
+        // But updateCurrentUser is called when backend data arrives too.
+
+        // Let's rely on the toggling action to wipe. 
+        // If this is a backend update (e.g. initial load), and it's null, we shouldn't kill local storage if it exists?
+        // Actually, if backend says "no pin", we usually respect it.
+        // BUT for the "persistent thumbtack" feature, we want local to win if backend is unconnected.
+        // However, we added logic in setCurrentUser to preserve it.
+
+        // If we are here, state.user.pinnedLocation IS falsy.
+        // If it was preserved in setCurrentUser, it wouldn't be falsy.
+        // So this means it really is null.
+
+        // Let's check if we should wipe.
+        // If the intention is to "Unpin", we wipe.
+        // If the intention is just "Loading user", we shouldn't wipe.
+        // But we can't distinguish here easily.
+
+        // REVERT strategy: Only wipe if we are sure? 
+        // Or better: Logic in Preview.vue now handles this by checking localStorage *before* this runs?
+        // No, this runs in mutations. State updates -> this runs -> updates LS.
+        // Preview.vue watcher runs AFTER state update.
+        // So if this wipes LS, Preview.vue sees empty LS.
+
+        // FIX: Don't wipe 'pinnedLocation' here if it matches what's in LS? No.
+
+        // Let's just comment out the automatic wiping here? 
+        // And make sure togglePin explicitly wipes it.
+        // But what about logging out? Login wipes it explicitly.
+        // What about unpinning on another device? Backend sends null -> we wipe local. That is correct.
+
+        // The problem is the "Flash" where backend sends null momentarily?
+        // If setCurrentUser preserves it, it shouldn't be null.
+
+        // Wait, updateCurrentUser is called by setCurrentUser.
+        // In setCurrentUser, we did:
+        // if (!value.pinnedLocation && state.user.pinnedLocation) value.pinnedLocation = state.user.pinnedLocation
+
+        // So state.user.pinnedLocation should be KEPT.
+        // Why is it null in the logs?
+        // "pinnedLocation watcher. New: null"
+        // This implies state.user.pinnedLocation BECAME null.
+
+        // Maybe updateCurrentUser is called from somewhere else? 
+        // "usersApi.update" calls? No.
+
+        // Let's look at where updateCurrentUser is called.
+        // It's called from togglePin (good).
+        // It's called from setCurrentUser (good, with preservation).
+
+        // Is it called from "setSources"? No.
+
+        // Maybe preservation logic failed?
+        // if (!value.pinnedLocation ...
+        // If value.pinnedLocation is `undefined`? `!undefined` is true.
+        // If value.pinnedLocation is `null`? `!null` is true.
+
+        // Log trace logic was removed, need to be careful.
+
+        // Safety patch:
+        // If we are about to wipe localStorage, check if we really should?
+        // No, that's ambiguous.
+
+        // Alternative: In Preview.vue, I added valid restore logic.
+        // BUT if this mutation runs FIRST and wipes LS, Preview.vue finds nothing.
+
+        // Change: Don't wipe localStorage in updateCurrentUser if the value is falsy.
+        // ONLY write if truthy. 
+        // And let togglePin (the action) handle the removal? 
+        // OR add a specific "unpin" mutation?
+
+        // If I stop wiping here, then "Remote Unpin" (on another device) won't sync to this device until a restart.
+        // That is an acceptable trade-off to fix the local Bug.
+        // The user is focusing on "Single session stability".
+
+        // So: If state.user.pinnedLocation is set -> Write to LS.
+        // If state.user.pinnedLocation is null -> DO NOTHING to LS.
+        // (Let explicit Unpin action handle removal).
+
+        // Where is explicit Unpin? 
+        // In Preview.vue: togglePin calls updateCurrentUser({ pinnedLocation: null })
+        // So if I modify this, togglePin won't wipe LS. This is BAD.
+
+        // I need to explicitly wipe LS in togglePin then.
+        // AND in `login` (already there).
+
+        // So plan:
+        // 1. Modify updateCurrentUser to NOT wipe LS on null.
+        // 2. Modify Preview.vue togglePin to explicitly wipe LS when unpinning.
+      }
+
+      if (state.user.pinnedLocation) {
+        localStorage.setItem("pinnedLocation", JSON.stringify(state.user.pinnedLocation));
+      }
+      // REMOVED implicit wipe.
+    }
+
     // Update localStorage if stickySidebar exists
     if ('stickySidebar' in state.user) {
       localStorage.setItem("stickySidebar", state.user.stickySidebar);
@@ -360,6 +485,7 @@ export const mutations = {
         "sorting",
         "gallerySize",
         "viewMode",
+        "pinnedLocation"
       ]);
     }
 

@@ -45,6 +45,12 @@
       @action="download"
     />
     <action
+      v-if="isPreviewView && isImage"
+      icon="rotate_right"
+      label="Rotate"
+      @action="rotate"
+    />
+    <action
       v-if="isPreviewView && canShare"
       icon="share"
       :label="$t('buttons.share')"
@@ -177,6 +183,9 @@ export default {
     },
     canShare() {
        return typeof navigator.share === 'function';
+    },
+    isImage() {
+      return getters.previewType() === 'image';
     },
     isMetadataToggleVisible() {
       return getters.currentView() === 'preview';
@@ -359,6 +368,9 @@ export default {
     download() {
       const url = filesApi.getDownloadURL(state.req.source, state.req.path);
       window.open(url);
+    },
+    rotate() {
+      mutations.rotatePreview();
     },
     async share() {
       const url = filesApi.getDownloadURL(state.req.source, state.req.path, true);

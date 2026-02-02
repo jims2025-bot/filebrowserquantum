@@ -13,29 +13,31 @@
       <div class="media-wrapper" style="flex: 1; overflow: hidden; position: relative; width: 100%;">
           
           <div class="image-container" v-if="previewType == 'image'" :style="{ height: showInstructionsModal && !isMobile ? '100%' : '100%' }">
-            <div ref="panzoomContent" class="panzoom-content" style="position: relative; display: inline-block; transform-origin: 0 0;">
-                <img 
-                  ref="image" 
-                  :src="raw" 
-                  @load="updateImageDimensions" 
-                  class="preview-image"
-                  style="display: block; max-width: 100%; max-height: 100%;"
-                >
-                <div
-                  v-if="activeTab === 'xmp' && metadata && metadata.xmp && metadata.xmp.Regions && metadata.xmp.Regions.length > 0 && isMetadataVisible"
-                  class="face-overlay"
-                  style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;"
-                >
-                  <div
-                    v-for="(region, index) in metadata.xmp.Regions"
-                    :key="index"
-                    class="face-box"
-                    :style="getFaceBoxStyle(region)"
+             <div ref="panzoomContent" class="panzoom-content" style="position: relative; display: inline-block; transform-origin: 0 0;">
+                <div class="rotation-wrapper" :style="{ transform: `rotate(${rotation}deg)`, transformOrigin: 'center', transition: 'transform 0.3s ease', display: 'inline-block' }">
+                  <img 
+                    ref="image" 
+                    :src="raw" 
+                    @load="updateImageDimensions" 
+                    class="preview-image"
+                    style="display: block; max-width: 100%; max-height: 100%;"
                   >
-                    <span class="face-label" :style="{ fontSize: faceFontSize + 'px', top: -faceFontSize * 1.5 + 'px' }">{{ region.Name || 'Unnamed' }}</span>
+                  <div
+                    v-if="activeTab === 'xmp' && metadata && metadata.xmp && metadata.xmp.Regions && metadata.xmp.Regions.length > 0 && isMetadataVisible"
+                    class="face-overlay"
+                    style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;"
+                  >
+                    <div
+                      v-for="(region, index) in metadata.xmp.Regions"
+                      :key="index"
+                      class="face-box"
+                      :style="getFaceBoxStyle(region)"
+                    >
+                      <span class="face-label" :style="{ fontSize: faceFontSize + 'px', top: -faceFontSize * 1.5 + 'px' }">{{ region.Name || 'Unnamed' }}</span>
+                    </div>
                   </div>
                 </div>
-            </div>
+             </div>
           </div>
 
           <audio
@@ -362,14 +364,26 @@
                  <div class="edit-toolbar" style="flex: 0 0 auto; padding: 10px; background: white; border-bottom: 1px solid #ddd; border-top: 1px solid #ddd; box-shadow: 0 2px 4px rgba(0,0,0,0.05); z-index: 10; color: #333;">
                       
                       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                          <h3 style="margin: 0; font-size: 0.85em; color: #2196f3; display: flex; align-items: center; font-weight: 600;">
-                               <span v-if="canEditCoordinates">EDITABLE LOCATION (PROPOSED)</span>
-                               <span v-else>MAP PREVIEW</span>
-                               
-                               <span v-if="canEditCoordinates" style="margin-left: 10px; font-size: 0.7em; background: #e8f5e9; color: #2e7d32; padding: 1px 6px; border-radius: 4px; border: 1px solid #c8e6c9;">
-                                   EDIT MODE
-                               </span>
-                          </h3>
+                           <h3 style="margin: 0; font-size: 0.75em; color: #2196f3; display: flex; align-items: center; font-weight: 600;">
+                                <div v-if="canEditCoordinates" 
+                                     @click.stop="togglePin"
+                                     style="display: flex; align-items: center; cursor: pointer; margin-right: 10px;"
+                                     :title="isPinned ? 'Unpin location to follow image' : 'Pin location to copy to next image'"
+                                >
+                                     <i class="material-icons" 
+                                        style="font-size: 18px; transition: all 0.2s;"
+                                        :style="isPinned ? 'color: #2196f3; transform: rotate(0deg);' : 'color: #ccc; transform: rotate(45deg);'"
+                                     >push_pin</i>
+                                     <span v-if="isPinned" style="font-size: 0.8em; margin-left: 4px; color: #2196f3; font-weight: bold;">
+                                         HOLDING COORDS
+                                     </span>
+                                </div>
+
+                                <span v-if="canEditCoordinates">EDITABLE LOCATION (PROPOSED)</span>
+                                <span v-else>MAP PREVIEW</span>
+                                
+
+                           </h3>
                           
                           <!-- Save Actions -->
                           <div v-if="canEditCoordinates" style="display: flex; gap: 5px;">
@@ -391,11 +405,11 @@
                       <div style="display: flex; gap: 10px; align-items: center;">
                            <div style="display: flex; gap: 5px; align-items: center;">
                                <label style="font-size: 0.85em; color: #666; font-weight: bold;">Lat:</label>
-                               <input type="number" step="any" v-model.lazy.number="editLat" :disabled="!canEditCoordinates" class="input" style="width: 110px; height: 26px; font-size: 0.9em; padding: 2px 5px;">
+                               <input type="number" step="any" v-model.lazy.number="editLat" :disabled="!canEditCoordinates" class="input" :style="{ backgroundColor: isPinned ? '#2e7d32' : '', color: isPinned ? 'white' : '' }" style="width: 110px; height: 26px; font-size: 0.9em; padding: 2px 5px;">
                            </div>
                            <div style="display: flex; gap: 5px; align-items: center;">
                                <label style="font-size: 0.85em; color: #666; font-weight: bold;">Lon:</label>
-                               <input type="number" step="any" v-model.lazy.number="editLon" :disabled="!canEditCoordinates" class="input" style="width: 110px; height: 26px; font-size: 0.9em; padding: 2px 5px;">
+                               <input type="number" step="any" v-model.lazy.number="editLon" :disabled="!canEditCoordinates" class="input" :style="{ backgroundColor: isPinned ? '#2e7d32' : '', color: isPinned ? 'white' : '' }" style="width: 110px; height: 26px; font-size: 0.9em; padding: 2px 5px;">
                            </div>
                            
                            <!-- Search Box MOVED from here -->
@@ -405,7 +419,7 @@
                       <div v-if="canEditCoordinates" style="margin-top: 6px; font-size: 0.8em; color: #555; display: flex; align-items: center;">
                           <span style="font-weight: bold; margin-right: 4px;">Proposed Matches:</span>
                           <span v-if="matchedLocationName || gpsMatchedLocationName" 
-                                @click="applyMatchedLocation(matchedLocationName || gpsMatchedLocationName)"
+                                @click.stop="applyMatchedLocation(matchedLocationName || gpsMatchedLocationName)"
                                 style="color: #1565c0; background: #e3f2fd; padding: 0 4px; border-radius: 3px; cursor: pointer; text-decoration: underline;"
                                 title="Click to apply this location">
                                {{ matchedLocationName || gpsMatchedLocationName }}
@@ -416,7 +430,7 @@
 
                  <!-- Saved Locations Footer (Stretches to bottom) -->
                  <div style="flex: 1; display: flex; flex-direction: column; background: white; color: #333; overflow: hidden; border-top: 1px solid #ddd; min-height: 0;">
-                      <div @click="editTab = editTab === 'locations' ? 'location' : 'locations'" style="flex: 0 0 auto; padding: 6px 10px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: #f5f5f5; border-bottom: 1px solid #eee;">
+                      <div @click.stop="editTab = editTab === 'locations' ? 'location' : 'locations'" style="flex: 0 0 auto; padding: 6px 10px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: #f5f5f5; border-bottom: 1px solid #eee;">
                            <div style="display: flex; align-items: center; gap: 5px;">
                                 <i class="material-icons" style="font-size: 22px; color: #2196f3;">bookmark</i>
                                 <span style="font-weight: 600; font-size: 0.9em; color: #333;">Saved Locations</span>
@@ -431,7 +445,7 @@
                             </div>
                             <div v-for="(loc, idx) in savedLocations" :key="idx" 
                                 style="padding: 8px 10px; border-bottom: 1px solid #eee; cursor: pointer; font-size: 0.9em; display: flex; justify-content: space-between; align-items: center; color: #333;"
-                                @click="editLat = loc.lat; editLon = loc.lon; updateMapMarker(loc.lat, loc.lon);"
+                                @click.stop="editLat = loc.lat; editLon = loc.lon; updateMapMarker(loc.lat, loc.lon);"
                             >
                                 <span style="font-weight: 500;">{{ loc.name }}</span>
                                 <div style="display: flex; align-items: center; gap: 10px;">
@@ -520,13 +534,37 @@ export default {
       
       // Map Editing
       // isEditingCoordinates removed
+      // isEditingCoordinates removed
+      // isLocationPinned removed (moved to user profile)
       searchQuery: "",
-      editLat: 0,
-      editLon: 0,
-      savedLocations: [], // fetched from user profile
-      selectedSavedLocationIdx: null,
       mapStatus: "", // Text status is fine to be reactive
       
+      // Bulletproof Init: Read localStorage directly in data()
+      // This ensures values are ready before ANY watchers or hooks run.
+      localPinValue: (() => {
+          try {
+             const val = localStorage.getItem("pinnedLocation");
+             return val ? JSON.parse(val) : null;
+          } catch(e) { return null; }
+      })(),
+      
+      // Init edits from localPinValue if available
+      editLat: (() => {
+          try {
+             const val = localStorage.getItem("pinnedLocation");
+             return val ? JSON.parse(val).lat : 0;
+          } catch(e) { return 0; }
+      })(),
+      editLon: (() => {
+          try {
+             const val = localStorage.getItem("pinnedLocation");
+             return val ? JSON.parse(val).lon : 0;
+          } catch(e) { return 0; }
+      })(),
+      
+      // Edit Settings Tabs
+      
+      // Edit Settings Tabs
       // Edit Settings Tabs
       editTab: 'location', // 'location' | 'locations'
 
@@ -577,6 +615,7 @@ export default {
         return state.user?.permissions?.modify === true;
     },
     hasUnsavedCoordinates() {
+        if (this.isPinned) return true; // Always allow saving if explicit pin is set
         if (!this.gpsCoordinates) {
             return this.editLat !== 0 || this.editLon !== 0; // If no original, any change from 0 is "unsaved"
         }
@@ -595,6 +634,15 @@ export default {
     },
     currentUserSavedLocations() {
       return state.user ? state.user.savedLocations : null;
+    },
+    pinnedLocation() {
+      return state.user ? state.user.pinnedLocation : null;
+    },
+    activePin() {
+      return this.pinnedLocation || this.localPinValue;
+    },
+    isPinned() {
+      return !!this.activePin;
     },
 	availableTabs() {
 		const tabs = [
@@ -662,6 +710,9 @@ export default {
       const visible = getters.isMetadataVisible();
       //console.log("isMetadataVisible:", visible);
       return visible;
+    },
+    rotation() {
+      return state.previewRotation;
     },
     previewMaxHeight() {
       // On desktop (side-by-side), height is not constrained by metadata panel height
@@ -784,7 +835,9 @@ export default {
 
   watch: {
     async raw() {
-      console.log('🔥 RAW WATCHER TRIGGERED!', this.raw);
+      // console.log('🔥 RAW WATCHER TRIGGERED!', this.raw);
+      
+      mutations.resetPreviewRotation();
       
       if (!getters.isLoggedIn()) {
         return;
@@ -831,12 +884,47 @@ export default {
         //console.log("Validating activeTab:", this.activeTab, "Available:", availableTabNames);
         if (!availableTabNames.includes(this.activeTab)) {
           this.activeTab = "details";
-        //  console.log("Reset activeTab to 'details' as current tab is not available");
+        }
+        
+        // Final safety check: if pinned, ensure inputs match pin
+        // This fixes the "0,0" bug on folder change
+        // Final safety check: if pinned, ensure inputs match pin
+        // This fixes the "0,0" bug even if promises fail
+        // Using finally ensures this runs regardless of 500 errors (e.g. heatmap)
+      }).finally(() => {
+        if (this.isPinned) {
+            this.reapplyPinnedLocation();
         }
       });
     },
 
     gpsCoordinates(newVal) {
+       // console.log("LOG_TRACE: gpsCoordinates watcher triggered. Lat/Lon:", newVal?.lat, newVal?.lon);
+       
+       // Priority 1: Update Inputs (Always visible in header)
+       if (newVal) {
+           // Update inputs if not pinned
+           if (!this.isPinned && this.canEditCoordinates) {
+               this.editLat = parseFloat(newVal.lat.toFixed(6));
+               this.editLon = parseFloat(newVal.lon.toFixed(6));
+               if (typeof this.updateMapMarker === 'function') {
+                   this.updateMapMarker(this.editLat, this.editLon);
+               }
+           } else {
+               // console.log("LOG_TRACE: gpsCoordinates SKIPPING update. Pinned:", this.isPinned);
+           }
+       } else {
+           // Clear inputs if not pinned
+           if (!this.isPinned && this.canEditCoordinates) {
+               this.editLat = 0;
+               this.editLon = 0;
+               if (typeof this.updateMapMarker === 'function') {
+                   this.updateMapMarker(0, 0);
+               }
+           }
+       }
+
+       // Priority 2: Map & Marker Updates (Only if map ready)
        if (!this.mapInstance) return;
 
        // 1. Update Embedded Marker (Gold)
@@ -862,22 +950,11 @@ export default {
            
            // 2. Pan Map to new location
            this.mapInstance.setView([lat, lon], 16);
-
-           // REMOVED: Sync Edit Marker & Inputs (User wants to keep previous inputs)
-           // this.editLat = parseFloat(lat.toFixed(6));
-           // this.editLon = parseFloat(lon.toFixed(6));
-           // this.updateMapMarker(this.editLat, this.editLon);
-
        } else {
            if (this.embeddedMarker) {
                this.mapInstance.removeLayer(this.embeddedMarker);
                this.embeddedMarker = null;
            }
-           // Optionally reset view/inputs if no GPS, but maybe better to leave map where it is?
-           // For inputs, we should probably reset to 0 or clear them to avoid confusion
-           // this.editLat = 0;
-           // this.editLon = 0;
-           // this.updateMapMarker(0, 0); // This removes the blue marker
        }
     },
 
@@ -925,6 +1002,56 @@ export default {
             this.retrieveSavedLocations();
         },
         deep: true
+      },
+      activePin: {
+        handler(newVal) {
+            
+            // Sync activePin back to localPinValue if it came from backend (newVal is truthy, local might be null)
+            // But activePin returns (pinnedLocation || localPinValue).
+            // We just need to ensure that if pinnedLocation is what's valid, localPin gets updated?
+            // Actually, if activePin is valid, use it.
+            
+            if (newVal) {
+                this.editLat = newVal.lat;
+                this.editLon = newVal.lon;
+                if (typeof this.updateMapMarker === 'function') {
+                     this.$nextTick(() => {
+                        this.updateMapMarker(this.editLat, this.editLon);
+                     });
+                }
+            } else {
+               // Unpinned: Revert to image's GPS coordinates if available
+               if (this.gpsCoordinates) {
+                   this.editLat = parseFloat(Number(this.gpsCoordinates.lat).toFixed(6));
+                   this.editLon = parseFloat(Number(this.gpsCoordinates.lon).toFixed(6));
+               } else {
+                   // No GPS on image, reset to 0
+                   this.editLat = 0;
+                   this.editLon = 0;
+               }
+               
+               if (typeof this.updateMapMarker === 'function') {
+                    this.$nextTick(() => {
+                        this.updateMapMarker(this.editLat, this.editLon);
+                    });
+               }
+            }
+        },
+        immediate: true 
+      },
+      pinnedLocation: {
+          handler(newVal) {
+            // Keep local backup in sync
+            // Only update if truthy, or if we need to clear local because of explicit unpin?
+            // Since we handle explicit unpin in togglePin, 
+            // Here we just grab valid values to ensure polyfill is ready for next reload.
+            if (newVal) {
+                this.localPinValue = newVal;
+            }
+            // Note: we do NOT clear localPinValue here if null, 
+            // to allow local backup to survive transient backend nulls.
+          },
+          immediate: true
       }
   },
   created() {
@@ -935,6 +1062,7 @@ export default {
   async mounted() {
     window.addEventListener("keydown", this.key);
     this.subtitlesList = await this.subtitles();
+    
     await this.updatePreview();
     mutations.resetSelected();
     mutations.addSelected({
@@ -945,6 +1073,15 @@ export default {
       source: state.req.source,
       url: state.req.url,
     });
+    
+    // Initialize sticky coords
+    // console.log("Preview mounted. activePin:", this.activePin);
+    if (this.activePin) {
+        // console.log("Applying pinned coords on mount:", this.activePin);
+        this.editLat = this.activePin.lat;
+        this.editLon = this.activePin.lon;
+        // Don't update map marker yet as map not init
+    }
 
 	this.retrieveSavedLocations();
     await this.fetchMetadata();
@@ -1317,12 +1454,15 @@ export default {
         });
 
         // Always sync inputs with current GPS on map init for this file
-        if (this.gpsCoordinates) {
-            this.editLat = parseFloat(this.gpsCoordinates.lat.toFixed(6));
-            this.editLon = parseFloat(this.gpsCoordinates.lon.toFixed(6));
-        } else {
-             this.editLat = 0;
-             this.editLon = 0;
+        // BUT respecting the PIN if active!
+        if (!this.isPinned) {
+            if (this.gpsCoordinates) {
+                this.editLat = parseFloat(this.gpsCoordinates.lat.toFixed(6));
+                this.editLon = parseFloat(this.gpsCoordinates.lon.toFixed(6));
+            } else {
+                 this.editLat = 0;
+                 this.editLon = 0;
+            }
         }
 
         // Default view
@@ -1748,9 +1888,10 @@ findInstructionDeep(obj) {
         
         // Update original to prevent re-saving
         this.originalInstructions = this.photoshopInstructions;
+        notify.showSuccess("Image Notes saved");
       } catch (err) {
         console.error("Failed to save Photoshop instructions:", err);
-        alert("Failed to save instructions.");
+        notify.showError("Failed to save Image Notes");
       }
     },
 
@@ -1789,6 +1930,67 @@ findInstructionDeep(obj) {
 
 
     
+    
+    reapplyPinnedLocation() {
+        if (this.activePin) {
+             // Force inputs to match pinned location
+             this.editLat = this.activePin.lat;
+             this.editLon = this.activePin.lon;
+        }
+    },
+
+    async togglePin() {
+        if (!state.user) return;
+        
+        let newPin = null;
+        if (!this.activePin) {
+            // Setup new pin from current edit coords
+            let latToPin = this.editLat;
+            let lonToPin = this.editLon;
+            
+            // Safety: If inputs are 0,0 but we have valid GPS, prefer GPS. 
+            // This prevents accidental pinning of "empty" state.
+            if (latToPin === 0 && lonToPin === 0 && this.gpsCoordinates) {
+                latToPin = this.gpsCoordinates.lat;
+                lonToPin = this.gpsCoordinates.lon;
+            }
+
+            newPin = {
+                name: "Pinned Location", // Placeholder name
+                lat: latToPin,
+                lon: lonToPin
+            };
+        } else {
+            // Turn off (set to null)
+            newPin = null;
+        }
+        
+        // Update local polyfill
+        this.localPinValue = newPin;
+        
+        // Explicitly handle localStorage here because we disabled auto-wiping in mutations.js
+        if (newPin) {
+             localStorage.setItem("pinnedLocation", JSON.stringify(newPin));
+        } else {
+             localStorage.removeItem("pinnedLocation");
+        }
+
+        // Update user profile
+        try {
+             // We construct a partial user update. The backend might need explicit null handling? 
+             // Usually Go JSON unmarshalling handles null ptrs fine if we send null.
+             const userUpdate = { ...state.user, pinnedLocation: newPin };
+             
+             // Optimistic update
+             mutations.updateCurrentUser({ pinnedLocation: newPin });
+             
+             await usersApi.update(userUpdate, ['pinnedLocation']);
+        } catch (e) {
+             console.error("Failed to toggle pin", e);
+             notify.showError("Failed to update pinned location");
+        }
+    },
+
     async saveLocationToProfile() {
         if (!this.editLat && !this.editLon) return;
         

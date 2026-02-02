@@ -453,7 +453,7 @@ export default {
 }
 
 .file-issue-icon {
-  font-size: 0.85em !important;
+  font-size: 1.1em !important;
   vertical-align: middle;
   margin-left: 0.5em;
 }
@@ -467,7 +467,7 @@ export default {
 }
 
 .file-gps-icon {
-  font-size: 0.85em !important;
+  font-size: 1.1em !important;
   vertical-align: middle;
   margin-left: 0.5em;
   color: #4CAF50; /* Green globe */

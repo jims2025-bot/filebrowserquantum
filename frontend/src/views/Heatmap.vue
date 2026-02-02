@@ -1308,7 +1308,8 @@ const loadData = async () => {
                                  const marker = L.marker([c.lat, c.lon], { // Use cluster center (or p.lat/lon if available but backend simplifies)
                                      icon: generateMarkerIcon(p.path, c.source || source, 1),
                                      thumbPath: p.path,
-                                     thumbSource: c.source || source
+                                     thumbSource: c.source || source,
+                                     clusterID: c.id
                                  });
                                  marker.bindPopup(generatePopupHtml(p.path, c.source || source, 1));
                                  tileMarkerList.push(marker);
@@ -1318,7 +1319,8 @@ const loadData = async () => {
                              const marker = L.marker([c.lat, c.lon], {
                                  icon: generateMarkerIcon(c.path, c.source || source, c.count),
                                  thumbPath: c.path,
-                                 thumbSource: c.source || source
+                                 thumbSource: c.source || source,
+                                 clusterID: c.id
                              });
                              marker.bindPopup(generatePopupHtml(c.path, c.source || source, c.count));
                              tileMarkerList.push(marker);
@@ -1356,6 +1358,9 @@ const loadData = async () => {
                                 const angle = idx * angleStep;
                                 const marker = L.marker([c.lat + fanRadius * Math.cos(angle), c.lon + fanRadius * Math.sin(angle)], {
                                     icon: generateMarkerIcon(p.path, c.source || source, 1),
+                                    thumbPath: p.path,
+                                    thumbSource: c.source || source,
+                                    clusterID: c.id
                                 });
                                 marker.bindPopup(generatePopupHtml(p.path, c.source || source, 1, context));
                                 marker.on('contextmenu', () => {
@@ -1369,7 +1374,8 @@ const loadData = async () => {
                              const marker = L.marker([c.lat, c.lon], {
                                  icon: generateMarkerIcon(c.path, c.source || source, c.count),
                                  thumbPath: c.path,
-                                 thumbSource: c.source || source
+                                 thumbSource: c.source || source,
+                                 clusterID: c.id
                             });
                             marker.bindPopup(generatePopupHtml(c.path, c.source || source, c.count));
                             tileMarkerList.push(marker);
