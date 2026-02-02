@@ -729,6 +729,30 @@ If not cached:
 Return image
 ```
 
+### Metadata Pre-fetching Flow
+
+**Goal**: Ensure instant metadata availability (EXIF, IPTC, XMP) when navigating between images.
+
+```
+User opens image (Preview.vue)
+  ↓
+updatePreview() calculates Previous/Next links
+  ↓
+For Previous AND Next image:
+  1. Calculate Preview URL (prefetchUrl)
+     → Browser caches the thumbnail request
+  2. Call getMetadata(path)
+     → GET /api/metadata?path=...
+     → Backend extracts EXIF/IPTC/XMP
+     → Frontend stores in metadataCache[path]
+  ↓
+User clicks "Next"
+  ↓
+Preview.vue checks metadataCache[newPath]
+  ↓
+immediate HIT (no network delay)
+```
+
 ---
 
 ## Key Design Decisions
