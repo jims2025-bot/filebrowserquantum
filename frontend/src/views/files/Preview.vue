@@ -304,16 +304,16 @@
                              
                              <div style="display: flex; gap: 8px;">
                                  <!-- Moved Clear Button here as Icon -->
-                                 <button @click="handleClearLocation" class="button button--flat" title="Clear embedded location" style="padding: 6px; height: 32px; line-height: 1; min-width: 32px;">
-                                     <i class="material-icons" style="font-size: 20px; color: #f44336;">delete</i>
-                                 </button>
+                                  <button v-if="canEditCoordinates" @click="handleClearLocation" class="button button--flat" title="Clear embedded location" style="padding: 6px; height: 32px; line-height: 1; min-width: 32px;">
+                                      <i class="material-icons" style="font-size: 20px; color: #f44336;">delete</i>
+                                  </button>
                                  
                                  <button @click="copyCoordinates" class="button button--flat" title="Copy" style="padding: 6px; height: 32px; line-height: 1; min-width: 32px;">
                                      <i class="material-icons" style="font-size: 14px;">content_copy</i>
                                  </button>
-                                 <button @click="saveEmbeddedLocationToProfile" class="button button--flat" title="Save this location to My Locations" style="padding: 6px; height: 32px; line-height: 1; min-width: 32px;">
-                                     <i class="material-icons" style="font-size: 16px; color: #2196f3;">bookmark_add</i>
-                                 </button>
+                                  <button v-if="canEditCoordinates" @click="saveEmbeddedLocationToProfile" class="button button--flat" title="Save this location to My Locations" style="padding: 6px; height: 32px; line-height: 1; min-width: 32px;">
+                                      <i class="material-icons" style="font-size: 16px; color: #2196f3;">bookmark_add</i>
+                                  </button>
                                  <a :href="'https://www.google.com/maps/search/?api=1&query=' + gpsCoordinates.lat + ',' + gpsCoordinates.lon" 
                                     target="_blank" 
                                     class="button button--flat" 
@@ -402,7 +402,7 @@
                       </div>
 
                       <!-- Inputs Row -->
-                      <div style="display: flex; gap: 10px; align-items: center;">
+                      <div v-if="canEditCoordinates" style="display: flex; gap: 10px; align-items: center;">
                            <div style="display: flex; gap: 5px; align-items: center;">
                                <label style="font-size: 0.85em; color: #666; font-weight: bold;">Lat:</label>
                                <input type="number" step="any" v-model.lazy.number="editLat" :disabled="!canEditCoordinates" class="input" :style="{ backgroundColor: isPinned ? '#2e7d32' : '', color: isPinned ? 'white' : '' }" style="width: 110px; height: 26px; font-size: 0.9em; padding: 2px 5px;">
@@ -429,7 +429,7 @@
                  </div>
 
                  <!-- Saved Locations Footer (Stretches to bottom) -->
-                 <div style="flex: 1; display: flex; flex-direction: column; background: white; color: #333; overflow: hidden; border-top: 1px solid #ddd; min-height: 0;">
+                 <div v-if="canEditCoordinates" style="flex: 1; display: flex; flex-direction: column; background: white; color: #333; overflow: hidden; border-top: 1px solid #ddd; min-height: 0;">
                       <div @click.stop="editTab = editTab === 'locations' ? 'location' : 'locations'" style="flex: 0 0 auto; padding: 6px 10px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: #f5f5f5; border-bottom: 1px solid #eee;">
                            <div style="display: flex; align-items: center; gap: 5px;">
                                 <i class="material-icons" style="font-size: 22px; color: #2196f3;">bookmark</i>
@@ -612,7 +612,7 @@ export default {
       return getters.isInstructionsEditMode();
     },
     canEditCoordinates() {
-        return state.user?.permissions?.modify === true;
+        return state.user?.permissions?.updateMap === true;
     },
     hasUnsavedCoordinates() {
         if (this.isPinned) return true; // Always allow saving if explicit pin is set
@@ -1554,8 +1554,8 @@ export default {
     updateMapMarker(lat, lon) {
         if (!this.mapInstance) return;
 
-        // If invalid coords, remove marker
-        if (lat === 0 && lon === 0) {
+        // If no permission OR invalid coords, remove marker
+        if (!this.canEditCoordinates || (lat === 0 && lon === 0)) {
             if (this.editMarker) {
                 this.mapInstance.removeLayer(this.editMarker);
                 this.editMarker = null;

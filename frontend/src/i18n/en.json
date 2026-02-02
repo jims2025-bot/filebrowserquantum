@@ -266,7 +266,8 @@
       "modify": "Edit files",
       "share": "Share files",
       "api": "Create and manage long-live API keys",
-      "realtime": "Enable real-time connections and updates"
+      "realtime": "Enable real-time connections and updates",
+      "updateMap": "Update Map Locations"
     },
     "permissions-name": "Permissions",
     "permissionsHelp": "You can set the user to be an administrator or choose the permissions individually. If you select \"Administrator\", all of the other options will be automatically checked. The management of users remains a privilege of an administrator.\n",

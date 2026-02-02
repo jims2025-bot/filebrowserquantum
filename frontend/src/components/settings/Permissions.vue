@@ -15,6 +15,11 @@
       v-model="permissions.realtime"
       :name="$t('settings.permissions.realtime')"
     />
+    <ToggleSwitch
+      class="item"
+      v-model="permissions.updateMap"
+      :name="$t('settings.permissions.updateMap')"
+    />
   </div>
 </template>
 
