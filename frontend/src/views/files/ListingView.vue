@@ -134,6 +134,7 @@
             v-bind:reducedOpacity="item.hidden || isDragging"
             v-bind:issueData="integrityIssues[item.name] || null"
             v-bind:gpsData="filesWithGPS[item.name] || null"
+            v-bind:companionImage="filesWithCompanion[item.name] || null"
           />
         </div>
 
@@ -184,6 +185,7 @@ export default {
       ctrKeyPressed: false,
       integrityIssues: {}, // Map of filename -> issue details
       filesWithGPS: {}, // Map of filename -> GPS coordinates
+      filesWithCompanion: {}, // Map of filename -> Companion Image Filename
     };
   },
   watch: {
@@ -193,6 +195,7 @@ export default {
         // Reload integrity issues when req changes (folder navigation)
         this.loadIntegrityIssues();
         this.loadFilesWithGPS();
+        this.detectCompanionFiles();
       },
       deep: true
     },
@@ -358,6 +361,7 @@ export default {
     this.lastSelected = state.selected;
     this.loadIntegrityIssues();
     this.loadFilesWithGPS();
+    this.detectCompanionFiles();
     // Check the columns size for the first time.
     this.colunmsResize();
     // Add the needed event listeners to the window and document.
@@ -404,6 +408,31 @@ export default {
     }
   },
   methods: {
+    detectCompanionFiles() {
+        if (!this.files) return;
+        
+        const imageMap = {};
+        for (const f of this.files) {
+             const name = f.name;
+             const lower = name.toLowerCase();
+             if (lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png') || lower.endsWith('.webp')) {
+                 const base = name.substring(0, name.lastIndexOf('.'));
+                 imageMap[base] = name;
+             }
+        }
+    
+        const companions = {};
+        for (const f of this.files) {
+            if (f.name.toLowerCase().endsWith('.geojson')) {
+                const base = f.name.substring(0, f.name.lastIndexOf('.'));
+                if (imageMap[base]) {
+                    companions[f.name] = imageMap[base];
+                }
+            }
+        }
+        
+        this.filesWithCompanion = companions;
+    },
     async loadIntegrityIssues() {
       if (!state.req || !state.req.source || !state.req.path) {
         this.integrityIssues = {};

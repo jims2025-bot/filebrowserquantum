@@ -499,6 +499,7 @@ import panzoom from "panzoom"; // Import panzoom
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
+
 // Fix Leaflet icon issue
 delete L.Icon.Default.prototype._getIconUrl;
 
@@ -1060,6 +1061,19 @@ export default {
       this.mapMarker = null;
   },
   async mounted() {
+    // Check for GeoJSON redirect
+    if (this.req && this.req.name && this.req.name.toLowerCase().endsWith('.geojson')) {
+        const path = this.req.path;
+        const source = this.req.source;
+        this.$router.replace({ 
+            path: '/heatmap', 
+            query: { 
+                overlay: path,
+                source: source
+            } 
+        });
+        return;
+    }
     window.addEventListener("keydown", this.key);
     this.subtitlesList = await this.subtitles();
     
@@ -1481,6 +1495,11 @@ export default {
             attribution: 'Google'
         });
 
+        const satellite = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',{
+            maxZoom: 20,
+            attribution: 'Google'
+        });
+
         const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
             attribution: '© OpenStreetMap'
@@ -1499,15 +1518,54 @@ export default {
             layers: [hybrid], // Default layer
             attributionControl: false
         }).setView([lat, lon], zoom);
+        
+        // Custom Browser Fullscreen Control
+        L.Control.BrowserFullscreen = L.Control.extend({
+            onAdd: function(map) {
+                var container = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+                var button = L.DomUtil.create('a', 'leaflet-control-fullscreen-button', container);
+                button.href = '#';
+                button.title = 'Full Screen';
+                button.innerHTML = '<i class="material-icons" style="font-size:18px; line-height:30px;">fullscreen</i>';
+                button.style.width = '30px';
+                button.style.height = '30px';
+                button.style.textAlign = 'center';
+                button.style.backgroundColor = 'white';
+                button.style.cursor = 'pointer';
+                button.style.display = 'block';
+
+                L.DomEvent.on(button, 'click', function(e) {
+                    L.DomEvent.preventDefault(e);
+                    if (!document.fullscreenElement) {
+                        document.documentElement.requestFullscreen();
+                        button.innerHTML = '<i class="material-icons" style="font-size:18px; line-height:30px;">fullscreen_exit</i>';
+                        button.title = 'Exit Full Screen';
+                    } else {
+                        if (document.exitFullscreen) {
+                            document.exitFullscreen();
+                            button.innerHTML = '<i class="material-icons" style="font-size:18px; line-height:30px;">fullscreen</i>';
+                            button.title = 'Full Screen';
+                        }
+                    }
+                });
+
+                return container;
+            },
+            onRemove: function(map) {}
+        });
+
+        // Add custom control to map
+        new L.Control.BrowserFullscreen({ position: 'topleft' }).addTo(this.mapInstance);
 
         // Add Layer Control
         const baseMaps = {
             "Satellite (Hybrid)": hybrid,
+            "Satellite (Pure)": satellite,
             "Standard (Streets)": streets,
             "OpenStreetMap": osm,
             "Dark Mode": dark
         };
-        L.control.layers(baseMaps).addTo(this.mapInstance);
+        L.control.layers(baseMaps, null, { position: 'topleft' }).addTo(this.mapInstance);
 
         // 1. Add Embedded Marker (Gold) if exists
         if (this.gpsCoordinates) {
@@ -1877,14 +1935,7 @@ findInstructionDeep(obj) {
       try {
         const metadataPath = this.metadata?.path || state.req.path;
         // Use existing API call if it works, or fallback to generic updateMetadata
-        if (filesApi.updateXMPInstructions) {
-             await filesApi.updateXMPInstructions(state.req.source, metadataPath, this.photoshopInstructions);
-        } else {
-             // Fallback to generic metadata update
-             await filesApi.updateMetadata(state.req.source, state.req.path, {
-                xmp: { 'photoshop:Instructions': this.photoshopInstructions }
-             });
-        }
+        await filesApi.updateXMPInstructions(state.req.source, metadataPath, this.photoshopInstructions);
         
         // Update original to prevent re-saving
         this.originalInstructions = this.photoshopInstructions;

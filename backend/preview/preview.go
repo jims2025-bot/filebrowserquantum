@@ -155,10 +155,10 @@ func (s *Service) CreatePreview(data []byte, previewSize string) ([]byte, error)
 		options = []Option{WithMode(ResizeModeFit), WithQuality(QualityHigh), WithFormat(FormatJpeg)}
 	case "small":
 		width, height = 256, 256
-		options = []Option{WithMode(ResizeModeFit), WithQuality(QualityMedium), WithFormat(FormatJpeg)}
+		options = []Option{WithMode(ResizeModeFit), WithQuality(QualityLow), WithFormat(FormatJpeg)}
 	case "thumb":
 		width, height = 64, 64
-		options = []Option{WithMode(ResizeModeFit), WithQuality(QualityMedium), WithFormat(FormatJpeg)}
+		options = []Option{WithMode(ResizeModeFit), WithQuality(QualityLow), WithFormat(FormatJpeg)}
 	default:
 		return nil, ErrUnsupportedFormat
 	}

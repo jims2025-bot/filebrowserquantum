@@ -25,7 +25,7 @@
   </div>
 
   <!-- Back Button Overlay -->
-  <div v-if="isFolderMode" style="position: absolute; top: 10px; left: 60px; z-index: 2000;">
+  <div v-if="isFolderMode || route.query.overlay || overlaySiblings.length > 0" style="position: absolute; top: 10px; left: 60px; z-index: 2000;">
       <button @click="goBack" class="button button--flat" style="background: rgba(0,0,0,0.6); color: white; border: 1px solid rgba(255,255,255,0.3); backdrop-filter: blur(4px);">
           <i class="material-icons">arrow_back</i> Back to Folder
       </button>
@@ -50,10 +50,38 @@
       </div>
       <div class="panel-content">
           <div v-if="sidePanelLoading" class="panel-loading">Loading...</div>
-          <div v-else-if="sidePanelData.length === 0" class="panel-empty">No files found.</div>
+          
+          <!-- Map Overlays Section -->
+          <div v-if="overlaySiblings.length > 0" class="overlay-section">
+              <div class="panel-sub-header">Map Overlays</div>
+              <div class="overlay-list-container">
+                  <div v-for="item in overlaySiblings" :key="item.path" 
+                       class="overlay-item" 
+                       :class="{ active: item.path === route.query.overlay }"
+                       @click="toggleOverlay(item.path)">
+                       
+                      <div class="overlay-thumb-wrapper">
+                          <img v-if="item.thumbUrl" :src="item.thumbUrl" class="overlay-thumb-img" />
+                          <i v-else class="material-icons overlay-icon" style="color: #42a5f5;">public</i>
+                      </div>
+                      <span class="overlay-name" :title="item.name">{{ item.name }}</span>
+                  </div>
+              </div>
+          </div>
+
+          <div v-if="sidePanelData.length === 0 && !sidePanelLoading" class="panel-empty">
+              <div v-if="inspectionHistory.length > 0" style="width: 100%; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 10px;">
+                  <button @click="backToFolders" class="back-btn" title="Back to Folder List" style="display: flex; align-items: center; background: none; border: none; color: white; cursor: pointer;">
+                      <i class="material-icons">arrow_back</i>
+                      <span style="margin-left: 5px;">Back</span>
+                  </button>
+              </div>
+              <span v-if="overlaySiblings.length === 0">No files found.</span>
+              <span v-else style="font-size:12px; opacity:0.7;">Select an overlay above.</span>
+          </div>
           
           <!-- Folder List View -->
-          <div v-else-if="!currentInspectionFolder" class="panel-folder-list">
+          <div v-else-if="!currentInspectionFolder && sidePanelData.length > 0" class="panel-folder-list">
              <div v-for="grp in displayedFolders" :key="grp.path" class="folder-item" @click="openFolderView(grp)">
                 <i class="material-icons">folder</i>
                 <div class="folder-info">
@@ -65,11 +93,11 @@
           </div>
 
           <!-- Image Grid (Inside Folder) -->
-          <div v-else class="panel-grid-container">
+          <div v-else-if="currentInspectionFolder" class="panel-grid-container">
               <div class="panel-sub-header" style="display:flex; align-items:center;">
                   <button @click="backToFolders" class="back-btn" title="Back to Folder List"><i class="material-icons">arrow_back</i></button>
-                  <span style="flex:1; overflow:hidden; text-overflow:ellipsis; margin-right:5px;">{{ currentInspectionFolder.path.split('/').pop() }}</span>
-                  <button @click="regenerateHeatmap(currentInspectionFolder.path, currentInspectionFolder.source)" title="Force Re-scan" style="background:none; border:none; cursor:pointer; color:#aaa;"><i class="material-icons" style="font-size:16px;">refresh</i></button>
+                  <span style="flex:1; overflow:hidden; text-overflow:ellipsis; margin-right:5px;">{{ currentInspectionFolder ? currentInspectionFolder.path.split('/').pop() : '' }}</span>
+                  <button v-if="state.user.permissions.updateMap" @click="regenerateHeatmap(currentInspectionFolder.path, currentInspectionFolder.source)" title="Force Re-scan" style="background:none; border:none; cursor:pointer; color:#aaa;"><i class="material-icons" style="font-size:16px;">refresh</i></button>
               </div>
               <div class="panel-grid">
                   <div v-for="file in displayedItems" :key="file.path" class="panel-item" @click="openQuickView(file)">
@@ -110,6 +138,7 @@ import 'leaflet.markercluster/dist/MarkerCluster.css';
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 import 'leaflet.markercluster';
 import 'leaflet.heat';
+
 import { fetchJSON } from "@/api/utils";
 import { state } from "@/store";
 import { ref, computed } from 'vue'; // Import ref and computed
@@ -139,6 +168,7 @@ const sidePanelTitle = ref("Location Inspector");
 const sidePanelData = ref([]);
 const formattedSidePanelData = ref([]); // Array of {path, count, items}
 const currentInspectionFolder = ref(null); // Reference to currently viewing folder object
+const overlaySiblings = ref([]); // Sibling GeoJSON files for overlay navigation
 const sidePanelLoading = ref(false);
 const isBoxSelectMode = ref(false); // Box Selection Mode State
 const selectionBox = ref({ visible: false, startX: 0, startY: 0, currentX: 0, currentY: 0, style: {} });
@@ -147,7 +177,7 @@ const displayedCount = ref(itemsPerPage);
 
 const displayedItems = computed(() => {
     // If viewing a folder, show its items
-    if (currentInspectionFolder.value) {
+    if (currentInspectionFolder.value && currentInspectionFolder.value.items) {
         return currentInspectionFolder.value.items.slice(0, displayedCount.value);
     }
     // Otherwise show folders list? No, "groups" are needed in the template.
@@ -187,6 +217,17 @@ const closeSidePanel = () => {
 
 // Quick View State
 const quickViewFile = ref(null);
+
+const toggleOverlay = (path) => {
+    const current = route.query.overlay;
+    const query = { ...route.query };
+    if (current === path) {
+        delete query.overlay; // Toggle Off
+    } else {
+        query.overlay = path; // Toggle On / Switch
+    }
+    router.replace({ query });
+};
 
 const openQuickView = (file) => {
     quickViewFile.value = {
@@ -403,7 +444,7 @@ const inspectLocation = async (path, source, directItems = null, coords = null, 
                         path: item.path,
                         source: item.source || source,
                         parentPath: item.path.substring(0, item.path.lastIndexOf('/')), // Grouping Key
-                        thumbUrl: getPreviewUrl(item.path, item.source || source, 'small'),
+                        thumbUrl: getPreviewUrl(item.path, item.source || source, 'thumb'),
                         // Drill-down fields
                         type: item.type,
                         count: item.count,
@@ -636,6 +677,33 @@ const showErrorNotification = () => {
 const clusterDataStore = new Map(); // Key: `${lat},${lon}`, Value: Array of all points for that location
 const renderedMarkerStore = new Map(); // Key: `${lat},${lon}`, Value: Array of L.Marker objects currently rendered for that location
 const goBack = () => {
+    // Handle Overlay Back Navigation
+    // Priority: Explicit Overlay Param -> Implicit Overlay Context (Siblings) -> Path Param
+    const effectiveOverlay = route.query.overlay || (overlaySiblings.value.length > 0 ? overlaySiblings.value[0].path : null);
+    
+    if (effectiveOverlay) {
+        const ov = effectiveOverlay;
+        const src = route.query.source || "";
+        // Get parent path
+        let parent = ov.substring(0, ov.lastIndexOf('/'));
+        if (parent === "") parent = "/";
+        
+        let cleanP = parent.startsWith('/') ? parent.substring(1) : parent;
+        // Logic to remove source prefix if present
+        if (src && cleanP.startsWith(src + '/')) {
+             cleanP = cleanP.substring(src.length + 1);
+        }
+        
+        let target = `/files/`;
+        if (state.serverHasMultipleSources && src) {
+            target += `${src}/`;
+        }
+        target += cleanP;
+        
+        router.push({ path: target }).catch(err => console.error(err));
+        return;
+    }
+
     if (route.query.source && route.query.path) {
          const src = route.query.source;
          const p = route.query.path;
@@ -798,7 +866,225 @@ const initMap = async () => {
 
     map = L.map('heatmap-container', {
         worldCopyJump: true // Enable infinite scrolling
-    }).setView([0, 0], 2);
+    });
+    
+
+
+    // GeoJSON Overlay Layer
+    let overlayLayer = null;
+
+    const fetchSiblings = async (parentPath, sourceVal) => {
+        try {
+            const apiUrl = `/api/resources?path=${encodeURIComponent(parentPath)}&source=${encodeURIComponent(sourceVal || "")}`;
+            const res = await fetchJSON(apiUrl);
+            let items = res.items || [];
+             if (!items.length && (res.files || res.folders)) {
+                 items = [...(res.folders || []), ...(res.files || [])];
+            }
+            
+            const geoFiles = items.filter(f => f.name.toLowerCase().endsWith('.geojson'));
+            
+            // Identify companion images
+            const itemMap = new Map();
+            items.forEach(f => itemMap.set(f.name, f));
+
+            overlaySiblings.value = geoFiles.map(f => {
+                const base = f.name.substring(0, f.name.lastIndexOf('.'));
+                // Check if any image exists with this base name
+                const exts = ['.jpg', '.jpeg', '.png', '.webp'];
+                let companionName = null;
+                for (const ext of exts) {
+                    if (itemMap.has(base + ext)) {
+                        companionName = base + ext;
+                        break;
+                    }
+                }
+                
+                let thumbUrl = "";
+                if (companionName) {
+                     const path = parentPath + "/" + companionName;
+                     thumbUrl = `/api/preview?path=${encodeURIComponent(path)}&source=${encodeURIComponent(sourceVal)}&size=small`;
+                }
+
+                return {
+                    name: f.name,
+                    path: parentPath + "/" + f.name,
+                    source: sourceVal,
+                    thumbUrl: thumbUrl
+                };
+            });
+            
+        } catch (e) {
+            console.error("fetchSiblings failed", e);
+        }
+    };
+
+    const loadOverlay = async () => {
+        const overlayPath = route.query.overlay;
+        const source = route.query.source;
+
+        // Cleanup existing
+        if (overlayLayer) {
+            map.removeLayer(overlayLayer);
+            overlayLayer = null;
+        }
+
+        if (!overlayPath) {
+             // Do not clear siblings
+             // Ensure panel stays open if we have overlays to show
+             if (overlaySiblings.value.length > 0) {
+                 showSidePanel.value = true;
+             }
+             return;
+        }
+
+        console.log(`[Heatmap] Loading overlay: ${overlayPath}`);
+        
+        // Trigger UI
+        showSidePanel.value = true;
+        sidePanelTitle.value = "Map Overlay"; // Update title? or keep "Location Inspector"? User requested "special separate MAP OVERLAY section". 
+        // I will keep generic title or set it.
+        // Also fetch siblings
+        const parentPath = overlayPath.substring(0, overlayPath.lastIndexOf('/'));
+        fetchSiblings(parentPath || "/", source);
+        
+        try {
+            // Fetch logic
+            // Use correct API format: /api/raw?files=SOURCE::PATH&inline=true
+            const filesParam = (source || "") + "::" + overlayPath;
+            const url = `/api/raw?files=${encodeURIComponent(filesParam)}&inline=true`;
+            
+            // Try to fetch Sidecar Style File first
+            let styleConfig = null;
+            try {
+                // Construct style path: "filename.geojson.style.json"
+                // const stylePath = overlayPath + ".style.json";
+                // Or "filename.style.json" if user prefers simpler? 
+                // Plan said: <filename>.geojson.style.json (to preserve full name and add extension)
+                const stylePath = overlayPath + ".style.json";
+                const styleParam = (source || "") + "::" + stylePath;
+                const styleUrl = `/api/raw?files=${encodeURIComponent(styleParam)}&inline=true`;
+                
+                const styleRes = await fetch(styleUrl);
+                if (styleRes.ok) {
+                    styleConfig = await styleRes.json();
+                    console.log("[Heatmap] Loaded sidecar style:", styleConfig);
+                }
+            } catch (styleErr) {
+                console.warn("[Heatmap] No sidecar style found or failed to load", styleErr);
+            }
+
+            const res = await fetch(url);
+            if (!res.ok) throw new Error("Failed to fetch geojson");
+            
+            const geoData = await res.json();
+            
+            // Helper for Feature Styling
+            const getStyleForFeature = (feature) => {
+                // Default fallback
+                let finalStyle = { color: "#ff7800", weight: 5, opacity: 0.65 };
+
+                if (!styleConfig) {
+                    // Fallback to internal properties if no sidecar
+                    if (feature.properties && feature.properties.color) {
+                         finalStyle.color = feature.properties.color;
+                    }
+                    return finalStyle;
+                }
+                
+                // 1. Apply Global Default
+                if (styleConfig.default) {
+                    finalStyle = { ...finalStyle, ...styleConfig.default };
+                }
+                
+                // 2. Apply Rules
+                if (styleConfig.rules && Array.isArray(styleConfig.rules)) {
+                    for (const rule of styleConfig.rules) {
+                        if (!rule.if || !rule.style) continue;
+                        
+                        let match = true;
+                        // Simple property match
+                        if (rule.if.property) {
+                             if (feature.properties[rule.if.property] !== rule.if.value) {
+                                 match = false;
+                             }
+                        }
+                        // ID match
+                        if (rule.if.id) {
+                            if (feature.id !== rule.if.id && feature.properties?.id !== rule.if.id) {
+                                match = false;
+                            }
+                        }
+                        
+                        if (match) {
+                            finalStyle = { ...finalStyle, ...rule.style };
+                        }
+                    }
+                }
+                
+                return finalStyle;
+            };
+
+            overlayLayer = L.geoJSON(geoData, {
+                style: getStyleForFeature,
+                onEachFeature: function (feature, layer) {
+                    if (feature.properties) {
+                        let content = "";
+                        
+                        // Title / Name
+                        if (feature.properties.name || feature.properties.Name) {
+                            content += `<b>${feature.properties.name || feature.properties.Name}</b>`;
+                        }
+                        
+                        // Description (check common keys)
+                        const desc = feature.properties.description || feature.properties.Description || feature.properties.desc || feature.properties.Desc;
+                        if (desc) {
+                            if (content) content += "<br>";
+                            content += `<div style="margin-top:5px; max-height:200px; overflow-y:auto;">${desc}</div>`;
+                        }
+
+                        if (content) {
+                            layer.bindPopup(content);
+                        }
+                    }
+                }
+            }).addTo(map);
+            
+            // Optional: Fit bounds if valid
+            // Optional: Fit bounds if valid
+            // REMOVED at user request: Do not change zoom/location when toggling overlay
+            // if (overlayLayer.getBounds().isValid()) {
+            //      map.fitBounds(overlayLayer.getBounds());
+            // }
+
+        } catch (e) {
+            console.error("[Heatmap] Failed to load overlay", e);
+            notify.showError("Failed to load map overlay");
+        }
+    };
+
+    // Watch for overlay changes
+    watch(() => route.query.overlay, () => {
+        loadOverlay();
+    });
+
+    // Clear overlay siblings if context changes (Path or Source)
+    watch(() => [route.query.path, route.query.source], (newVals, oldVals) => {
+        // Explicitly check for changes to avoid triggering on referential changes
+        const [newPath, newSource] = newVals;
+        const [oldPath, oldSource] = oldVals || [];
+        if (newPath !== oldPath || newSource !== oldSource) {
+            console.log("[Heatmap] Context changed, clearing overlay siblings.");
+            overlaySiblings.value = [];
+        }
+    });
+
+    // Check on init
+    if (route.query.overlay) {
+        loadOverlay();
+    }
+
+    map.setView([0, 0], 2);
     
     // Invalidate size to ensure it knows its dimensions
     map.invalidateSize();
@@ -893,6 +1179,7 @@ const initMap = async () => {
         inspectLocation(path, source, null, extra);
     };
 
+
     const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { 
         attribution: '&copy; OpenStreetMap contributors',
         noWrap: true
@@ -911,16 +1198,68 @@ const initMap = async () => {
         maxZoom: 20,
         noWrap: true
     });
+    
+    // Google Basemaps
+    const googleStreets = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+        maxZoom: 20,
+        attribution: 'Google',
+        noWrap: true
+    });
+    const googleHybrid = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+        maxZoom: 20,
+        attribution: 'Google',
+        noWrap: true
+    });
 
     const baseMaps = {
-        "Standard": osm,
-        "Satellite": satellite,
-        "Hybrid": topo,
-        "Dark Mode": dark
+        "Standard (OSM)": osm,
+        "Satellite (Esri)": satellite,
+        "Hybrid (Esri)": topo,
+        "Dark Mode": dark,
+        "Google Streets": googleStreets,
+        "Google Hybrid": googleHybrid
     };
     
     osm.addTo(map);
-    L.control.layers(baseMaps).addTo(map);
+    L.control.layers(baseMaps, null, { position: 'topleft' }).addTo(map);
+
+    // Custom Browser Fullscreen Control
+    L.Control.BrowserFullscreen = L.Control.extend({
+        onAdd: function(map) {
+            var container = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+            var button = L.DomUtil.create('a', 'leaflet-control-fullscreen-button', container);
+            button.href = '#';
+            button.title = 'Full Screen';
+            button.innerHTML = '<i class="material-icons" style="font-size:18px; line-height:30px;">fullscreen</i>';
+            button.style.width = '30px';
+            button.style.height = '30px';
+            button.style.textAlign = 'center';
+            button.style.backgroundColor = 'white';
+            button.style.cursor = 'pointer';
+            button.style.display = 'block';
+
+            L.DomEvent.on(button, 'click', function(e) {
+                L.DomEvent.preventDefault(e);
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen();
+                    button.innerHTML = '<i class="material-icons" style="font-size:18px; line-height:30px;">fullscreen_exit</i>';
+                    button.title = 'Exit Full Screen';
+                } else {
+                    if (document.exitFullscreen) {
+                        document.exitFullscreen();
+                        button.innerHTML = '<i class="material-icons" style="font-size:18px; line-height:30px;">fullscreen</i>';
+                        button.title = 'Full Screen';
+                    }
+                }
+            });
+
+            return container;
+        },
+        onRemove: function(map) {}
+    });
+
+    // Add custom control to map
+    new L.Control.BrowserFullscreen({ position: 'topleft' }).addTo(map);
 
     // Use MarkerClusterGroup to enable Spiderfy effect
     markers = L.markerClusterGroup({
@@ -2048,8 +2387,12 @@ onBeforeUnmount(() => {
     console.log('Heatmap cleanup complete - background loading stopped.');
 });
 
-watch(() => route.query, () => {
-    // Re-load data when query changes (but proper cleanup happens in loadData)
+watch(() => route.query, (newQ, oldQ) => {
+    // Only reload data if PATH or SOURCE changes.
+    // Overlay changes are handled by their own independent watcher and shouldn't trigger a marker reload.
+    if (newQ.path === oldQ?.path && newQ.source === oldQ?.source) {
+         return;
+    }
     loadData();
 });
 </script>
@@ -2256,6 +2599,64 @@ watch(() => route.query, () => {
     margin-top: 15px;
     display: flex;
     gap: 10px;
+}
+/* Overlay List Styles */
+.overlay-section {
+    padding: 0 0 10px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    margin-bottom: 10px;
+}
+.overlay-list-container {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    max-height: 250px; /* Limit height */
+    overflow-y: auto;
+}
+.overlay-item {
+    display: flex;
+    align-items: center;
+    padding: 5px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.2s;
+    border: 1px solid transparent;
+}
+.overlay-item:hover {
+    background: rgba(255,255,255,0.1);
+}
+.overlay-item.active {
+    background: rgba(0, 100, 200, 0.3);
+    border-color: rgba(0, 150, 255, 0.5);
+}
+.overlay-thumb-wrapper {
+    width: 32px;
+    height: 32px;
+    min-width: 32px; /* Prevent shrink */
+    margin-right: 10px;
+    border-radius: 2px;
+    overflow: hidden;
+    background: #000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+.overlay-thumb-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.overlay-icon {
+    font-size: 20px;
+    color: #aaa;
+}
+.overlay-name {
+    flex: 1;
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 </style>
 

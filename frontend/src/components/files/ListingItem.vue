@@ -29,7 +29,7 @@
     @mouseup="cancelContext($event)"
   >
     <div @click="toggleClick" :class="{ 'gallery-div': galleryView }">
-      <Icon :mimetype="type" :active="isSelected" :thumbnailUrl="thumbnailUrl" />
+      <Icon :mimetype="type" :active="isSelected" :thumbnailUrl="thumbnailUrl" :forcePreview="!!companionImage" />
     </div>
 
     <div class="text" :class="{ activecontent: isMaximized && isSelected }">
@@ -109,6 +109,7 @@ export default {
     "reducedOpacity",
     "issueData",
     "gpsData",
+    "companionImage",
   ],
   computed: {
     galleryView() {
@@ -157,7 +158,10 @@ export default {
       if (!enableThumbs) {
         return "";
       }
-      let path = url.removeTrailingSlash(state.req.path) + "/" + this.name;
+      
+      const targetName = this.companionImage || this.name;
+      
+      let path = url.removeTrailingSlash(state.req.path) + "/" + targetName;
       if (getters.currentView() == "share") {
         let urlPath = getters.routePath("share");
         // Step 1: Split the path by '/'

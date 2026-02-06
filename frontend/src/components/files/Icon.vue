@@ -39,6 +39,10 @@ export default {
       type: String,
       default: "",
     },
+    forcePreview: {
+        type: Boolean,
+        default: false
+    }
   },
   data() {
     return {
@@ -68,6 +72,9 @@ export default {
       if (this.thumbnailUrl == "") {
         return false;
       }
+      
+      if (this.forcePreview) return true;
+
       // todo support webp previews
       if (this.mimetype == "text/csv") {
         return false;

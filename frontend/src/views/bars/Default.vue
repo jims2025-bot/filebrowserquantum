@@ -7,6 +7,12 @@
       :disabled="isSearchActive"
       @action="multiAction"
     />
+    <action
+      v-if="isListingView"
+      :icon="fullscreenIcon"
+      :label="fullscreenLabel"
+      @action="toggleFullscreen"
+    />
     <div class="header-middle">
         <search v-if="showSearch" />
         <title v-else-if="isSettings" class="topTitle">{{ $t("sidebar.settings") }}</title>
@@ -20,7 +26,7 @@
       @action="openHeatmap"
     />
     <action
-      v-if="isListingView"
+      v-if="isListingView && canRegenerate"
       icon="sync"
       :label="regenerationLabel"
       :disabled="isRegenerating"
@@ -110,9 +116,19 @@ export default {
       regenerationLabel: "Regenerate Heatmap",
       regenInterval: null,
       currentFileIssue: null,
+      isFullscreen: false,
     };
   },
   computed: {
+    fullscreenIcon() {
+      return this.isFullscreen ? "fullscreen_exit" : "fullscreen";
+    },
+    fullscreenLabel() {
+      return this.isFullscreen ? "Exit Fullscreen" : "Fullscreen";
+    },
+    canRegenerate() {
+      return state.user.permissions.updateMap;
+    },
     isOnlyOffice() {
       return getters.currentView() === "onlyOfficeEditor";
     },
@@ -213,11 +229,31 @@ export default {
     this.checkRegenerationStatus();
     this.checkFileIntegrity();
     this.showHeader = true;
+    
+    // Check initial state
+    this.updateFullscreenState();
+    // Listen for changes
+    document.addEventListener("fullscreenchange", this.updateFullscreenState);
   },
   beforeDestroy() {
     if (this.regenInterval) clearInterval(this.regenInterval);
+    document.removeEventListener("fullscreenchange", this.updateFullscreenState);
   },
   methods: {
+    updateFullscreenState() {
+      this.isFullscreen = !!document.fullscreenElement;
+    },
+    toggleFullscreen() {
+      if (!document.fullscreenElement) {
+          document.documentElement.requestFullscreen().catch(err => {
+            console.error(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
+          });
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+        }
+      }
+    },
     async handleIntegrityCheck() {
         notify.showSuccess("Starting Integrity Check...");
         try {

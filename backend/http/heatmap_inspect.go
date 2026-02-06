@@ -538,7 +538,10 @@ func handleInspect(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 	}
 
 	if len(matchPoints) == 0 {
-		return http.StatusNotFound, fmt.Errorf("no cluster found at this location (radius: %f)", radius)
+		logger.Info(fmt.Sprintf("Inspect: No matches found for IDs %v (Radius: %f). Returning empty.", targetClusterIDs, radius))
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte("[]"))
+		return http.StatusOK, nil
 	}
 
 	// sanitize the points to remove heatmap.json which is not an image
