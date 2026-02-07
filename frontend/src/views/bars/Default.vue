@@ -17,6 +17,26 @@
         <search v-if="showSearch" />
         <title v-else-if="isSettings" class="topTitle">{{ $t("sidebar.settings") }}</title>
         <title v-else class="topTitle">{{ req.name }}</title>
+        
+        <!-- Map Overlays Dropdown -->
+        <div v-if="isListingView && availableMaps.length > 0" class="map-overlays-select-container">
+            <span style="white-space: nowrap; margin-right: 8px; font-size: 0.9em;">Maps in this folder:</span>
+            <select v-model="selectedMapOverlay" class="map-overlays-select">
+                <option disabled value="">Map Overlays</option>
+                <option v-for="map in availableMaps" :key="map.path" :value="map.path">
+                    {{ map.name }}
+                </option>
+            </select>
+            <button 
+                class="action" 
+                @click="viewMapOverlay('button')" 
+                title="View Map Overlay"
+                :disabled="!selectedMapOverlay"
+                style="margin-left: 5px; padding: 4px 8px; cursor: pointer;"
+            >
+                <i class="material-icons" style="font-size: 1.2em;">visibility</i>
+            </button>
+        </div>
     </div>
     
     <action
@@ -124,6 +144,7 @@ export default {
       regenInterval: null,
       currentFileIssue: null,
       isFullscreen: false,
+      selectedMapOverlay: "",
     };
   },
   computed: {
@@ -225,8 +246,23 @@ export default {
       // Show for admins only in preview mode if current file has integrity issues
       return this.isPreviewView && this.currentFileIssue !== null && state.user.permissions.admin;
     },
+    availableMaps() {
+        if (!this.req || !this.req.items) return [];
+        const maps = this.req.items
+            .filter(f => !f.isDir && f.name.toLowerCase().endsWith('.geojson'))
+            .map(f => ({
+                name: f.name,
+                path: f.path || (this.req.path === '/' ? '/' + f.name : this.req.path + '/' + f.name)
+            }));
+        console.log('[Default] Available maps:', maps);
+        return maps;
+    },
   },
+
   watch: {
+    selectedMapOverlay(newVal) {
+        console.log('[Default] selectedMapOverlay changed to:', newVal);
+    },
     req: {
       handler() {
         this.checkRegenerationStatus();
@@ -250,6 +286,25 @@ export default {
     document.removeEventListener("fullscreenchange", this.updateFullscreenState);
   },
   methods: {
+    viewMapOverlay(source) {
+        if (!this.selectedMapOverlay) return;
+
+        const overlaySource = this.req.source || "";
+        const targetPath = '/heatmap';
+        const query = { 
+            source: overlaySource, 
+            path: this.req.path, 
+            overlay: this.selectedMapOverlay,
+            fit: 'true'
+        };
+        
+        router.push({ 
+            path: targetPath, 
+            query: query 
+        }).catch(err => {
+            console.error('[Default] Router push failed:', err);
+        });
+    },
     updateFullscreenState() {
       this.isFullscreen = !!document.fullscreenElement;
     },
@@ -310,6 +365,10 @@ export default {
         // User Request: Indicate that SceneType warning is not concerning
         if (this.currentFileIssue.Warning.includes("Non-standard format (int16u) for EXIFIFD 0xa301 SceneType")) {
             message += "\n(NOTE: The SceneType warning is not an error that should be concerning.)\n";
+        }
+        // User Request: Indicate that Wrong IFD for ImageWidth is not concerning
+        if (this.currentFileIssue.Warning.includes("Wrong IFD for 0x0100 ImageWidth")) {
+            message += "\n(NOTE: This warning is about metadata placement, not image data integrity, and NOT critical. Actual pixel dimensions live in the JPEG SOF marker, not EXIF.)\n";
         }
       }
       if (this.currentFileIssue.FileSize && this.currentFileIssue.FileSize < 20000) {
@@ -506,6 +565,41 @@ header {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* Map Overlays Dropdown */
+.map-overlays-select-container {
+    margin-left: 10px;
+    display: flex;
+    align-items: center;
+}
+
+.map-overlays-select {
+    background-color: rgba(0, 0, 0, 0.1);
+    color: inherit;
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 0.9em;
+    cursor: pointer;
+    outline: none;
+    max-width: 150px;
+}
+
+.dark-mode-header .map-overlays-select {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+.map-overlays-select option {
+    background-color: white;
+    color: black;
+}
+
+.dark-mode-header .map-overlays-select option {
+    background-color: #333;
+    color: white;
 }
 
 /* Heatmap progress banner */

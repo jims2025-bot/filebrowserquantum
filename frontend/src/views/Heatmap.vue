@@ -1297,12 +1297,11 @@ const initMap = async () => {
                 }
             }).addTo(map);
             
-            // Optional: Fit bounds if valid
-            // Optional: Fit bounds if valid
-            // REMOVED at user request: Do not change zoom/location when toggling overlay
-            // if (overlayLayer.getBounds().isValid()) {
-            //      map.fitBounds(overlayLayer.getBounds());
-            // }
+            // Check if we should fit bounds (e.g. initial load from listing)
+            if (route.query.fit === 'true' && overlayLayer.getBounds().isValid()) {
+                 console.log("[Heatmap] Fitting bounds to overlay as requested");
+                 map.fitBounds(overlayLayer.getBounds());
+            }
 
         } catch (e) {
             console.error("[Heatmap] Failed to load overlay", e);
