@@ -40,10 +40,10 @@
            :title="`Location: ${gpsData.lat.toFixed(4)}, ${gpsData.lon.toFixed(4)}`">
           public
         </i>
-        <i v-if="issueData && issueData.Severity === 'minor'" 
+        <i v-if="issueData && issueData.Severity === 'minor' && isAdmin" 
            class="material-icons file-issue-icon file-issue-minor" 
            title="Minor metadata issues detected">warning</i>
-        <i v-else-if="issueData && issueData.Severity === 'critical'" 
+        <i v-else-if="issueData && issueData.Severity === 'critical' && isAdmin" 
            class="material-icons file-issue-icon file-issue-critical" 
            title="Critical integrity issues detected">error</i>
       </p>
@@ -129,6 +129,9 @@ export default {
     },
     user() {
       return state.user;
+    },
+    isAdmin() {
+      return state.user.permissions.admin;
     },
     selected() {
       return state.selected;

@@ -38,6 +38,12 @@
       label="Integrity Check"
       @action="handleIntegrityCheck"
     />
+     <action
+      v-if="showThumbnailFix"
+      icon="build"
+      :label="$t('files.fixThumbnails')"
+      @action="confirmThumbnailFix"
+    />
     <action
       v-if="isListingView"
       :icon="viewIcon"
@@ -100,6 +106,7 @@ import Action from "@/components/Action.vue";
 import Search from "@/components/Search.vue";
 import * as filesApi from "@/api/files";
 import { notify } from "@/notify";
+import { fixThumbnails } from "@/api/files";
 
 export default {
   name: "UnifiedHeader",
@@ -211,9 +218,12 @@ export default {
       // FIX: Use permissions, not perm.
       return getters.currentView() === 'listingView' && state.user.permissions.admin;
     },
+    showThumbnailFix() {
+       return getters.currentView() === 'listingView' && state.user.permissions.admin;
+    },
     showFileIssueButton() {
-      // Show for all users in preview mode if current file has integrity issues
-      return this.isPreviewView && this.currentFileIssue !== null;
+      // Show for admins only in preview mode if current file has integrity issues
+      return this.isPreviewView && this.currentFileIssue !== null && state.user.permissions.admin;
     },
   },
   watch: {
@@ -259,9 +269,24 @@ export default {
         try {
             await filesApi.scanIntegrity(this.req.source, this.req.path);
             notify.showSuccess("Integrity Check Complete. Check logs/files.");
+            mutations.setReload(true);
         } catch (e) {
             notify.showError(e.message);
         }
+    },
+    confirmThumbnailFix() {
+       if (confirm("Are you sure you want to run this action on all files in this folder and subfolders?\n\nThis will repair IPTCDigest issues and fix Thumbnail Tags in the EXIF.")) {
+           this.handleThumbnailFix();
+       }
+    },
+    async handleThumbnailFix() {
+       notify.showSuccess("Thumbnail fix job started...");
+       try {
+         await fixThumbnails(this.req.source, this.req.path);
+         notify.showSuccess("Thumbnail fix job done!");
+       } catch (e) {
+          notify.showError("Thumbnail fix failed: " + e.message);
+       }
     },
     async checkFileIntegrity() {
       if (!this.isPreviewView || !this.req || !this.req.source || !this.req.path) {
@@ -282,6 +307,10 @@ export default {
       }
       if (this.currentFileIssue.Warning) {
         message += `Warning: ${this.currentFileIssue.Warning}\n`;
+        // User Request: Indicate that SceneType warning is not concerning
+        if (this.currentFileIssue.Warning.includes("Non-standard format (int16u) for EXIFIFD 0xa301 SceneType")) {
+            message += "\n(NOTE: The SceneType warning is not an error that should be concerning.)\n";
+        }
       }
       if (this.currentFileIssue.FileSize && this.currentFileIssue.FileSize < 20000) {
         message += `File Size: ${this.currentFileIssue.FileSize} bytes (below 20KB threshold)\n`;

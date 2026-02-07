@@ -6,6 +6,7 @@
           <i class="material-icons">home</i>
         </router-link>
       </li>
+
       <li class="item" v-for="(link, index) in items" :key="index">
         <router-link
           :to="link.url"
@@ -159,6 +160,8 @@ export default {
   align-content: center;
   align-items: center;
 }
+
+
 
 #breadcrumbs ul li a::after {
   content: "";

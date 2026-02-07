@@ -245,11 +245,19 @@ func GetMetadata(filePath string) (map[string]interface{}, error) {
 func WriteXMPInstructions(filePath, instructions string) error {
 	log.Printf("WriteXMPInstructions called on %s with %s", filePath, instructions)
 
+	// User Request: Use specific command to fix IPTCDigest integrity issues
+	// exiftool -m -overwrite_original \
+	//   -IPTC:SpecialInstructions="YOUR TEXT" \
+	//   -XMP-photoshop:Instructions<IPTC:SpecialInstructions \
+	//   -IPTCDigest=new \
+	//   "PATH/TO/FILE.jpg"
+
 	cmd := exec.Command("exiftool",
 		"-m",
 		"-overwrite_original",
-		fmt.Sprintf("-XMP-photoshop:Instructions=%s", instructions),
 		fmt.Sprintf("-IPTC:SpecialInstructions=%s", instructions),
+		"-XMP-photoshop:Instructions<IPTC:SpecialInstructions", // Copy value from IPTC to XMP
+		"-IPTCDigest=new", // Regenerate digest to guarantee integrity
 		filePath,
 	)
 
@@ -547,4 +555,40 @@ func Exists(path string) bool {
 		return false
 	}
 	return false
+}
+
+// FixThumbnailResolution recursively finds and updates thumbnail resolution in images
+// using exiftool.
+func FixThumbnailResolution(path string) error {
+	logger.Infof("Starting recursive thumbnail fix for directory: %s", path)
+
+	// User Request Command:
+	// exiftool -m -overwrite_original -tagsfromfile @ ^
+	//  "-IFD0:XResolution>IFD1:XResolution" ^
+	//  "-IFD0:YResolution>IFD1:YResolution" ^
+	//  "-IFD0:ResolutionUnit>IFD1:ResolutionUnit" ^
+	//  -IPTCDigest=new ^
+	//  -r "E:\PERSONAL\PHOTOS\PHOTOCOLLECTIONS\SHANTONGA-COLLECTION\2015\05-17-2015-ENGLAND"
+
+	cmd := exec.Command("exiftool",
+		"-m",
+		"-overwrite_original",
+		"-tagsfromfile", "@",
+		"-IFD0:XResolution>IFD1:XResolution",
+		"-IFD0:YResolution>IFD1:YResolution",
+		"-IFD0:ResolutionUnit>IFD1:ResolutionUnit",
+		"-IPTCDigest=new",
+		"-r",
+		path,
+	)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		logger.Errorf("Exiftool failed to fix thumbnails: %v\nOutput: %s", err, string(output))
+		return fmt.Errorf("exiftool failed: %s: %w", string(output), err)
+	}
+
+	logger.Infof("Successfully finished recursive thumbnail fix for: %s", path)
+	logger.Debugf("Exiftool output: %s", string(output))
+	return nil
 }

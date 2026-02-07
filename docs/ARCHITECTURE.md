@@ -4,15 +4,20 @@
 1. [Heatmap Cluster ID Architecture](#heatmap-cluster-id-architecture)
 2. [Backend Architecture](#backend-architecture)
 3. [Frontend Architecture](#frontend-architecture)
-4. [Data Flow](#data-flow)
-5. [Image Editing Features](#image-editing-features)
+4. [File Viewing](#file-viewing)
+5. [Data Flow](#data-flow)
+6. [Image Editing Features](#image-editing-features)
     - [Map Tab Details](#2-location-editing-map-tab)
     - [Rotation](#3-image-rotation-temporary)
-6. [Server Permissions](#collection-folder-permissions)
+7. [Server Permissions](#collection-folder-permissions)
+8. [Administrative Functions](#administrative-functions)
+9. [Documentation Notes](#documentation-notes)
 
 ---
 
 ## Heatmap Cluster ID Architecture
+
+[↑ Back to Top](#table-of-contents)
 
 ### Overview
 The heatmap system creates geographic clusters of images based on GPS coordinates and percolates them up through the folder hierarchy.
@@ -120,6 +125,8 @@ To allow users to fix missing or corrupted data without a full system re-scan:
 
 ## Backend Architecture
 
+[↑ Back to Top](#table-of-contents)
+
 ### Directory Structure
 
 ```
@@ -221,6 +228,8 @@ PercolateUp (update parents)
 
 ## Frontend Architecture
 
+[↑ Back to Top](#table-of-contents)
+
 ### Directory Structure
 
 ```
@@ -288,8 +297,8 @@ frontend/src/
 - Vector tile rendering
 - Cluster markers with count badges
 - Inspection panel (side drawer)
-- Folder grouping
-- Quick view modal
+- Folder grouping & navigation
+- Quick view modal with file details
 
 **Key Functions**:
 - `loadHeatmapData()`: Fetch global heatmap
@@ -297,25 +306,32 @@ frontend/src/
 - `generateMarkerIcon()`: Create thumbnail markers
 
 #### 5. Inspection Panel
-**Location**: `frontend/src/views/Heatmap.vue` (lines 22-66)
+**Location**: `frontend/src/views/Heatmap.vue`
 
 **Purpose**: Side drawer that displays images from a clicked cluster.
 
+**Performance Optimization (EXIF Thumbnails)**:
+To ensure instant loading even for clusters with hundreds of images, the inspection panel specifically requests thumbnails with `size=small`.
+- **Backend Behavior**: The backend detects `size=small` and prioritizes extracting the **embedded EXIF thumbnail** from the JPEG file (approx. 5-10ms) instead of decoding and resizing the full multi-megabyte image (approx. 100-500ms).
+- **Result**: Drastically reduced CPU usage and memory footprint during inspection.
+
 **Two-Level Navigation**:
 
-1. **Folder List View** (when multiple folders):
-   - Shows folders grouped by parent path
-   - Displays folder name and item count
-   - Click folder to drill down
-   - **Image Retrieval**: When drilling down, the backend uses the cluster ID from the top-level heatmap.json to locate the corresponding cluster in the leaf folder's heatmap.json. All images from that cluster are retrieved as individual URLs (no spatial search needed) and displayed as small thumbnails for fast loading.
+1. **Folder List / Cluster Grouped View** (Tablets/Touch):
+   - **Grouped Layout**: Thumbnails are visually grouped by their Cluster ID.
+   - **Colored Sidebars**: Each group has a unique colored bar (hash of Cluster ID) for visual distinction.
+    - **Zoom Target**: The sidebar contains a large "Target" icon (`my_location`). Tapping it flies the map to that cluster's location (Zoom 16) and triggers a visual "flash".
+    - **Sticky Header**: The folder name and navigation controls are sticky at the top, ensuring navigation is available even when scrolling long lists.
+    - **Clickable Folder Name**: Tapping the truncated folder name in the header navigates directly to that folder in the file browser.
+    - **Thumbnail Sizing**: Thumbnails are sized to fit two per row (50% width) for optimal visibility on tablets.
 
-2. **Image Grid View** (inside folder):
-   - Thumbnail grid (256x256 images)
-   - Lazy loading for performance
-   - Pagination ("Load More" button)
-   - Two actions per image:
-     - **Quick View**: Modal preview
-     - **Open Folder**: Navigate to file browser
+2.  **Item Grid View**:
+    - **Simplified Thumbnails**:
+        - No overlay buttons (View/Folder) to obscure the image.
+        - Filename displayed below the image (truncated).
+    - **Lazy Loading**: Efficiently loads images as the user scrolls.
+    - **Pagination**: "Load More" button for large lists.
+    - **Interaction**: Clicking an image opens the **Quick View Modal**.
 
 **Data Flow**:
 ```javascript
@@ -361,9 +377,104 @@ inspectLocation(coords) {
 - Hover effects on thumbnails
 - Responsive (mobile: full width)
 
+#### 6. Dynamic Leader Lines
+**Location**: `frontend/src/views/Heatmap.vue` (Lines 298-380)
+
+**Purpose**: Visually connects the inspection panel content to its geographic origin on the map.
+
+**Features**:
+- **Interactive**: Appears when hovering over the color-coded cluster bar in the side panel.
+- **Dynamic**: Updates in real-time during map panning, zooming, and resizing.
+- **Visuals**: Dashed red line with animated start point, arrowhead endpoint, and glow filter for visibility.
+
+**Implementation Details**:
+1. **SVG Overlay**: Uses a full-screen `<svg>` element with `pointer-events: none` to avoid blocking map interactions.
+2. **Coordinate Transformation**:
+   - **Challenge**: The SVG overlay is positioned absolute at `(0,0)` of the viewport, but the Leaflet map container is often offset (e.g., by the global header).
+   - **Solution**: The line calculation transforms coordinates from "Map Container Space" to "Screen Space" and then to "SVG Space":
+     ```javascript
+     point = map.latLngToContainerPoint(target)
+     screenY = point.y + mapRect.top
+     svgY = screenY - svgRect.top
+     ```
+3. **Centroid Targeting**:
+   - **Problem**: A cluster connects items that may be far apart. Pointing to the "first item" often results in the line pointing to an arbitrary edge location.
+   - **Solution**: The system calculates the **geometric centroid** (average lat/lon) of all items in the displayed cluster group.
+   - **Fallback**: If `lat/lon` are missing on the item wrapper, it intelligently looks for nested `item.exif.latitude` data to ensure accuracy.
+
+---
+
+
+
+### Quick View Modal
+
+The Quick View modal provides a high-res preview without leaving the map context.
+
+- **Header Bar**:
+  - Displays **Path** (truncated).
+  - **Go to Image Button**: Navigates to the full file preview page (allows map editing/notes).
+  - **Open Folder Button**: Navigates to the file browser folder.
+  - **Close Button**: Large touch target for easy closing.
+- **Image**:
+  - Fetched with `size=large`.
+  - Centered and scaled to fit the modal.
+- **Aesthetics**:
+  - Soft semi-transparent background (`rgba(44, 62, 80, 0.95)`).
+  - Wide button spacing for touch usability ("fat finger" protection).
+
+## File Viewing
+
+[↑ Back to Top](#table-of-contents)
+
+### .GeoJson Map Overlays
+See [GeoJSON Visualization](#geojson-visualization) for detailed architecture.
+
+### GeoJSON Visualization
+
+#### Overview
+The system supports rendering standard GeoJSON files as map overlays when browsing folders in the Heatmap view.
+
+#### Discovery & Rendering
+1. **Scanning**: When entering a folder on the map, the frontend filters the file list for `.geojson` extensions.
+2. **Overlay**: These files are fetched and rendered using Leaflet's `L.geoJSON` layer.
+3. **Navigation**: A dropdown menu allows toggling between available GeoJSON overlays in the current folder.
+
+#### Styling (Sidecar Files)
+To allow custom styling without modifying the GeoJSON data itself, the system uses a **Sidecar Style File**.
+
+- **Filename**: `<original_name>.geojson.style.json`
+- **Format**: JSON object containing Leaflet path options (color, weight, opacity, etc.) based on feature properties.
+- **Example**:
+  ```json
+  {
+    "default": {
+        "color": "#3388ff",
+        "weight": 3,
+        "opacity": 1.0,
+        "fillOpacity": 0.2
+    },
+    "rules": [
+        {
+            "if": { "property": "risk_level", "value": "high" },
+            "style": { "color": "#ff0000", "weight": 5 }
+        },
+        {
+            "if": { "property": "type", "value": "boundary" },
+            "style": { "color": "#000000", "dashArray": "5, 5" }
+        },
+        {
+            "if": { "property": "Name", "value": "Geneva to Zurich" },
+            "style": { "color": "#002fff", "weight": 3, "opacity": 0.9 }
+        }
+    ]
+  }
+  ```
+
 ---
 
 ## Image Editing Features
+
+[↑ Back to Top](#table-of-contents)
 
 ### Overview
 The Preview component (`frontend/src/views/files/Preview.vue`) provides two main editing capabilities:
@@ -644,6 +755,8 @@ Preview.vue (watch raw) → mutations.resetPreviewRotation()
 ---
 
 ## Data Flow
+
+[↑ Back to Top](#table-of-contents)
 
 ### File Upload Flow
 
@@ -1232,3 +1345,59 @@ Audio files use the same architecture but with the `<audio>` element:
 **Supported Formats**: MP3, WAV, OGG, M4A, AAC
 
 ---
+
+
+## Server Permissions
+
+[↑ Back to Top](#table-of-contents)
+
+### Overview
+Users can be assigned specific permissions (e.g., admin, create, rename, delete) to control their meaningful actions within the file browser.
+
+### Map Location Permissions
+- **Permission**: updateMap`n- **Purpose**: Controls access to map regeneration and coordinate editing.
+- **Frontend Effect**: Hides `Regenerate Heatmap` button and disables map editing inputs if permission is missing.
+
+---
+
+## Documentation Notes
+
+[↑ Back to Top](#table-of-contents)
+
+### Pending Updates & Ideas
+<!-- 
+Use this section to add notes, pending architecture changes, or ideas that need to be incorporated into the documentation. 
+The AI assistant can read this section to understand what needs to be updated.
+-->
+
+### Administrative Functions
+
+The application includes several advanced features restricted to users with **Admin** privileges to prevent misuse and clutter for standard users.
+
+#### 1. Integrity Check
+- **Feature**: "Integrity Check" button (`safety_check`) in the main header.
+- **Purpose**: Scans the current folder for file corruption, missing metadata, or database inconsistencies.
+- **Restriction**: **Admin Only**.
+- **Icons**:
+    - **Yellow Warning (⚠️)**: Minor issues (e.g., non-standard EXIF).
+    - **Red Error (🚫)**: Critical issues (e.g., file corruption, zero bytes).
+    - **Visibility**: These icons appear in the file list and inside the image preview (via "View Issue" button) **only for Admins**.
+
+#### 2. Thumbnail Repair
+- **Feature**: "Fix Thumbnails" button (`build`) in the main header.
+- **Purpose**: Forces regeneration of EXIF thumbnails and embedded metadata for all files in the folder (recursive).
+- **Restriction**: **Admin Only**.
+- **Use Case**: Used when thumbnails appear black or corrupted due to bad existing embedded data.
+
+#### 3. Heatmap Regeneration
+- **Feature**: "Regenerate Heatmap" button (`sync`) in the header.
+- **Purpose**: Manually triggers the geographic clustering process for the current folder.
+- **Restriction**: Requires `updateMap` permission (often assigned to Admins).
+- **Rationale**: Resource-intensive operation.
+
+#### 4. Settings Management
+- **Feature**: Access to the global "Settings" page.
+- **Purpose**: Configure user accounts, permissions, and system-wide preferences.
+- **Restriction**: **Admin Only**. 
+
+

@@ -146,6 +146,7 @@ func StartHttp(ctx context.Context, storage *storage.Storage, shutdownComplete c
 	// XMP Instructions routes
 	api.HandleFunc("GET /resources/instructions", withUser(resourceGetInstructionsHandler))
 	api.HandleFunc("POST /resources/instructions", withUser(resourceInstructionsHandler))
+	api.HandleFunc("POST /resources/thumbnails/fix", withAdmin(resourceFixThumbnailsHandler))
 
 	apiPath := config.Server.BaseURL + "api"
 	router.Handle(apiPath+"/", http.StripPrefix(apiPath, api))

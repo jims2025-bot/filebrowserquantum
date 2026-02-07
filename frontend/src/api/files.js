@@ -468,8 +468,34 @@ export async function getHeatmapForFolder(source, folderPath) {
     return await res.json();
   } catch (err) {
     console.error('Error fetching heatmap.json:', err);
+
+
+
     return null;
   }
 }
 
+export async function fixThumbnails(source, path) {
+  try {
+    const apiPath = getApiPath('api/resources/thumbnails/fix', {
+      path: encodeURIComponent(path),
+      source: source
+    });
 
+    const res = await fetchURL(apiPath, {
+      method: "POST",
+      headers: {
+        'X-Auth': state.jwt
+      }
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(errorText || `HTTP error! status: ${res.status}`);
+    }
+    return res;
+  } catch (err) {
+    notify.showError(err.message || 'Error executing thumbnail fix');
+    throw err;
+  }
+}

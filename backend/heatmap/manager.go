@@ -205,7 +205,9 @@ func StartJob(store *storage.Storage, onComplete func()) {
 		go monitorActiveScans()
 
 		// Wait for initial index to populate (large repos take time)
-		time.Sleep(30 * time.Second)
+		// User Request: Do not run scan on startup. Wait for the first interval.
+		logger.Info(fmt.Sprintf("Heatmap: Scan job scheduled. First scan in %d days.", ScanIntervalDays))
+		time.Sleep(time.Duration(ScanIntervalDays) * 24 * time.Hour)
 		for {
 			logger.Info("Starting Heatmap Generation Job")
 			logger.Info(fmt.Sprintf("Heatmap.json version = %d", HeatmapVersion))

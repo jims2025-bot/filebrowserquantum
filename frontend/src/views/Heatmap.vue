@@ -16,6 +16,30 @@
       <button @click="toggleSelectionMode" style="background:none; border:none; color:white; cursor:pointer; font-weight:bold;">CANCEL</button>
   </div>
   
+  <!-- LEADER LINE OVERLAY -->
+  <svg v-if="leaderLine.visible" 
+       ref="leaderLineSvg"
+       :width="leaderLine.svgWidth"
+       :height="leaderLine.svgHeight"
+       style="position:absolute; top:0; left:0; z-index:9000; pointer-events:none;">
+      <defs>
+        <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+          <polygon points="0 0, 10 3.5, 0 7" fill="red" />
+        </marker>
+        <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation="2" result="blur" />
+          <feComposite in="SourceGraphic" in2="blur" operator="over" />
+        </filter>
+      </defs>
+      <line :x1="leaderLine.x1" :y1="leaderLine.y1" 
+            :x2="leaderLine.x2" :y2="leaderLine.y2" 
+            stroke="red" stroke-width="2" 
+            stroke-dasharray="5,5"
+            marker-end="url(#arrowhead)"
+            filter="url(#glow)" />
+      <circle :cx="leaderLine.x2" :cy="leaderLine.y2" r="4" fill="red" />
+  </svg>
+  
   <!-- Map Header Toolbar -->
   <div style="position:absolute; top:10px; right:10px; z-index:2000; display:flex; gap:10px;">
       <button @click="toggleSelectionMode" :title="isBoxSelectMode ? 'Cancel Selection' : 'Select Area'" class="button button--flat" :style="isBoxSelectMode ? 'background:rgba(255,100,0,0.8); color:white;' : 'background:rgba(255,255,255,0.9); color:#333; box-shadow:0 2px 4px rgba(0,0,0,0.2);'">
@@ -43,11 +67,44 @@
       Status: {{ debugStatus }}
   </div>
   <!-- Side Panel for Inspection -->
+  <!-- Side Panel for Inspection -->
   <div v-if="showSidePanel" class="heatmap-side-panel">
-      <div class="panel-header">
-          <span>{{ sidePanelTitle }}</span>
-          <button @click="closeSidePanel" class="close-btn"><i class="material-icons">close</i></button>
+      <!-- Unified Header (Inline Styled for reliability) -->
+      <div class="panel-header" :class="{ 'with-nav': currentInspectionFolder }" 
+           style="display:flex; flex-direction:column; padding:8px 16px; background-color:#2c3e50; border-bottom:1px solid rgba(255,255,255,0.1); width:100%; box-sizing:border-box;">
+          
+          <!-- Row 1: Controls -->
+          <div class="panel-controls-row" style="display:flex; width:100%; align-items:center; justify-content:space-between; margin-bottom:4px;">
+              <button v-if="currentInspectionFolder" @click="backToFolders" class="back-btn" title="Back to Folder List"
+                      style="background:transparent; border:none; color:#b0bec5; cursor:pointer; padding:6px; display:flex; align-items:center;">
+                  <i class="material-icons" style="font-size:18px;">arrow_back</i>
+              </button>
+              
+              <div class="spacer" style="flex:1;"></div>
+
+              <button v-if="currentInspectionFolder && state.user.permissions.updateMap" 
+                      @click="regenerateHeatmap(currentInspectionFolder.path, currentInspectionFolder.source)" 
+                      class="panel-action-btn refresh" 
+                      title="Force Re-scan"
+                      style="background:transparent; border:none; color:#b0bec5; cursor:pointer; padding:6px; display:flex; align-items:center;">
+                  <i class="material-icons" style="font-size:18px;">refresh</i>
+              </button>
+              <button @click="closeSidePanel" class="panel-action-btn close" title="Close Panel"
+                      style="background:transparent; border:none; color:#b0bec5; cursor:pointer; padding:6px; display:flex; align-items:center;">
+                  <i class="material-icons" style="font-size:18px;">close</i>
+              </button>
+          </div>
+          
+          <!-- Row 2: Folder Name -->
+          <div class="panel-folder-row" style="width:100%; text-align:center; padding-bottom:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+              <span v-if="!currentInspectionFolder" class="panel-title-text" style="font-weight:bold; font-size:1rem; color:white;">{{ sidePanelTitle }}</span>
+              <span v-else class="panel-folder-name small" @click="navToFolder(currentInspectionFolder)" :title="currentInspectionFolder.path"
+                    style="font-size:0.9rem; font-weight:500; cursor:pointer; color:#42a5f5; text-decoration:underline;">
+                  {{ currentInspectionFolder.path.split('/').pop() }}
+              </span>
+          </div>
       </div>
+
       <div class="panel-content">
           <div v-if="sidePanelLoading" class="panel-loading">Loading...</div>
           
@@ -94,17 +151,23 @@
 
           <!-- Image Grid (Inside Folder) -->
           <div v-else-if="currentInspectionFolder" class="panel-grid-container">
-              <div class="panel-sub-header" style="display:flex; align-items:center;">
-                  <button @click="backToFolders" class="back-btn" title="Back to Folder List"><i class="material-icons">arrow_back</i></button>
-                  <span style="flex:1; overflow:hidden; text-overflow:ellipsis; margin-right:5px;">{{ currentInspectionFolder ? currentInspectionFolder.path.split('/').pop() : '' }}</span>
-                  <button v-if="state.user.permissions.updateMap" @click="regenerateHeatmap(currentInspectionFolder.path, currentInspectionFolder.source)" title="Force Re-scan" style="background:none; border:none; cursor:pointer; color:#aaa;"><i class="material-icons" style="font-size:16px;">refresh</i></button>
-              </div>
-              <div class="panel-grid">
-                  <div v-for="file in displayedItems" :key="file.path" class="panel-item" @click="openQuickView(file)">
-                      <img :src="file.thumbUrl" class="panel-thumb" loading="lazy">
-                      <div class="panel-actions">
-                          <button @click.stop="openQuickView(file)" title="Quick View"><i class="material-icons">visibility</i></button>
-                          <button @click.stop="navToFolder(file)" title="Open Folder"><i class="material-icons">folder</i></button>
+              <!-- Sticky header removed as it is now merged into main header -->
+              
+              <div class="panel-grid-grouped">
+                  <div v-for="group in groupedDisplayedItems" :key="group.clusterID" class="cluster-group">
+                      <div class="cluster-sidebar" 
+                           :style="{ backgroundColor: group.color }" 
+                           @click="zoomToLocation(group.lat, group.lon)" 
+                           @mouseenter="drawLeaderLine($event, group.lat, group.lon)"
+                           @mouseleave="clearLeaderLine"
+                           title="Zoom to this cluster">
+                          <i class="material-icons cluster-target-icon">my_location</i>
+                      </div>
+                      <div class="cluster-items-grid">
+                          <div v-for="file in group.items" :key="file.path" class="panel-item" @click="openQuickView(file)">
+                              <img :src="file.thumbUrl" class="panel-thumb" loading="lazy">
+                              <span class="panel-item-name">{{ file.name }}</span>
+                          </div>
                       </div>
                   </div>
               </div>
@@ -117,13 +180,31 @@
       </div>
   </div>
 
-  <!-- Quick View Modal -->
-  <div v-if="quickViewFile" class="quick-view-modal" @click="closeQuickView">
-      <div class="quick-view-content" @click.stop>
-          <img :src="quickViewFile.previewUrl" class="quick-view-img">
-          <button class="quick-view-close" @click="closeQuickView"><i class="material-icons">close</i></button>
-          <div class="quick-view-actions">
-               <button @click="navToFolder(quickViewFile)" class="button button--flat">Open Folder</button>
+  <!-- Quick View Modal (Inline Styled for reliability) -->
+  <div v-if="quickViewFile" class="quick-view-modal" @click="closeQuickView"
+       style="position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:10000; background:rgba(0,0,0,0.8); display:flex; justify-content:center; align-items:center; overflow:hidden;">
+      
+      <!-- Content Frame (Blue Background acts as border) -->
+      <div class="quick-view-content" @click.stop
+           style="display:inline-flex; flex-direction:column; width:auto; max-width:90vw; max-height:90vh; background-color:rgba(59, 82, 206, 0.9); padding:6px; box-shadow:0 14px 40px rgba(0,0,0,0.8); border-radius:4px; box-sizing:border-box;">
+          
+          <!-- Controls (Top, Static flow) -->
+          <div class="quick-view-header controls-only" style="width:100%; display:flex; justify-content:flex-end; padding-bottom:6px;">
+              <div class="quick-view-controls" style="padding:0; display:flex; gap:12px;">
+                  <button @click="navToFile(quickViewFile)" class="qv-btn" title="Go to Image" style="background:transparent; border:none; color:white; cursor:pointer;"><i class="material-icons">image</i></button>
+                  <button @click="navToFolder(quickViewFile)" class="qv-btn" title="Open Folder" style="background:transparent; border:none; color:white; cursor:pointer;"><i class="material-icons">folder</i></button>
+                  <button @click="closeQuickView" class="qv-btn close" style="background:transparent; border:none; color:white; cursor:pointer;"><i class="material-icons">close</i></button>
+              </div>
+          </div>
+          
+          <!-- Image (Drives Width) -->
+          <img :src="quickViewFile.previewUrl" class="quick-view-img"
+               style="flex:1; display:block; width:auto; object-fit:contain; background:black; max-height:calc(90vh - 100px);">
+          
+          <!-- Footer (Text at bottom, wrapped) -->
+          <div class="quick-view-footer"
+               style="width:0; min-width:100%; box-sizing:border-box; padding:8px 4px 4px 4px;">
+               <span class="quick-view-path" style="white-space:pre-wrap; word-break:break-word; color:white; font-size:0.9em; font-weight:500; line-height:1.3;">{{ quickViewFile.path }}</span>
           </div>
       </div>
   </div>
@@ -174,6 +255,8 @@ const isBoxSelectMode = ref(false); // Box Selection Mode State
 const selectionBox = ref({ visible: false, startX: 0, startY: 0, currentX: 0, currentY: 0, style: {} });
 const itemsPerPage = 50;
 const displayedCount = ref(itemsPerPage);
+const leaderLine = ref({ visible: false, x1: 0, y1: 0, x2: 0, y2: 0, targetLat: null, targetLon: null, startEl: null, svgWidth: 0, svgHeight: 0 });
+const leaderLineSvg = ref(null);
 
 const displayedItems = computed(() => {
     // If viewing a folder, show its items
@@ -183,6 +266,157 @@ const displayedItems = computed(() => {
     // Otherwise show folders list? No, "groups" are needed in the template.
     return [];
 });
+
+const getClusterColor = (str) => {
+    if (!str) return '#ccc';
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const c = (hash & 0x00FFFFFF).toString(16).toUpperCase();
+    return '#' + '00000'.substring(0, 6 - c.length) + c;
+};
+
+const groupedDisplayedItems = computed(() => {
+    const items = displayedItems.value;
+    if (!items || items.length === 0) return [];
+
+    const groups = {};
+    items.forEach(item => {
+        const cid = item.clusterID || 'unknown';
+        if (!groups[cid]) {
+            groups[cid] = {
+                clusterID: cid,
+                color: getClusterColor(String(cid)),
+                lat: 0,
+                lon: 0,
+                count: 0,
+                items: []
+            };
+        }
+        groups[cid].items.push(item);
+        
+        // DEBUG: Check where coordinates are
+        // console.log("Debug Item Coords:", item.path, item.lat, item.lon, item.exif);
+
+        // Handle various coordinate locations
+        let lat = item.lat;
+        let lon = item.lon;
+        
+        if (lat === undefined && item.exif) {
+             lat = item.exif.latitude;
+             lon = item.exif.longitude;
+        }
+        
+        // If still undefined, we cannot use this item for centroid
+        if (lat !== undefined && lon !== undefined) {
+            groups[cid].lat += Number(lat);
+            groups[cid].lon += Number(lon);
+            groups[cid].count++;
+        }
+    });
+    
+    // Average coordinates
+    return Object.values(groups).map(g => {
+        if (g.count > 0) {
+            g.lat = g.lat / g.count;
+            g.lon = g.lon / g.count;
+        }
+        return g;
+    });
+});
+
+// Dynamic Leader Line Logic
+const updateVisibleMarkers = () => {
+    // Placeholder to prevent ReferenceError. 
+    // Logic for filtering sidebar items by map bounds can be added here if needed.
+};
+
+const drawLeaderLine = (event, lat, lon) => {
+    if (!map || !lat || !lon) return;
+
+    // Store target and element for dynamic updates
+    leaderLine.value.targetLat = lat;
+    leaderLine.value.targetLon = lon;
+    leaderLine.value.startEl = event.currentTarget;
+
+    // Show first, then update position after render
+    leaderLine.value.visible = true;
+    nextTick(() => {
+        updateLeaderLine();
+    });
+};
+
+const updateLeaderLine = () => {
+   if (!leaderLine.value.visible || !leaderLine.value.startEl || !map) return;
+   
+   // 1. Ensure SVG matches map container size EXACTLY to avoid scaling
+   const mapSize = map.getSize();
+   leaderLine.value.svgWidth = mapSize.x;
+   leaderLine.value.svgHeight = mapSize.y;
+
+   // 2. Get Button and SVG Rects
+   const buttonRect = leaderLine.value.startEl.getBoundingClientRect();
+   const svgEl = leaderLineSvg.value;
+   if (!svgEl) return;
+   
+   // FORCE SVG to be same size as map (if not updated by reactivity yet)
+   // But we rely on Vue.
+   const svgRect = svgEl.getBoundingClientRect();
+
+   // 3. Start Point (Side Panel Button) - Relative to SVG
+   const x1 = buttonRect.right - svgRect.left; 
+   const y1 = (buttonRect.top + (buttonRect.height / 2)) - svgRect.top;
+
+   // 4. Get Map Point logic
+   // map.latLngToContainerPoint provides x/y relative to the map container.
+   // We must convert this to "SVG Space" to account for any offset between the Map Div and the SVG.
+   const point = map.latLngToContainerPoint([leaderLine.value.targetLat, leaderLine.value.targetLon]);
+   const mapRect = map.getContainer().getBoundingClientRect();
+   
+   // Map Container Point -> Screen Point -> SVG Point
+   const screenX = point.x + mapRect.left;
+   const screenY = point.y + mapRect.top;
+   
+   leaderLine.value.x1 = x1;
+   leaderLine.value.y1 = y1;
+   leaderLine.value.x2 = screenX - svgRect.left;
+   leaderLine.value.y2 = screenY - svgRect.top;
+};
+
+const clearLeaderLine = () => {
+    leaderLine.value.visible = false;
+    leaderLine.value.startEl = null;
+    leaderLine.value.targetLat = null;
+    leaderLine.value.targetLon = null;
+};
+
+const zoomToLocation = (lat, lon) => {
+    if (map && lat && lon) {
+        // Fly to location with moderate zoom
+        map.flyTo([lat, lon], 16, {
+            duration: 1.5
+        });
+
+        // Flash Effect
+        const flashIcon = L.divIcon({
+            className: 'zoom-flash-marker',
+            iconSize: [40, 40],
+            html: '<div class="zoom-flash-circle"></div>'
+        });
+
+        // Current duration is 1.5s. User wants flash 0.5s AFTER move ends.
+        // Total delay = 1500ms + 500ms = 2000ms.
+        setTimeout(() => {
+            const flashMarker = L.marker([lat, lon], { icon: flashIcon }).addTo(map);
+
+            // Remove after animation (1s)
+            setTimeout(() => {
+                map.removeLayer(flashMarker);
+            }, 1200);
+        }, 2000);
+    }
+};
 
 const displayedFolders = computed(() => {
     // Top level list of folders
@@ -448,7 +682,9 @@ const inspectLocation = async (path, source, directItems = null, coords = null, 
                         // Drill-down fields
                         type: item.type,
                         count: item.count,
-                        clusterID: item.id
+                        clusterID: item.id,
+                        lat: item.lat,
+                        lon: item.lon
                     }));
                     if (sidePanelData.value.length > 0) {
                         console.log('[Heatmap] Mapped SidePanel Item 0 ClusterID:', sidePanelData.value[0].clusterID);
@@ -468,7 +704,9 @@ const inspectLocation = async (path, source, directItems = null, coords = null, 
                                 items: [], 
                                 isVirtual: true,
                                 clusterID: item.clusterID,
-                                source: item.source 
+                                source: item.source,
+                                lat: item.lat,
+                                lon: item.lon
                             };
                         } else {
                             const p = item.parentPath || "Root";
@@ -478,7 +716,9 @@ const inspectLocation = async (path, source, directItems = null, coords = null, 
                                 count: 0, 
                                 items: [], 
                                 clusterID: item.clusterID,
-                                source: item.source 
+                                source: item.source,
+                                lat: item.lat,
+                                lon: item.lon
                             };
                             // Robust count: If item has count > 1, use it. Otherwise count as 1 item.
                             groups[p].count += (item.count && item.count > 1 ? item.count : 1);
@@ -529,7 +769,9 @@ const inspectLocation = async (path, source, directItems = null, coords = null, 
             parentPath: item.path.substring(0, item.path.lastIndexOf('/')),
             thumbUrl: getPreviewUrl(item.path, item.source, 'small'),
             type: item.type,
-            clusterID: item.clusterID || item.id // Ensure we capture it
+            clusterID: item.clusterID || item.id, // Ensure we capture it
+            lat: item.lat,
+            lon: item.lon
         }));
         
         // Grouping
@@ -543,7 +785,9 @@ const inspectLocation = async (path, source, directItems = null, coords = null, 
                  count: 0, 
                  items: [],
                  clusterIDs: new Set(),
-                 source: item.source       
+                 source: item.source,
+                 lat: item.lat,
+                 lon: item.lon       
              };
              
              if (item.clusterID) {
@@ -669,6 +913,9 @@ const showErrorNotification = () => {
     errorNotificationTimeout = setTimeout(() => {
         if (failedImageCount.value > 0) {
             notify.showError(`Warning: ${failedImageCount.value} images failed to load (corrupted or unsupported).`);
+            console.warn("--- HEATMAP FAILED IMAGES ---");
+            failedImages.value.forEach(path => console.warn("Failed:", path));
+            console.warn("-----------------------------");
         }
     }, 2000); // 2 second debounce
 };
@@ -1221,7 +1468,7 @@ const initMap = async () => {
     };
     
     osm.addTo(map);
-    L.control.layers(baseMaps, null, { position: 'topleft' }).addTo(map);
+
 
     // Custom Browser Fullscreen Control
     L.Control.BrowserFullscreen = L.Control.extend({
@@ -1260,6 +1507,9 @@ const initMap = async () => {
 
     // Add custom control to map
     new L.Control.BrowserFullscreen({ position: 'topleft' }).addTo(map);
+
+    // Basemaps (Added LAST to be at the bottom of the stack)
+    L.control.layers(baseMaps, null, { position: 'topleft' }).addTo(map);
 
     // Use MarkerClusterGroup to enable Spiderfy effect
     markers = L.markerClusterGroup({
@@ -1490,6 +1740,19 @@ const loadData = async () => {
         tileLayer = null;
     }
     
+    // Event Listeners
+    map.on('move', () => {
+         updateVisibleMarkers();
+         updateLeaderLine(); // Keep line attached during pan/zoom
+    });
+    map.on('zoomend', () => {
+        updateVisibleMarkers();
+        updateLeaderLine();
+    });
+    map.on('resize', () => {
+        updateLeaderLine();
+    });
+
     // Clear stores
     clusterDataStore.clear();
     renderedMarkerStore.clear();
@@ -2042,10 +2305,20 @@ const loadData = async () => {
                 map.addLayer(heatLayer);
             } else {
                 // EFFICIENT UPDATE: Reuse layer
-                heatLayer.setOptions({
-                    radius: radius,
-                    blur: blur
-                });
+                // FIX: Only set options if layer is on map to avoid _animating null error
+                if (map.hasLayer(heatLayer)) {
+                     heatLayer.setOptions({
+                        radius: radius,
+                        blur: blur
+                    });
+                } else {
+                    map.addLayer(heatLayer); 
+                    // Re-adding might reset options, so set them again safely
+                    heatLayer.setOptions({
+                        radius: radius,
+                        blur: blur
+                    });
+                }
                 
                 // Ensure canvas class is set
                 if (heatLayer._canvas && !heatLayer._canvas.classList.contains('heatmap-canvas')) {
@@ -2326,12 +2599,24 @@ onMounted(() => {
 onBeforeUnmount(() => {
     console.log('Heatmap component unmounting - stopping all requests...');
     
+    // 0. Prevent error notifications from firing
+    if (errorNotificationTimeout) {
+        clearTimeout(errorNotificationTimeout);
+        errorNotificationTimeout = null;
+    }
+    // Remove global event listener to stop processing new errors
+    window.removeEventListener('heatmap-image-error', showErrorHandler); // We need to name the handler to remove it properly, or just set failedImageCount to 0 and ignore.
+    // Easier: Just nullify the global handler function so dispatchEvent does nothing useful or check unmount state
+    window.fileBrowserHeatmapImageError = () => {}; 
+    
     // 0. AGGRESSIVE: Stop all image loading immediately by clearing src
     // This forces the browser to cancel pending requests
     const container = document.getElementById('heatmap-container');
     if (container) {
         const images = container.getElementsByTagName('img');
         for (let i = 0; i < images.length; i++) {
+            // Remove onerror to prevent triggering our handler
+            images[i].onerror = null;
             images[i].src = '';
             // Determine if we can remove them from DOM to be sure
             images[i].style.display = 'none';
@@ -2466,6 +2751,7 @@ watch(() => route.query, (newQ, oldQ) => {
     cursor: pointer;
     border-radius: 4px;
     overflow: hidden;
+    width: calc(50% - 3px); /* 2 per row with small gap */
 }
 .panel-thumb {
     width: 100%;
@@ -2735,5 +3021,85 @@ watch(() => route.query, (newQ, oldQ) => {
 .marker-cluster span {
     line-height: 24px !important;
     font-size: 10px !important;
+}
+
+/* Flash Animation for Zoom */
+.zoom-flash-marker {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none; /* Let clicks pass through */
+}
+
+.zoom-flash-circle {
+    width: 20px;
+    height: 20px;
+    background-color: rgba(255, 235, 59, 0.8); /* Bright Yellow */
+    border: 3px solid #fff;
+    border-radius: 50%;
+    box-shadow: 0 0 15px 5px rgba(255, 235, 59, 0.8);
+    animation: zoomFlash 1s ease-out forwards;
+}
+
+@keyframes zoomFlash {
+    0% {
+        transform: scale(0.5);
+        opacity: 0;
+    }
+    10% {
+        transform: scale(1.5);
+        opacity: 1;
+    }
+    50% {
+        transform: scale(2.5);
+        opacity: 0.5;
+    }
+    100% {
+        transform: scale(3.5);
+        opacity: 0;
+    }
+}
+
+/* Grouped Cluster Layout */
+.panel-grid-grouped {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    padding: 10px;
+}
+
+.cluster-group {
+    display: flex;
+    flex-direction: row;
+    background: rgba(0,0,0,0.05); /* Light background for contrast */
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.cluster-sidebar {
+    width: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: filter 0.2s;
+}
+
+.cluster-sidebar:hover {
+    filter: brightness(1.2);
+}
+
+.cluster-target-icon {
+    color: white;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+    font-size: 20px;
+}
+
+.cluster-items-grid {
+    flex: 1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    padding: 5px;
 }
 </style>

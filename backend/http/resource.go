@@ -454,3 +454,46 @@ func mockData(w http.ResponseWriter, r *http.Request) {
 	mockDir := utils.CreateMockData(NumDirs, numFiles)
 	renderJSON(w, r, mockDir) // nolint:errcheck
 }
+
+// resourceFixThumbnailsHandler recursively fixes thumbnail resolution for a folder.
+func resourceFixThumbnailsHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
+	// 1. Verify Admin (handled by middleware, but double-check if needed or rely on withAdmin)
+	// Middleware 'withAdmin' should be used when routing.
+
+	path := r.URL.Query().Get("path")
+	source := r.URL.Query().Get("source")
+	if source == "" {
+		source = config.Server.DefaultSource.Name
+	} else {
+		var err error
+		source, err = url.QueryUnescape(source)
+		if err != nil {
+			return http.StatusBadRequest, fmt.Errorf("invalid source encoding: %v", err)
+		}
+	}
+
+	// 2. Resolve Path
+	scopePath, realSource, err := ResolveScopePath(d.user, source, path)
+	if err != nil {
+		return http.StatusForbidden, err
+	}
+	source = realSource
+
+	// 3. Get Real Path on Disk
+	idx := indexing.GetIndex(source)
+	if idx == nil {
+		return http.StatusNotFound, fmt.Errorf("source %s not found", source)
+	}
+	realPath, _, err := idx.GetRealPath(scopePath)
+	if err != nil {
+		return http.StatusNotFound, err
+	}
+
+	// 4. Execute Fix
+	err = files.FixThumbnailResolution(realPath)
+	if err != nil {
+		return http.StatusInternalServerError, err
+	}
+
+	return http.StatusOK, nil
+}
