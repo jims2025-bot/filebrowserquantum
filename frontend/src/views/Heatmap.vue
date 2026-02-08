@@ -54,7 +54,7 @@
           <i class="material-icons">arrow_back</i> Back to Folder
       </button>
   </div>
-  <div style="position: absolute; bottom: 10px; left: 10px; background: rgba(0,0,0,0.7); color: white; padding: 10px; z-index: 9999; font-size: 12px; max-width: 300px; border-radius: 4px;">
+  <div v-if="showDebugInfo" style="position: absolute; bottom: 10px; left: 10px; background: rgba(0,0,0,0.7); color: white; padding: 10px; z-index: 9999; font-size: 12px; max-width: 300px; border-radius: 4px;">
       <b>Debug Info:</b><br>
       Zoom: {{ currentZoom }}<br>
       Coords: <span v-if="cursorCoords.lat <= 90">{{ cursorCoords.lat.toFixed(5) }}, {{ cursorCoords.lng.toFixed(5) }}</span><span v-else>--</span> 
@@ -66,9 +66,18 @@
       Total Clusters: {{ debugClusterCount }}<br>
       Status: {{ debugStatus }}
   </div>
+  
+  <!-- Collapsed Panel Tab (Expand Button) -->
+  <div v-if="isPanelCollapsed && showSidePanel" 
+       @click="isPanelCollapsed = false"
+       title="Expand Panel"
+       class="panel-expand-tab"
+       style="position:absolute; top:60px; right:0; z-index:2500; background-color:#2c3e50; color:white; padding:10px 4px 10px 8px; border-radius:6px 0 0 6px; cursor:pointer; box-shadow:-2px 2px 5px rgba(0,0,0,0.3); display:flex; align-items:center;">
+       <i class="material-icons">chevron_left</i>
+  </div>
+
   <!-- Side Panel for Inspection -->
-  <!-- Side Panel for Inspection -->
-  <div v-if="showSidePanel" class="heatmap-side-panel">
+  <div v-if="showSidePanel" class="heatmap-side-panel" :class="{ 'collapsed': isPanelCollapsed }">
       <!-- Unified Header (Inline Styled for reliability) -->
       <div class="panel-header" :class="{ 'with-nav': currentInspectionFolder }" 
            style="display:flex; flex-direction:column; padding:8px 16px; background-color:#2c3e50; border-bottom:1px solid rgba(255,255,255,0.1); width:100%; box-sizing:border-box;">
@@ -89,6 +98,13 @@
                       style="background:transparent; border:none; color:#b0bec5; cursor:pointer; padding:6px; display:flex; align-items:center;">
                   <i class="material-icons" style="font-size:18px;">refresh</i>
               </button>
+              
+              <!-- Collapse Button -->
+              <button @click="isPanelCollapsed = true" class="panel-action-btn collapse" title="Collapse Panel"
+                      style="background:transparent; border:none; color:#b0bec5; cursor:pointer; padding:6px; display:flex; align-items:center;">
+                  <i class="material-icons" style="font-size:18px;">chevron_right</i>
+              </button>
+              
               <button @click="closeSidePanel" class="panel-action-btn close" title="Close Panel"
                       style="background:transparent; border:none; color:#b0bec5; cursor:pointer; padding:6px; display:flex; align-items:center;">
                   <i class="material-icons" style="font-size:18px;">close</i>
@@ -233,6 +249,7 @@ let map = null;
 let markers = null;
 let heatLayer = null;
 let tileLayer = null; // Store reference to tile layer
+let overlayLayer = null; // GeoJSON Overlay Layer
 const isFolderMode = ref(false);
 
 // Abort controller for canceling tile requests
@@ -251,6 +268,10 @@ const formattedSidePanelData = ref([]); // Array of {path, count, items}
 const currentInspectionFolder = ref(null); // Reference to currently viewing folder object
 const overlaySiblings = ref([]); // Sibling GeoJSON files for overlay navigation
 const sidePanelLoading = ref(false);
+const isPanelCollapsed = ref(false);
+
+const showDebugInfo = computed(() => state.showDebugInfo);
+
 const isBoxSelectMode = ref(false); // Box Selection Mode State
 const selectionBox = ref({ visible: false, startX: 0, startY: 0, currentX: 0, currentY: 0, style: {} });
 const itemsPerPage = 50;
@@ -960,7 +981,15 @@ const goBack = () => {
          if (cleanP.startsWith(src + '/')) {
              cleanP = cleanP.substring(src.length + 1);
          }
-         router.push({ path: `/files/${src}/${cleanP}` }).catch(err => console.error(err));
+         
+         // Route push needs "path" to be browser URL path, not query path
+         let navPath = '/files/';
+         if (state.serverHasMultipleSources && src) {
+             navPath += src + '/';
+         }
+         navPath += cleanP;
+         
+         router.push({ path: navPath }).catch(err => console.error(err));
     } else {
          router.push({ path: '/files/' }).catch(err => console.error(err));
     }
@@ -1103,6 +1132,241 @@ const generatePopupHtml = (markerPath, sourceArg, count, extraContext) => {
 };
 
 
+
+const fetchSiblings = async (parentPath, sourceVal) => {
+    try {
+        const apiUrl = `/api/resources?path=${encodeURIComponent(parentPath)}&source=${encodeURIComponent(sourceVal || "")}`;
+        const res = await fetchJSON(apiUrl);
+        let items = res.items || [];
+            if (!items.length && (res.files || res.folders)) {
+                items = [...(res.folders || []), ...(res.files || [])];
+        }
+        
+        const geoFiles = items.filter(f => f.name.toLowerCase().endsWith('.geojson'));
+        
+        // Identify companion images
+        const itemMap = new Map();
+        items.forEach(f => itemMap.set(f.name, f));
+
+        overlaySiblings.value = geoFiles.map(f => {
+            const base = f.name.substring(0, f.name.lastIndexOf('.'));
+            // Check if any image exists with this base name
+            const exts = ['.jpg', '.jpeg', '.png', '.webp'];
+            let companionName = null;
+            for (const ext of exts) {
+                if (itemMap.has(base + ext)) {
+                    companionName = base + ext;
+                    break;
+                }
+            }
+            
+            let thumbUrl = "";
+            if (companionName) {
+                    const path = parentPath + "/" + companionName;
+                    thumbUrl = `/api/preview?path=${encodeURIComponent(path)}&source=${encodeURIComponent(sourceVal)}&size=small`;
+            }
+
+            return {
+                name: f.name,
+                path: parentPath + "/" + f.name,
+                source: sourceVal,
+                thumbUrl: thumbUrl
+            };
+        });
+        
+    } catch (e) {
+        console.error("fetchSiblings failed", e);
+    }
+};
+
+const loadOverlay = async () => {
+    const overlayPath = route.query.overlay;
+    const source = route.query.source;
+
+    // Cleanup existing
+    if (overlayLayer && map) {
+        map.removeLayer(overlayLayer);
+        overlayLayer = null;
+    }
+
+    if (!overlayPath) {
+            // Do not clear siblings
+            // Ensure panel stays open if we have overlays to show
+            if (overlaySiblings.value.length > 0) {
+                showSidePanel.value = true;
+            }
+            return;
+    }
+
+    console.log(`[Heatmap] Loading overlay: ${overlayPath}`);
+    
+    // FIX: Decode source fully to prevent double-encoding
+    let decodedSource = source || "";
+    try {
+        decodedSource = decodeURIComponent(decodedSource);
+        // Double check for remnants
+        if (decodedSource.includes('%')) {
+             decodedSource = decodeURIComponent(decodedSource);
+        }
+        console.log(`[Heatmap] Source raw: '${source}', decoded: '${decodedSource}'`);
+    } catch (e) {}
+    
+    // Trigger UI
+    showSidePanel.value = true;
+    sidePanelTitle.value = "Map Overlay"; 
+    
+    // Also fetch siblings
+    const parentPath = overlayPath.substring(0, overlayPath.lastIndexOf('/'));
+    fetchSiblings(parentPath || "/", decodedSource);
+    
+    try {
+        // Fetch logic
+        const filesParam = (decodedSource || "") + "::" + overlayPath;
+        const url = `/api/raw?files=${encodeURIComponent(filesParam)}&inline=true`;
+        console.log(`[Heatmap] Fetching overlay URL: ${url}`);
+        
+        // Try to fetch Sidecar Style File first if we have a source
+        let styleConfig = null;
+        if (decodedSource) {
+            try {
+                // Construct style path: "filename.geojson.style.json"
+                const stylePath = overlayPath + ".style.json";
+                const styleParam = (decodedSource || "") + "::" + stylePath;
+                const styleUrl = `/api/raw?files=${encodeURIComponent(styleParam)}&inline=true`;
+                
+                const styleRes = await fetch(styleUrl);
+                if (styleRes.ok) {
+                    styleConfig = await styleRes.json();
+                    console.log("[Heatmap] Loaded sidecar style:", styleConfig);
+                }
+            } catch (styleErr) {
+                // Ignore
+            }
+        }
+
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("Failed to fetch geojson: " + res.status);
+        
+        if (route.query.overlay !== overlayPath) {
+                console.log("[Heatmap] Overlay load cancelled (route changed)");
+                return;
+        }
+        
+        const geoData = await res.json();
+        
+        // Helper for Feature Styling
+        const getStyleForFeature = (feature) => {
+            // Default fallback
+            let finalStyle = { color: "#ff7800", weight: 5, opacity: 0.65 };
+
+            if (!styleConfig) {
+                // Fallback to internal properties if no sidecar
+                if (feature.properties && feature.properties.color) {
+                        finalStyle.color = feature.properties.color;
+                }
+                return finalStyle;
+            }
+            
+            // 1. Apply Global Default
+            if (styleConfig.default) {
+                finalStyle = { ...finalStyle, ...styleConfig.default };
+            }
+            
+            // 2. Apply Rules
+            if (styleConfig.rules && Array.isArray(styleConfig.rules)) {
+                for (const rule of styleConfig.rules) {
+                    if (!rule.if || !rule.style) continue;
+                    
+                    let match = true;
+                    // Simple property match
+                    if (rule.if.property) {
+                            if (feature.properties[rule.if.property] !== rule.if.value) {
+                                match = false;
+                            }
+                    }
+                    // ID match
+                    if (rule.if.id) {
+                        if (feature.id !== rule.if.id && feature.properties?.id !== rule.if.id) {
+                            match = false;
+                        }
+                    }
+                    
+                    if (match) {
+                        finalStyle = { ...finalStyle, ...rule.style };
+                    }
+                }
+            }
+            
+            return finalStyle;
+        };
+
+        overlayLayer = L.geoJSON(geoData, {
+            style: getStyleForFeature,
+            onEachFeature: function (feature, layer) {
+                if (feature.properties) {
+                    let content = "";
+                    
+                    // Title / Name
+                    if (feature.properties.name || feature.properties.Name) {
+                        content += `<b>${feature.properties.name || feature.properties.Name}</b>`;
+                    }
+                    
+                    // Description (check common keys)
+                    const desc = feature.properties.description || feature.properties.Description || feature.properties.desc || feature.properties.Desc;
+                    if (desc) {
+                        if (content) content += "<br>";
+                        content += `<div style="margin-top:5px; max-height:200px; overflow-y:auto;">${desc}</div>`;
+                    }
+
+                    if (content) {
+                        layer.bindPopup(content);
+                    }
+                }
+            }
+        });
+        
+        if (overlayLayer) {
+            if (map) {
+                    overlayLayer.addTo(map);
+                    
+                    // Check if we should fit bounds (e.g. initial load from listing)
+                    if (route.query.fit === 'true' && overlayLayer.getBounds().isValid()) {
+                        console.log("[Heatmap] Fitting bounds to overlay as requested");
+                        map.fitBounds(overlayLayer.getBounds());
+                    }
+            } else {
+                    console.warn("[Heatmap] Map not initialized yet, cannot add overlay layer");
+            }
+        } else {
+            console.error("[Heatmap] Failed to create Leaflet GeoJSON layer");
+        }
+
+    } catch (e) {
+        console.error("[Heatmap] Failed to load overlay", e);
+        notify.showError("Failed to load map overlay");
+    }
+};
+
+// Watch for overlay changes
+watch(() => route.query.overlay, () => {
+    loadOverlay();
+});
+
+// Clear overlay siblings if context changes (Path or Source)
+watch(() => [route.query.path, route.query.source], (newVals, oldVals) => {
+    // Explicitly check for changes to avoid triggering on referential changes
+    const [newPath, newSource] = newVals;
+    const [oldPath, oldSource] = oldVals || [];
+    
+    if (newPath !== oldPath || newSource !== oldSource) {
+        // FIX: Don't clear if we have an overlay active, as that might be driving the view
+        if (!route.query.overlay) {
+                console.log("[Heatmap] Context changed and no overlay, clearing overlay siblings.");
+                overlaySiblings.value = [];
+        }
+    }
+});
+
 const initMap = async () => {
     if (map) return;
     await nextTick();
@@ -1117,218 +1381,8 @@ const initMap = async () => {
     
 
 
-    // GeoJSON Overlay Layer
-    let overlayLayer = null;
+    // GeoJSON Overlay Layer definitions moved to top level
 
-    const fetchSiblings = async (parentPath, sourceVal) => {
-        try {
-            const apiUrl = `/api/resources?path=${encodeURIComponent(parentPath)}&source=${encodeURIComponent(sourceVal || "")}`;
-            const res = await fetchJSON(apiUrl);
-            let items = res.items || [];
-             if (!items.length && (res.files || res.folders)) {
-                 items = [...(res.folders || []), ...(res.files || [])];
-            }
-            
-            const geoFiles = items.filter(f => f.name.toLowerCase().endsWith('.geojson'));
-            
-            // Identify companion images
-            const itemMap = new Map();
-            items.forEach(f => itemMap.set(f.name, f));
-
-            overlaySiblings.value = geoFiles.map(f => {
-                const base = f.name.substring(0, f.name.lastIndexOf('.'));
-                // Check if any image exists with this base name
-                const exts = ['.jpg', '.jpeg', '.png', '.webp'];
-                let companionName = null;
-                for (const ext of exts) {
-                    if (itemMap.has(base + ext)) {
-                        companionName = base + ext;
-                        break;
-                    }
-                }
-                
-                let thumbUrl = "";
-                if (companionName) {
-                     const path = parentPath + "/" + companionName;
-                     thumbUrl = `/api/preview?path=${encodeURIComponent(path)}&source=${encodeURIComponent(sourceVal)}&size=small`;
-                }
-
-                return {
-                    name: f.name,
-                    path: parentPath + "/" + f.name,
-                    source: sourceVal,
-                    thumbUrl: thumbUrl
-                };
-            });
-            
-        } catch (e) {
-            console.error("fetchSiblings failed", e);
-        }
-    };
-
-    const loadOverlay = async () => {
-        const overlayPath = route.query.overlay;
-        const source = route.query.source;
-
-        // Cleanup existing
-        if (overlayLayer) {
-            map.removeLayer(overlayLayer);
-            overlayLayer = null;
-        }
-
-        if (!overlayPath) {
-             // Do not clear siblings
-             // Ensure panel stays open if we have overlays to show
-             if (overlaySiblings.value.length > 0) {
-                 showSidePanel.value = true;
-             }
-             return;
-        }
-
-        console.log(`[Heatmap] Loading overlay: ${overlayPath}`);
-        
-        // Trigger UI
-        showSidePanel.value = true;
-        sidePanelTitle.value = "Map Overlay"; // Update title? or keep "Location Inspector"? User requested "special separate MAP OVERLAY section". 
-        // I will keep generic title or set it.
-        // Also fetch siblings
-        const parentPath = overlayPath.substring(0, overlayPath.lastIndexOf('/'));
-        fetchSiblings(parentPath || "/", source);
-        
-        try {
-            // Fetch logic
-            // Use correct API format: /api/raw?files=SOURCE::PATH&inline=true
-            const filesParam = (source || "") + "::" + overlayPath;
-            const url = `/api/raw?files=${encodeURIComponent(filesParam)}&inline=true`;
-            
-            // Try to fetch Sidecar Style File first
-            let styleConfig = null;
-            try {
-                // Construct style path: "filename.geojson.style.json"
-                // const stylePath = overlayPath + ".style.json";
-                // Or "filename.style.json" if user prefers simpler? 
-                // Plan said: <filename>.geojson.style.json (to preserve full name and add extension)
-                const stylePath = overlayPath + ".style.json";
-                const styleParam = (source || "") + "::" + stylePath;
-                const styleUrl = `/api/raw?files=${encodeURIComponent(styleParam)}&inline=true`;
-                
-                const styleRes = await fetch(styleUrl);
-                if (styleRes.ok) {
-                    styleConfig = await styleRes.json();
-                    console.log("[Heatmap] Loaded sidecar style:", styleConfig);
-                }
-            } catch (styleErr) {
-                console.warn("[Heatmap] No sidecar style found or failed to load", styleErr);
-            }
-
-            const res = await fetch(url);
-            if (!res.ok) throw new Error("Failed to fetch geojson");
-            
-            const geoData = await res.json();
-            
-            // Helper for Feature Styling
-            const getStyleForFeature = (feature) => {
-                // Default fallback
-                let finalStyle = { color: "#ff7800", weight: 5, opacity: 0.65 };
-
-                if (!styleConfig) {
-                    // Fallback to internal properties if no sidecar
-                    if (feature.properties && feature.properties.color) {
-                         finalStyle.color = feature.properties.color;
-                    }
-                    return finalStyle;
-                }
-                
-                // 1. Apply Global Default
-                if (styleConfig.default) {
-                    finalStyle = { ...finalStyle, ...styleConfig.default };
-                }
-                
-                // 2. Apply Rules
-                if (styleConfig.rules && Array.isArray(styleConfig.rules)) {
-                    for (const rule of styleConfig.rules) {
-                        if (!rule.if || !rule.style) continue;
-                        
-                        let match = true;
-                        // Simple property match
-                        if (rule.if.property) {
-                             if (feature.properties[rule.if.property] !== rule.if.value) {
-                                 match = false;
-                             }
-                        }
-                        // ID match
-                        if (rule.if.id) {
-                            if (feature.id !== rule.if.id && feature.properties?.id !== rule.if.id) {
-                                match = false;
-                            }
-                        }
-                        
-                        if (match) {
-                            finalStyle = { ...finalStyle, ...rule.style };
-                        }
-                    }
-                }
-                
-                return finalStyle;
-            };
-
-            overlayLayer = L.geoJSON(geoData, {
-                style: getStyleForFeature,
-                onEachFeature: function (feature, layer) {
-                    if (feature.properties) {
-                        let content = "";
-                        
-                        // Title / Name
-                        if (feature.properties.name || feature.properties.Name) {
-                            content += `<b>${feature.properties.name || feature.properties.Name}</b>`;
-                        }
-                        
-                        // Description (check common keys)
-                        const desc = feature.properties.description || feature.properties.Description || feature.properties.desc || feature.properties.Desc;
-                        if (desc) {
-                            if (content) content += "<br>";
-                            content += `<div style="margin-top:5px; max-height:200px; overflow-y:auto;">${desc}</div>`;
-                        }
-
-                        if (content) {
-                            layer.bindPopup(content);
-                        }
-                    }
-                }
-            }).addTo(map);
-            
-            // Check if we should fit bounds (e.g. initial load from listing)
-            if (route.query.fit === 'true' && overlayLayer.getBounds().isValid()) {
-                 console.log("[Heatmap] Fitting bounds to overlay as requested");
-                 map.fitBounds(overlayLayer.getBounds());
-            }
-
-        } catch (e) {
-            console.error("[Heatmap] Failed to load overlay", e);
-            notify.showError("Failed to load map overlay");
-        }
-    };
-
-    // Watch for overlay changes
-    watch(() => route.query.overlay, () => {
-        loadOverlay();
-    });
-
-    // Clear overlay siblings if context changes (Path or Source)
-    watch(() => [route.query.path, route.query.source], (newVals, oldVals) => {
-        // Explicitly check for changes to avoid triggering on referential changes
-        const [newPath, newSource] = newVals;
-        const [oldPath, oldSource] = oldVals || [];
-        if (newPath !== oldPath || newSource !== oldSource) {
-            console.log("[Heatmap] Context changed, clearing overlay siblings.");
-            overlaySiblings.value = [];
-        }
-    });
-
-    // Check on init
-    if (route.query.overlay) {
-        loadOverlay();
-    }
 
     map.setView([0, 0], 2);
     
@@ -2591,7 +2645,13 @@ onMounted(() => {
         if (!items) window._tempInspectItems = null;
     };
 
-    initMap().then(loadData);
+    initMap().then(() => { 
+        loadData();
+        // Now it's safe to load overlay if present
+        if (route.query.overlay) {
+            loadOverlay();
+        }
+    });
 });
 
 // CRITICAL: Cleanup when component unmounts to STOP requests
@@ -2604,7 +2664,7 @@ onBeforeUnmount(() => {
         errorNotificationTimeout = null;
     }
     // Remove global event listener to stop processing new errors
-    window.removeEventListener('heatmap-image-error', showErrorHandler); // We need to name the handler to remove it properly, or just set failedImageCount to 0 and ignore.
+    window.removeEventListener('heatmap-image-error', showErrorNotification); // We need to name the handler to remove it properly, or just set failedImageCount to 0 and ignore.
     // Easier: Just nullify the global handler function so dispatchEvent does nothing useful or check unmount state
     window.fileBrowserHeatmapImageError = () => {}; 
     
@@ -3100,5 +3160,20 @@ watch(() => route.query, (newQ, oldQ) => {
     flex-wrap: wrap;
     gap: 5px;
     padding: 5px;
+}
+</style>
+
+<style scoped>
+/* Collapsible Panel Styles */
+.heatmap-side-panel {
+    transition: transform 0.3s ease;
+}
+.heatmap-side-panel.collapsed {
+    transform: translateX(100%);
+    pointer-events: none; /* Let clicks pass through when hidden */
+}
+/* Ensure the tab is clickable */
+.panel-expand-tab {
+    pointer-events: auto;
 }
 </style>

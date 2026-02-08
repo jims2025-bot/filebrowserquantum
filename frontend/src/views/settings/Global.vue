@@ -5,7 +5,12 @@
       <h2>{{ $t("settings.globalSettings") }}</h2>
     </div>
 
-    <div class="card-content"> {{ $t('settings.emptyGlobal') }} </div>
+    <div class="card-content">
+      <p>
+        <input type="checkbox" v-model="showDebugInfo" @change="toggleDebugInfo" />
+        {{ $t('settings.showDebugInfo') }}
+      </p>
+    </div>
 
     <div class="card-action">
       <input class="button button--flat" type="submit" :value="$t('buttons.update')" />
@@ -38,6 +43,10 @@ export default {
     user() {
       return state.user;
     },
+    showDebugInfo: {
+      get() { return state.showDebugInfo; },
+      set(val) { /* mutations handle toggle */ }
+    }
   },
   async created() {
     mutations.setLoading("settings", true);
@@ -69,6 +78,9 @@ export default {
         notify.showError(e);
       }
     },
+    toggleDebugInfo() {
+      mutations.toggleDebugInfo();
+    }
   },
 };
 </script>

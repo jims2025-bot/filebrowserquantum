@@ -434,7 +434,10 @@ export async function scanIntegrity(source, path) {
 
 export async function getIntegrityIssues(source, path) {
   try {
-    const apiPath = getApiPath(`api/integrity/issues?source=${encodeURIComponent(source)}&path=${encodeURIComponent(path)}`);
+    const apiPath = getApiPath('api/integrity/issues', {
+      source: source,
+      path: encodeURIComponent(path)
+    });
     const res = await fetchURL(apiPath, {
       headers: {
         'X-Auth': state.jwt

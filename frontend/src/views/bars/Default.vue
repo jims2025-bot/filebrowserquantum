@@ -14,7 +14,7 @@
       @action="toggleFullscreen"
     />
     <div class="header-middle">
-        <search v-if="showSearch" />
+        <search v-if="false" />
         <title v-else-if="isSettings" class="topTitle">{{ $t("sidebar.settings") }}</title>
         <title v-else class="topTitle">{{ req.name }}</title>
         
@@ -29,6 +29,7 @@
             </select>
             <button 
                 class="action" 
+                :class="{ 'flash-animation': isFlashing }"
                 @click="viewMapOverlay('button')" 
                 title="View Map Overlay"
                 :disabled="!selectedMapOverlay"
@@ -145,6 +146,7 @@ export default {
       currentFileIssue: null,
       isFullscreen: false,
       selectedMapOverlay: "",
+      isFlashing: false,
     };
   },
   computed: {
@@ -159,6 +161,9 @@ export default {
     },
     isOnlyOffice() {
       return getters.currentView() === "onlyOfficeEditor";
+    },
+    isMobile() {
+      return state.isMobile;
     },
     isListingView() {
       return getters.currentView() == "listingView";
@@ -262,6 +267,13 @@ export default {
   watch: {
     selectedMapOverlay(newVal) {
         console.log('[Default] selectedMapOverlay changed to:', newVal);
+        if (newVal) {
+            this.isFlashing = true;
+            // Remove class after animation completes (e.g. 2s)
+            setTimeout(() => {
+                this.isFlashing = false;
+            }, 2000);
+        }
     },
     req: {
       handler() {
@@ -596,6 +608,19 @@ header {
     background-color: white;
     color: black;
 }
+
+@keyframes flash-highlight {
+    0% { background-color: transparent; box-shadow: none; }
+    25% { background-color: rgba(255, 235, 59, 0.8); box-shadow: 0 0 10px rgba(255, 235, 59, 0.8); transform: scale(1.1); }
+    50% { background-color: transparent; box-shadow: none; transform: scale(1.0); }
+    75% { background-color: rgba(255, 235, 59, 0.8); box-shadow: 0 0 10px rgba(255, 235, 59, 0.8); transform: scale(1.1); }
+    100% { background-color: transparent; box-shadow: none; transform: scale(1.0); }
+}
+
+.flash-animation {
+    animation: flash-highlight 1.5s ease-in-out;
+}
+
 
 .dark-mode-header .map-overlays-select option {
     background-color: #333;

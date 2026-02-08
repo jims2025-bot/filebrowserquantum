@@ -23,6 +23,10 @@ export const mutations = {
     state.isMetadataVisible = !state.isMetadataVisible;
     emitStateChanged();
   },
+  toggleDebugInfo: () => {
+    state.showDebugInfo = !state.showDebugInfo;
+    emitStateChanged();
+  },
   toggleInstructionsEditMode: (value) => {
     state.isInstructionsEditMode = value;
     emitStateChanged();
