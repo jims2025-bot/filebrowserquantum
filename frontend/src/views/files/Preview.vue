@@ -1287,24 +1287,9 @@ export default {
             });
 
             // Use imported 'notify' or if available globally, but import is safer.
-            // Looking at other methods, this.$showSuccess might be undefined.
-            // Reverting to notify.showSuccess if imported, or confirm if $showSuccess is available.
-            // Earlier code used this.$showSuccess. If user said it's not a function, then it's not.
-            // Using logic from surrounding code (e.g. imports).
-            // Assuming `notify` is imported from '@/notify' based on other files.
-            // If not imported in this file, I'll assume global or mixin.
-            // Wait, previous error said `this.$showError is not a function`.
-            // So we must rely on `notify` module if imported.
-            
-            // Checking imports... notify IS usually imported.
-            // If not, I'll add the import.
-            // For now, assuming notify is imported or available.
             notify.showSuccess('Coordinates Updated');
             
             // Reload metadata to ensure UI is in sync
-            // Clear cache if needed, though fetchMetadata might handle it?
-            // Previous code did: this.metadataCache = {}; await this.fetchMetadata();
-            // Let's stick to simple fetchMetadata first, or check if cache clearing is needed.
             this.metadataCache = {}; 
             await this.fetchMetadata();
         } catch (e) {

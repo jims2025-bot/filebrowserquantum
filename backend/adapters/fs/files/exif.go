@@ -16,11 +16,26 @@ func UpdateExif(path string, lat, lon float64) error {
 	// ExifTool handles decimal degrees automatically if we just pass them.
 	// We no longer need to manually calculate Refs (N/S, E/W) or absolute values.
 
+	// Calculate Refs and absolute values
+	latRef := "N"
+	if lat < 0 {
+		latRef = "S"
+		lat = -lat
+	}
+
+	lonRef := "E"
+	if lon < 0 {
+		lonRef = "W"
+		lon = -lon
+	}
+
 	cmd := exec.Command("exiftool",
 		"-m", // Ignore minor errors (e.g. missing EOI)
 		"-overwrite_original",
 		fmt.Sprintf("-GPSLatitude=%f", lat),
+		fmt.Sprintf("-GPSLatitudeRef=%s", latRef),
 		fmt.Sprintf("-GPSLongitude=%f", lon),
+		fmt.Sprintf("-GPSLongitudeRef=%s", lonRef),
 		path,
 	)
 
