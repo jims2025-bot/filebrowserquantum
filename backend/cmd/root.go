@@ -96,6 +96,9 @@ func StartFilebrowser() {
 		integrity.RunScan(store)
 	})
 
+	// Start Map Overlay Job
+	heatmap.StartOverlayJob(store)
+
 	// Start the rootCMD in a goroutine
 	go func() {
 		if err := rootCMD(ctx, store, &serverConfig, shutdownComplete); err != nil {

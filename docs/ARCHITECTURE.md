@@ -12,6 +12,7 @@
 7. [Server Permissions](#collection-folder-permissions)
 8. [Administrative Functions](#administrative-functions)
 9. [Documentation Notes](#documentation-notes)
+10. [Map Overlays Architecture](#geojson-visualization)
 
 ---
 
@@ -435,9 +436,23 @@ See [GeoJSON Visualization](#geojson-visualization) for detailed architecture.
 The system supports rendering standard GeoJSON files as map overlays when browsing folders in the Heatmap view.
 
 #### Discovery & Rendering
-1. **Scanning**: When entering a folder on the map, the frontend filters the file list for `.geojson` extensions.
+1. **Scanning**: Use a background job (`overlays.go`) to recursively scan for `.geojson` files and aggregate them into `mapoverlays.json` metadata files at each folder level.
 2. **Overlay**: These files are fetched and rendered using Leaflet's `L.geoJSON` layer.
-3. **Navigation**: A dropdown menu allows toggling between available GeoJSON overlays in the current folder.
+3. **Navigation**: A dedicated **Side Tab** (right side) allows toggling between available GeoJSON overlays.
+
+#### Overlay Side Panel
+The new side panel replaces the old header dropdown and provides a robust interface for managing overlays.
+
+**Tabs**:
+1. **Inspection Tab**:
+   - Shows photos/folders when you click a cluster or select an area.
+   - Default view when interacting with the map content.
+
+2. **Overlays Tab**:
+   - Access via the independent "Layer" icon tab on the right edge of the screen.
+   - **Show Context Mode**: Lists overlays found in the *currently viewed folder* and its subfolders.
+   - **Show All Mode**: Lists ALL overlays found across the entire source.
+   - **Persistence**: Toggled overlays remain active even when navigating between folders.
 
 #### Styling (Sidecar Files)
 To allow custom styling without modifying the GeoJSON data itself, the system uses a **Sidecar Style File**.

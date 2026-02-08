@@ -27,6 +27,9 @@ import (
 // Manual scans override this and percolate up immediately
 const ScanIntervalDays = 7 // Weekly scan
 
+// OverlayScanIntervalHours defines how often the overlay scan runs
+const OverlayScanIntervalHours = 12
+
 // SafeClusterCollector removed as we are using aggregation.
 
 type ScanProgress struct {
@@ -296,6 +299,72 @@ func StartJob(store *storage.Storage, onComplete func()) {
 
 			// Run every ScanIntervalDays
 			time.Sleep(time.Duration(ScanIntervalDays) * 24 * time.Hour)
+		}
+	}()
+}
+
+func StartOverlayJob(store *storage.Storage) {
+	go func() {
+		// Wait a bit on startup to let indexes load
+		time.Sleep(1 * time.Minute)
+
+		for {
+			logger.Info("Starting Overlay Scan Job")
+
+			// Get all users to find scopes
+			allUsers, err := store.Users.Gets()
+			if err != nil {
+				logger.Error("Overlay: Failed to get users: " + err.Error())
+			} else {
+				// Deduplicate scopes
+				locationsToScan := make(map[string]map[string]struct{})
+				allIndexes := indexing.GetIndexes()
+
+				logger.Info(fmt.Sprintf("Overlay: Found %d users and %d indexes", len(allUsers), len(allIndexes)))
+
+				// Scan restricted to PHOTOCOLLECTIONS as requested
+				for sourceName, idx := range allIndexes {
+					if locationsToScan[sourceName] == nil {
+						locationsToScan[sourceName] = make(map[string]struct{})
+					}
+
+					// 1. If Source IS "PHOTOCOLLECTIONS", scan root
+					if strings.ToUpper(sourceName) == "PHOTOCOLLECTIONS" {
+						locationsToScan[sourceName]["/"] = struct{}{}
+						logger.Info("Overlay: Scheduled restricted scan for Source " + sourceName)
+						continue
+					}
+
+					// 2. If "/PHOTOCOLLECTIONS" exists in this source, scan it
+					if realPath, _, err := idx.GetRealPath("/PHOTOCOLLECTIONS"); err == nil {
+						if info, err := os.Stat(realPath); err == nil && info.IsDir() {
+							locationsToScan[sourceName]["/PHOTOCOLLECTIONS"] = struct{}{}
+							logger.Info("Overlay: Scheduled restricted scan for Folder /PHOTOCOLLECTIONS in " + sourceName)
+							continue
+						}
+					}
+
+					// 3. Otherwise scan the root of the source
+					// Relaxed restriction: If the user didn't have a PHOTOCOLLECTIONS folder, we were skipping them entirely.
+					// Now we default to scanning the source root.
+					locationsToScan[sourceName]["/"] = struct{}{}
+					logger.Info("Overlay: Scheduled full scan for Source " + sourceName)
+				}
+
+				// Execute Scans
+				for sourceName, paths := range locationsToScan {
+					for path := range paths {
+						logger.Info("Overlay: Scanning scope " + sourceName + " " + path)
+						err := ScanOverlaysRecursive(sourceName, path)
+						if err != nil {
+							logger.Error("Overlay: Scan failed for " + path + ": " + err.Error())
+						}
+					}
+				}
+			}
+
+			logger.Info("Finished Overlay Scan Job")
+			time.Sleep(time.Duration(OverlayScanIntervalHours) * time.Hour)
 		}
 	}()
 }

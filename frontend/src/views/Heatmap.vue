@@ -42,9 +42,11 @@
   
   <!-- Map Header Toolbar -->
   <div style="position:absolute; top:10px; right:10px; z-index:2000; display:flex; gap:10px;">
+      <!-- REMOVED: Map Overlays Button (Moved to Side Tab) -->
+
       <button @click="toggleSelectionMode" :title="isBoxSelectMode ? 'Cancel Selection' : 'Select Area'" class="button button--flat" :style="isBoxSelectMode ? 'background:rgba(255,100,0,0.8); color:white;' : 'background:rgba(255,255,255,0.9); color:#333; box-shadow:0 2px 4px rgba(0,0,0,0.2);'">
           <i class="material-icons">{{ isBoxSelectMode ? 'close' : 'select_all' }}</i>
-          <span style="margin-left:5px; font-weight:bold; font-size:12px;">{{ isBoxSelectMode ? 'Cancel' : 'Select Area' }}</span>
+          <span style="margin-left:5px; font-weight:bold; font-size:12px; white-space:nowrap;">{{ isBoxSelectMode ? 'Cancel' : 'Select Area' }}</span>
       </button>
   </div>
 
@@ -67,13 +69,22 @@
       Status: {{ debugStatus }}
   </div>
   
-  <!-- Collapsed Panel Tab (Expand Button) -->
+  <!-- Collapsed Panel Tab (Expand Inspector) -->
   <div v-if="isPanelCollapsed && showSidePanel" 
        @click="isPanelCollapsed = false"
        title="Expand Panel"
        class="panel-expand-tab"
        style="position:absolute; top:60px; right:0; z-index:2500; background-color:#2c3e50; color:white; padding:10px 4px 10px 8px; border-radius:6px 0 0 6px; cursor:pointer; box-shadow:-2px 2px 5px rgba(0,0,0,0.3); display:flex; align-items:center;">
        <i class="material-icons">chevron_left</i>
+  </div>
+
+  <!-- Map Overlays Side Tab (Always visible if panel is closed/collapsed or showing inspection) -->
+  <div v-if="!showSidePanel || isPanelCollapsed || activeTab !== 'overlays'"
+       @click="openOverlaysTab"
+       title="Map Overlays"
+       class="overlays-tab"
+       style="position:absolute; top:120px; right:0; z-index:2500; background-color:#2c3e50; color:white; padding:10px 4px 10px 8px; border-radius:6px 0 0 6px; cursor:pointer; box-shadow:-2px 2px 5px rgba(0,0,0,0.3); display:flex; align-items:center;">
+       <i class="material-icons">layers</i>
   </div>
 
   <!-- Side Panel for Inspection -->
@@ -125,22 +136,50 @@
           <div v-if="sidePanelLoading" class="panel-loading">Loading...</div>
           
           <!-- Map Overlays Section -->
-          <div v-if="overlaySiblings.length > 0" class="overlay-section">
-              <div class="panel-sub-header">Map Overlays</div>
-              <div class="overlay-list-container">
-                  <div v-for="item in overlaySiblings" :key="item.path" 
-                       class="overlay-item" 
-                       :class="{ active: item.path === route.query.overlay }"
-                       @click="toggleOverlay(item.path)">
-                       
-                      <div class="overlay-thumb-wrapper">
-                          <img v-if="item.thumbUrl" :src="item.thumbUrl" class="overlay-thumb-img" />
-                          <i v-else class="material-icons overlay-icon" style="color: #42a5f5;">public</i>
-                      </div>
-                      <span class="overlay-name" :title="item.name">{{ item.name }}</span>
-                  </div>
+          <!-- Tab Navigation -->
+          <div class="panel-tabs" style="display:flex; justify-content:space-around; background:#2c3e50; padding:5px 0 0 0; margin-bottom:0;">
+              <div @click="activeTab = 'inspection'" 
+                   :style="{ borderBottom: activeTab === 'inspection' ? '3px solid #4f83cc' : '3px solid transparent', opacity: activeTab === 'inspection' ? 1 : 0.6, flex: 1, textAlign:'center', padding:'8px', cursor:'pointer', fontWeight:'bold', color:'white' }">
+                   Inspection
+              </div>
+              <div @click="activeTab = 'overlays'" 
+                   :style="{ borderBottom: activeTab === 'overlays' ? '3px solid #4f83cc' : '3px solid transparent', opacity: activeTab === 'overlays' ? 1 : 0.6, flex: 1, textAlign:'center', padding:'8px', cursor:'pointer', fontWeight:'bold', color:'white' }">
+                   Overlays
               </div>
           </div>
+          
+          <!-- Overlays View -->
+          <div v-if="activeTab === 'overlays'" class="overlay-section" style="padding:10px;">
+              <div style="margin-bottom:10px; display:flex; gap:10px; justify-content:center;">
+                  <button @click="overlayMode = 'context'" :class="{active: overlayMode==='context'}" class="btn-toggle" style="padding:6px 12px; border-radius:4px; border:1px solid #555; background:transparent; color:white; cursor:pointer;" :style="overlayMode === 'context' ? 'background:#4f83cc; border-color:#4f83cc' : ''">Current Folder</button>
+                  <button @click="overlayMode = 'all'" :class="{active: overlayMode==='all'}" class="btn-toggle" style="padding:6px 12px; border-radius:4px; border:1px solid #555; background:transparent; color:white; cursor:pointer;" :style="overlayMode === 'all' ? 'background:#4f83cc; border-color:#4f83cc' : ''">Show ALL</button>
+              </div>
+
+              <!-- Grouping by Folder -->
+               <div v-for="(group, folderPath) in Object.groupBy(availableOverlays, o => o.path.substring(0, o.path.lastIndexOf('/')) || '/')" :key="folderPath" style="margin-bottom:15px;">
+                  <div style="font-weight:bold; color:#aaa; font-size:12px; margin-bottom:5px; border-bottom:1px solid #444;">{{ folderPath }}</div>
+                  
+                  <div v-for="item in group" :key="item.path" 
+                       class="overlay-item" 
+                       style="display:flex; align-items:center; padding:8px; cursor:pointer; border-radius:4px; margin-bottom:2px;"
+                       :style="isOverlayActive(item.path) ? 'background:rgba(79, 131, 204, 0.3); border:1px solid #4f83cc;' : 'background:rgba(255,255,255,0.05);'"
+                       @click="toggleOverlay(item.path)">
+                       
+                      <i class="material-icons" style="margin-right:10px; color:#42a5f5;">{{ isOverlayActive(item.path) ? 'check_box' : 'check_box_outline_blank' }}</i>
+                      <div style="flex:1;">
+                          <div class="overlay-name" :title="item.description || item.name" style="font-weight:500;">{{ item.name }}</div>
+                          <div v-if="item.description" style="font-size:11px; opacity:0.7;">{{ item.description }}</div>
+                      </div>
+                  </div>
+              </div>
+              
+              <div v-if="availableOverlays.length === 0" style="text-align:center; opacity:0.6; margin-top:20px;">
+                  No overlays found.
+              </div>
+          </div>
+
+          <!-- Inspection View (Existing Content wrapped) -->
+          <div v-else-if="activeTab === 'inspection'">
 
           <div v-if="sidePanelData.length === 0 && !sidePanelLoading" class="panel-empty">
               <div v-if="inspectionHistory.length > 0" style="width: 100%; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 10px;">
@@ -193,6 +232,7 @@
                   </button>
               </div>
           </div>
+          </div> <!-- Close inspection tab -->
       </div>
   </div>
 
@@ -296,6 +336,22 @@ const getClusterColor = (str) => {
     }
     const c = (hash & 0x00FFFFFF).toString(16).toUpperCase();
     return '#' + '00000'.substring(0, 6 - c.length) + c;
+};
+
+
+const recursiveDecode = (str) => {
+    if (!str) return str;
+    let decoded = str;
+    let limit = 0;
+    while (decoded.includes('%') && limit < 5) {
+        try {
+            const next = decodeURIComponent(decoded);
+            if (next === decoded) break;
+            decoded = next;
+        } catch (e) { break; }
+        limit++;
+    }
+    return decoded;
 };
 
 const groupedDisplayedItems = computed(() => {
@@ -470,19 +526,161 @@ const closeSidePanel = () => {
     displayedCount.value = itemsPerPage; // Reset logic check
 };
 
+const openOverlaysPanel = () => {
+    showSidePanel.value = true;
+    activeTab.value = 'overlays';
+    // Load overlays if not loaded
+    fetchOverlays();
+};
+
 // Quick View State
 const quickViewFile = ref(null);
 
-const toggleOverlay = (path) => {
-    const current = route.query.overlay;
-    const query = { ...route.query };
-    if (current === path) {
-        delete query.overlay; // Toggle Off
-    } else {
-        query.overlay = path; // Toggle On / Switch
+// Overlay State
+const activeTab = ref('inspection'); // 'inspection' or 'overlays'
+const overlayMode = ref('context'); // 'context' (current folder) or 'all' (global)
+const availableOverlays = ref([]); // List of overlay objects
+const activeOverlayLayers = ref({}); // Map path -> Leaflet Layer
+
+// Watch for folder changes to fetch overlays (if in context mode)
+watch([() => route.query.path, () => route.query.source, overlayMode], () => {
+    if (activeTab.value === 'overlays') {
+        fetchOverlays();
     }
-    router.replace({ query });
+}, { immediate: true });
+
+// Watch tab changes
+watch(activeTab, (val) => {
+    if (val === 'overlays') {
+        fetchOverlays();
+    }
+});
+
+const fetchOverlays = async () => {
+    let s = route.query.source || state.source;
+    let p = route.query.path || "";
+    
+    // If we are inspecting a specific folder, use that as context
+    if (currentInspectionFolder.value) {
+        if (!p && currentInspectionFolder.value.path) {
+            p = currentInspectionFolder.value.path;
+        }
+        // Use source from folder if available and valid
+        if (currentInspectionFolder.value.source) {
+             s = currentInspectionFolder.value.source;
+        }
+    }
+
+    if (!s) return;
+
+    // Aggressively decode source and path to prevent double/triple encoding
+    // This handles chaos from router or state differences
+    s = recursiveDecode(s);
+    p = recursiveDecode(p);
+
+    sidePanelLoading.value = true;
+    try {
+        const mode = overlayMode.value;
+        const url = `/api/heatmap/overlays?source=${encodeURIComponent(s)}&path=${encodeURIComponent(p)}&mode=${mode}`;
+        // console.log("Fetching overlays: " + url);
+        const res = await fetch(url);
+        if (res.ok) {
+            const data = await res.json();
+            if ((!data.overlays || data.overlays.length === 0) && !url.includes('scan=true')) {
+                 // Optimization: If no overlays found, maybe they are not generated yet?
+                 // Trigger a scan and retry once.
+                 console.log("No overlays found, triggering on-demand scan...");
+                 const scanUrl = url + "&scan=true";
+                 const res2 = await fetch(scanUrl);
+                 if (res2.ok) {
+                     const data2 = await res2.json();
+                     availableOverlays.value = data2.overlays || [];
+                     return;
+                 }
+            }
+            availableOverlays.value = data.overlays || [];
+        } else {
+             if (res.status === 404) {
+                 // 404 is expected if no overlays exist for this path
+                 availableOverlays.value = [];
+             } else {
+                 console.error("Fetch overlays failed: " + res.status);
+                 availableOverlays.value = [];
+             }
+        }
+    } catch (e) {
+        console.error("Failed to fetch overlays", e);
+    } finally {
+        sidePanelLoading.value = false;
+    }
 };
+
+const toggleOverlay = async (path) => {
+    // Check if active
+    if (activeOverlayLayers.value[path]) {
+        // Remove
+        if (map) {
+            map.removeLayer(activeOverlayLayers.value[path]);
+        }
+        delete activeOverlayLayers.value[path];
+    } else {
+        // Add
+        if (Object.keys(activeOverlayLayers.value).length >= 5) {
+            notify.show("Maximum 5 overlays allowed.", 'error');
+            return;
+        }
+
+        const overlay = availableOverlays.value.find(o => o.path === path);
+        if (!overlay) return;
+
+        // Fetch GeoJSON content
+        // Uses /api/raw which expects: source=<source>&path=<path_relative_to_source>
+        // overlay.path comes from backend as relative to source (e.g. "2019/Trip.geojson")
+        // We ensure it starts with / for api compatibility if needed.
+        let rawPath = overlay.path;
+        if (!rawPath.startsWith('/')) {
+            rawPath = '/' + rawPath;
+        }
+
+        try {
+            // Construct request for /api/raw
+            // Format: files=SOURCE::PATH
+            const fileSpec = `${overlay.source}::${rawPath}`;
+            const url = `/api/raw?files=${encodeURIComponent(fileSpec)}`;
+            console.log("Loading overlay from: " + url);
+            
+            const res = await fetch(url);
+            if (!res.ok) throw new Error("Failed to fetch GeoJSON: " + res.status);
+            
+            const geojson = await res.json();
+            // console.log("Overlay loaded:", geojson);
+
+            // Add to map
+            const layer = L.geoJSON(geojson, {
+                style: function (feature) {
+                    return {color: feature.properties.stroke || 'blue', weight: feature.properties['stroke-width'] || 3};
+                },
+                onEachFeature: function (feature, layer) {
+                     if (feature.properties && feature.properties.name) {
+                         layer.bindPopup(feature.properties.name);
+                     }
+                }
+            }).addTo(map);
+
+            activeOverlayLayers.value[path] = layer;
+            
+            // Zoom to it if it's the first one?
+            if (Object.keys(activeOverlayLayers.value).length === 1) {
+                map.fitBounds(layer.getBounds());
+            }
+
+        } catch (e) {
+            notify.error("Failed to load overlay: " + e.message);
+        }
+    }
+};
+
+const isOverlayActive = (path) => !!activeOverlayLayers.value[path];
 
 const openQuickView = (file) => {
     quickViewFile.value = {
@@ -627,6 +825,8 @@ const inspectLocation = async (path, source, directItems = null, coords = null, 
     console.log(`[Heatmap] inspectLocation called: path='${path}', source='${source}', keepHistory=${keepHistory}`);
     
     showSidePanel.value = true;
+    isPanelCollapsed.value = false; // Ensure expanded
+    activeTab.value = 'inspection'; // Force Inspection Tab
     sidePanelLoading.value = true;
     
     // Manage History
@@ -951,7 +1151,9 @@ const goBack = () => {
     
     if (effectiveOverlay) {
         const ov = effectiveOverlay;
-        const src = route.query.source || "";
+        const srcRaw = route.query.source || "";
+        const src = recursiveDecode(srcRaw);
+
         // Get parent path
         let parent = ov.substring(0, ov.lastIndexOf('/'));
         if (parent === "") parent = "/";
@@ -968,13 +1170,18 @@ const goBack = () => {
         }
         target += cleanP;
         
+        console.log(`[Heatmap] goBack (Overlay) target='${target}' src='${src}'`);
         router.push({ path: target }).catch(err => console.error(err));
         return;
     }
 
     if (route.query.source && route.query.path) {
-         const src = route.query.source;
-         const p = route.query.path;
+         const srcRaw = route.query.source;
+         const src = recursiveDecode(srcRaw);
+         
+         const pRaw = route.query.path;
+         const p = recursiveDecode(pRaw);
+
          // Ensure no double slashes if path starts with /
          let cleanP = p.startsWith('/') ? p.substring(1) : p;
          // Prevent double source in path (e.g. PHOTOS/PHOTOS/...)
@@ -989,6 +1196,7 @@ const goBack = () => {
          }
          navPath += cleanP;
          
+         console.log(`[Heatmap] goBack target='${navPath}' src='${src}'`);
          router.push({ path: navPath }).catch(err => console.error(err));
     } else {
          router.push({ path: '/files/' }).catch(err => console.error(err));
@@ -1527,7 +1735,11 @@ const initMap = async () => {
     L.Control.BrowserFullscreen = L.Control.extend({
         onAdd: function(map) {
             var container = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
-            var button = L.DomUtil.create('a', 'leaflet-control-fullscreen-button', container);
+            var className = 'leaflet-control-fullscreen-button';
+            if (!document.fullscreenElement) {
+                className += ' flash-on-load';
+            }
+            var button = L.DomUtil.create('a', className, container);
             button.href = '#';
             button.title = 'Full Screen';
             button.innerHTML = '<i class="material-icons" style="font-size:18px; line-height:30px;">fullscreen</i>';
@@ -1562,7 +1774,7 @@ const initMap = async () => {
     new L.Control.BrowserFullscreen({ position: 'topleft' }).addTo(map);
 
     // Basemaps (Added LAST to be at the bottom of the stack)
-    L.control.layers(baseMaps, null, { position: 'topleft' }).addTo(map);
+    // L.control.layers(baseMaps, null, { position: 'topleft' }).addTo(map); // REMOVED as per user request
 
     // Use MarkerClusterGroup to enable Spiderfy effect
     markers = L.markerClusterGroup({
@@ -2739,6 +2951,13 @@ watch(() => route.query, (newQ, oldQ) => {
     }
     loadData();
 });
+
+// Helper for UI
+const openOverlaysTab = () => {
+    showSidePanel.value = true;
+    isPanelCollapsed.value = false;
+    activeTab.value = 'overlays';
+};
 </script>
 
 <style scoped>
@@ -3008,6 +3227,16 @@ watch(() => route.query, (newQ, oldQ) => {
 <style>
 /* GLOBAL STYLES FOR LEAFLET MARKERS (Cannot be scoped) */
 
+@keyframes flashButton {
+    0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 69, 0, 0.7); }
+    50% { transform: scale(1.2); box-shadow: 0 0 20px 0 rgba(255, 69, 0, 0.7); background: #ffeb3b !important; border-color: red !important; }
+    100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 69, 0, 0); }
+}
+.flash-on-load {
+    animation: flashButton 1s ease-in-out 3; /* Flash 3 times */
+    z-index: 10000;
+}
+
 /* Cluster flare styles */
 .marker-cluster {
     background-color: transparent !important; /* Allow our custom flare to show */
@@ -3162,6 +3391,8 @@ watch(() => route.query, (newQ, oldQ) => {
     padding: 5px;
 }
 </style>
+
+
 
 <style scoped>
 /* Collapsible Panel Styles */

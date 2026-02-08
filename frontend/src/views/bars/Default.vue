@@ -11,6 +11,7 @@
       v-if="isListingView"
       :icon="fullscreenIcon"
       :label="fullscreenLabel"
+      :class="{ 'flash-on-load': !isFullscreen }"
       @action="toggleFullscreen"
     />
     <div class="header-middle">
@@ -18,26 +19,7 @@
         <title v-else-if="isSettings" class="topTitle">{{ $t("sidebar.settings") }}</title>
         <title v-else class="topTitle">{{ req.name }}</title>
         
-        <!-- Map Overlays Dropdown -->
-        <div v-if="isListingView && availableMaps.length > 0" class="map-overlays-select-container">
-            <span style="white-space: nowrap; margin-right: 8px; font-size: 0.9em;">Maps in this folder:</span>
-            <select v-model="selectedMapOverlay" class="map-overlays-select">
-                <option disabled value="">Map Overlays</option>
-                <option v-for="map in availableMaps" :key="map.path" :value="map.path">
-                    {{ map.name }}
-                </option>
-            </select>
-            <button 
-                class="action" 
-                :class="{ 'flash-animation': isFlashing }"
-                @click="viewMapOverlay('button')" 
-                title="View Map Overlay"
-                :disabled="!selectedMapOverlay"
-                style="margin-left: 5px; padding: 4px 8px; cursor: pointer;"
-            >
-                <i class="material-icons" style="font-size: 1.2em;">visibility</i>
-            </button>
-        </div>
+        <!-- Map Overlays Dropdown REMOVED -->
     </div>
     
     <action
@@ -625,6 +607,10 @@ header {
 .dark-mode-header .map-overlays-select option {
     background-color: #333;
     color: white;
+}
+
+.flash-on-load {
+    animation: flash-highlight 1s ease-in-out 3;
 }
 
 /* Heatmap progress banner */
