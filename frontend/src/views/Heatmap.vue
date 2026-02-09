@@ -138,13 +138,14 @@
           <!-- Map Overlays Section -->
           <!-- Tab Navigation -->
           <div class="panel-tabs" style="display:flex; justify-content:space-around; background:#2c3e50; padding:5px 0 0 0; margin-bottom:0;">
-              <div @click="activeTab = 'inspection'" 
-                   :style="{ borderBottom: activeTab === 'inspection' ? '3px solid #4f83cc' : '3px solid transparent', opacity: activeTab === 'inspection' ? 1 : 0.6, flex: 1, textAlign:'center', padding:'8px', cursor:'pointer', fontWeight:'bold', color:'white' }">
-                   Inspection
+              <div @click="activeTab = 'inspection'" title="Inspection"
+                   :style="{ borderBottom: activeTab === 'inspection' ? '3px solid #fbc02d' : '3px solid transparent', opacity: activeTab === 'inspection' ? 1 : 0.6, flex: 1, textAlign:'center', padding:'8px', cursor:'pointer', color:'white' }">
+                   <i class="material-icons" style="font-size: 24px; color: #fbc02d;">folder</i>
               </div>
-              <div @click="activeTab = 'overlays'" 
-                   :style="{ borderBottom: activeTab === 'overlays' ? '3px solid #4f83cc' : '3px solid transparent', opacity: activeTab === 'overlays' ? 1 : 0.6, flex: 1, textAlign:'center', padding:'8px', cursor:'pointer', fontWeight:'bold', color:'white' }">
-                   Overlays
+              <div @click="activeTab = 'overlays'" title="Overlays"
+                   :style="{ borderBottom: activeTab === 'overlays' ? '3px solid #4f83cc' : '3px solid transparent', opacity: activeTab === 'overlays' ? 1 : 0.6, flex: 1, textAlign:'center', padding:'8px', cursor:'pointer', color:'white', display:'flex', alignItems:'center', justifyContent:'center' }">
+                   <i class="material-icons" style="font-size: 20px; color: #42a5f5; margin-right: 6px;">map</i>
+                   <span style="font-weight: bold;">Overlays</span>
               </div>
           </div>
           
@@ -157,7 +158,8 @@
 
               <!-- Grouping by Folder -->
                <div v-for="(group, folderPath) in Object.groupBy(availableOverlays, o => o.path.substring(0, o.path.lastIndexOf('/')) || '/')" :key="folderPath" style="margin-bottom:15px;">
-                  <div style="font-weight:bold; color:#aaa; font-size:12px; margin-bottom:5px; border-bottom:1px solid #444;">{{ folderPath }}</div>
+                   <!-- Path Header REMOVED to simplify list -->
+                   <!-- <div style="font-weight:bold; color:#aaa; font-size:12px; margin-bottom:5px; border-bottom:1px solid #444;">{{ folderPath }}</div> -->
                   
                   <div v-for="item in group" :key="item.path" 
                        class="overlay-item" 
@@ -166,9 +168,22 @@
                        @click="toggleOverlay(item.path)">
                        
                       <i class="material-icons" style="margin-right:10px; color:#42a5f5;">{{ isOverlayActive(item.path) ? 'check_box' : 'check_box_outline_blank' }}</i>
-                      <div style="flex:1;">
-                          <div class="overlay-name" :title="item.description || item.name" style="font-weight:500;">{{ item.name }}</div>
-                          <div v-if="item.description" style="font-size:11px; opacity:0.7;">{{ item.description }}</div>
+                      <div style="flex:1; overflow:hidden;">
+                          <!-- Clean Name Display: Use Name if available, else filename -->
+                          <div class="overlay-name" style="font-weight:500; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                             {{ item.name || item.path.split('/').pop() }}
+                          </div>
+                          <!-- Description Restored -->
+                          <div v-if="item.description" style="font-size:11px; opacity:0.7; word-break: break-word;">
+                              {{ item.description }}
+                          </div>
+                      </div>
+                      
+                      <!-- Info Icon with Tooltip via Title -->
+                      <div :title="(item.description ? item.description + '\n' : '') + 'Path: ' + item.path"
+                           style="padding: 4px; opacity: 0.5; cursor: help;"
+                           @click.stop="showOverlayInfo(item)">
+                          <i class="material-icons" style="font-size: 16px;">info_outline</i>
                       </div>
                   </div>
               </div>
@@ -647,22 +662,148 @@ const toggleOverlay = async (path) => {
             // Format: files=SOURCE::PATH
             const fileSpec = `${overlay.source}::${rawPath}`;
             const url = `/api/raw?files=${encodeURIComponent(fileSpec)}`;
+            
+            // 1. Try to fetch Sidecar Style File first
+            let styleConfig = null;
+            try {
+                const stylePath = rawPath + ".style.json";
+                const styleSpec = `${overlay.source}::${stylePath}`;
+                const styleUrl = `/api/raw?files=${encodeURIComponent(styleSpec)}`;
+                const styleRes = await fetch(styleUrl);
+                if (styleRes.ok) {
+                    styleConfig = await styleRes.json();
+                    console.log("[Heatmap] Loaded sidecar style for:", path);
+                }
+            } catch (e) { /* Ignore style load errors */ }
+
             console.log("Loading overlay from: " + url);
             
             const res = await fetch(url);
             if (!res.ok) throw new Error("Failed to fetch GeoJSON: " + res.status);
             
             const geojson = await res.json();
-            // console.log("Overlay loaded:", geojson);
 
-            // Add to map
+            // Helper for Feature Styling (Copied from loadOverlay)
+            const getStyleForFeature = (feature) => {
+                let finalStyle = { color: "#ff7800", weight: 5, opacity: 0.65 };
+
+                if (!styleConfig) {
+                    if (feature.properties && feature.properties.color) {
+                            finalStyle.color = feature.properties.color;
+                    }
+                    // Simple fallback if user defined stroke in properties (like standard geojson.io)
+                    if (feature.properties && feature.properties.stroke) {
+                        finalStyle.color = feature.properties.stroke;
+                    }
+                    if (feature.properties && feature.properties['stroke-width']) {
+                        finalStyle.weight = feature.properties['stroke-width'];
+                    }
+                    return finalStyle;
+                }
+                
+                // 1. Apply Global Default
+                if (styleConfig.default) {
+                    finalStyle = { ...finalStyle, ...styleConfig.default };
+                }
+                
+                // 2. Apply Rules
+                if (styleConfig.rules && Array.isArray(styleConfig.rules)) {
+                    for (const rule of styleConfig.rules) {
+                        if (!rule.if || !rule.style) continue;
+                        
+                        let match = true;
+                        // Simple property match
+                        if (rule.if.property) {
+                             if (feature.properties[rule.if.property] !== rule.if.value) {
+                                 match = false;
+                             }
+                        }
+                        
+                        // ID match? - Add if needed, simplified for now
+                        
+                        if (match) {
+                            finalStyle = { ...finalStyle, ...rule.style };
+                        }
+                    }
+                }
+                return finalStyle;
+            };
+
+            // Add to map with custom style and popup
             const layer = L.geoJSON(geojson, {
-                style: function (feature) {
-                    return {color: feature.properties.stroke || 'blue', weight: feature.properties['stroke-width'] || 3};
+                style: getStyleForFeature,
+                pointToLayer: function(feature, latlng) {
+                    const props = feature.properties || {};
+                    
+                    // 1. Circle Marker
+                    if (props.markerType === 'circle') {
+                        const style = {
+                            radius: props.radius || 6,
+                            fillColor: props.fill || "#ff7800",
+                            color: props.stroke || "#000",
+                            weight: props.strokeWidth || 1,
+                            opacity: props.strokeOpacity || 1,
+                            fillOpacity: props.fillOpacity || 0.8
+                        };
+                        return L.circleMarker(latlng, style);
+                    }
+                    
+                    // 2. Custom Icon
+                    const iconUrl = props.icon || props.iconUrl;
+                    if (iconUrl) {
+                        // Determine Base Size
+                        let w = 32; 
+                        let h = 32;
+                        
+                        if (props.iconSize) {
+                            w = props.iconSize[0];
+                            h = props.iconSize[1];
+                        }
+                        
+                        // Handle KML-style icon-scale
+                        if (props['icon-scale']) {
+                            const scale = parseFloat(props['icon-scale']);
+                            w = w * scale;
+                            h = h * scale;
+                        }
+
+                        // Anchor
+                        let anchor = [w/2, h]; // Default bottom-center
+                        if (props.iconAnchor) {
+                            anchor = props.iconAnchor;
+                        }
+                        
+                        const myIcon = L.icon({
+                            iconUrl: iconUrl,
+                            iconSize: [w, h],
+                            iconAnchor: anchor,
+                            popupAnchor: [0, -h]
+                        });
+                        return L.marker(latlng, {icon: myIcon});
+                    }
+
+                    // 3. Default Marker
+                    return L.marker(latlng);
                 },
                 onEachFeature: function (feature, layer) {
-                     if (feature.properties && feature.properties.name) {
-                         layer.bindPopup(feature.properties.name);
+                     if (feature.properties) {
+                         let content = "";
+                         
+                         // Robust Title / Name Check
+                         const name = feature.properties.name || feature.properties.Name || feature.properties.title || feature.properties.Title;
+                         if (name) {
+                             content += `<div style='font-weight:bold'>${name}</div>`;
+                         }
+                         
+                         // Robust Description Check
+                         const desc = feature.properties.description || feature.properties.Description || feature.properties.desc || feature.properties.Desc;
+                         if (desc) {
+                             content += `<div style='margin-top:4px; max-height:200px; overflow-y:auto'>${desc}</div>`;
+                         }
+                         
+                         if (content) {
+                             layer.bindPopup(content);
+                         }
                      }
                 }
             }).addTo(map);
@@ -1510,6 +1651,59 @@ const loadOverlay = async () => {
 
         overlayLayer = L.geoJSON(geoData, {
             style: getStyleForFeature,
+            pointToLayer: function(feature, latlng) {
+                const props = feature.properties || {};
+                
+                // 1. Circle Marker
+                if (props.markerType === 'circle') {
+                    const style = {
+                        radius: props.radius || 6,
+                        fillColor: props.fill || "#ff7800",
+                        color: props.stroke || "#000",
+                        weight: props.strokeWidth || 1,
+                        opacity: props.strokeOpacity || 1,
+                        fillOpacity: props.fillOpacity || 0.8
+                    };
+                    return L.circleMarker(latlng, style);
+                }
+                
+                // 2. Custom Icon
+                const iconUrl = props.icon || props.iconUrl;
+                if (iconUrl) {
+                    // Determine Base Size
+                    let w = 32; 
+                    let h = 32;
+                    
+                    if (props.iconSize) {
+                        w = props.iconSize[0];
+                        h = props.iconSize[1];
+                    }
+                    
+                    // Handle KML-style icon-scale
+                    if (props['icon-scale']) {
+                        const scale = parseFloat(props['icon-scale']);
+                        w = w * scale;
+                        h = h * scale;
+                    }
+
+                    // Anchor
+                    let anchor = [w/2, h]; // Default bottom-center
+                    if (props.iconAnchor) {
+                        anchor = props.iconAnchor;
+                    }
+                    
+                    const myIcon = L.icon({
+                        iconUrl: iconUrl,
+                        iconSize: [w, h],
+                        iconAnchor: anchor,
+                        popupAnchor: [0, -h]
+                    });
+                    return L.marker(latlng, {icon: myIcon});
+                }
+
+                // 3. Default Marker
+                return L.marker(latlng);
+            },
             onEachFeature: function (feature, layer) {
                 if (feature.properties) {
                     let content = "";
@@ -1774,7 +1968,7 @@ const initMap = async () => {
     new L.Control.BrowserFullscreen({ position: 'topleft' }).addTo(map);
 
     // Basemaps (Added LAST to be at the bottom of the stack)
-    // L.control.layers(baseMaps, null, { position: 'topleft' }).addTo(map); // REMOVED as per user request
+    L.control.layers(baseMaps, null, { position: 'topleft' }).addTo(map);
 
     // Use MarkerClusterGroup to enable Spiderfy effect
     markers = L.markerClusterGroup({
