@@ -1,10 +1,7 @@
 package iteminfo
 
 import (
-	"os"
 	"path/filepath"
-	"runtime"
-	"syscall"
 	"time"
 )
 
@@ -56,25 +53,4 @@ type FileOptions struct {
 
 func (f FileOptions) Components() (string, string) {
 	return filepath.Dir(f.Path), filepath.Base(f.Path)
-}
-
-// GetBirthTime returns the creation time (birth time) of a file.
-// Falls back to ModTime if birth time is unavailable on the platform.
-func GetBirthTime(info os.FileInfo) time.Time {
-	// Get platform-specific stat data
-	stat, ok := info.Sys().(*syscall.Win32FileAttributeData)
-	if !ok {
-		// Fallback to ModTime if we can't get syscall data
-		return info.ModTime()
-	}
-
-	// Windows: Use CreationTime
-	if runtime.GOOS == "windows" {
-		// Convert Windows FILETIME to Unix time
-		nsec := stat.CreationTime.Nanoseconds()
-		return time.Unix(0, nsec)
-	}
-
-	// Fallback to ModTime for other platforms or if extraction fails
-	return info.ModTime()
 }
