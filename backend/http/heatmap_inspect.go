@@ -157,8 +157,9 @@ func handleInspect(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 						if filepath.Base(p.Path) == "heatmap.json" {
 							continue
 						}
-						// Propagate Parent Cluster ID
+						// Propagate Parent Cluster ID and TotalImageCount
 						p.ID = cID
+						p.TotalImageCount = c.TotalImageCount
 						matchPoints = append(matchPoints, p)
 					}
 				} else if c.Count > 0 {
@@ -168,14 +169,15 @@ func handleInspect(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 						itemType = "folder"
 					}
 					matchPoints = append(matchPoints, heatmap.ClusterPoint{
-						ID:        cID,
-						Lat:       c.Lat,
-						Lon:       c.Lon,
-						Count:     c.Count,
-						Path:      c.Path,
-						PreviewID: c.PreviewID,
-						Type:      itemType,
-						Source:    realSource,
+						ID:              cID,
+						Lat:             c.Lat,
+						Lon:             c.Lon,
+						Count:           c.Count,
+						Path:            c.Path,
+						PreviewID:       c.PreviewID,
+						Type:            itemType,
+						Source:          realSource,
+						TotalImageCount: c.TotalImageCount,
 					})
 				}
 			}
@@ -352,17 +354,19 @@ func handleInspect(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 								continue
 							}
 							p.ID = c.ID
+							p.TotalImageCount = c.TotalImageCount
 							matchPoints = append(matchPoints, p)
 						}
 					} else {
 						// Hydration failed
 						logger.Error(fmt.Sprintf("Inspect: Failed to hydrate cluster %s - No match found in leaf data", c.ID))
 						matchPoints = append(matchPoints, heatmap.ClusterPoint{
-							Type:   "folder",
-							Path:   c.Path,
-							Count:  c.Count,
-							ID:     c.ID,
-							Source: c.Source,
+							Type:            "folder",
+							Path:            c.Path,
+							Count:           c.Count,
+							ID:              c.ID,
+							Source:          c.Source,
+							TotalImageCount: c.TotalImageCount,
 						})
 					}
 
@@ -376,11 +380,12 @@ func handleInspect(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 						logger.Info("Inspect: Match found but points empty. Falling back to Folder Node.")
 						// ... fallback code ...
 						currentPoints = append(currentPoints, heatmap.ClusterPoint{
-							Type:   "folder",
-							Path:   c.Path,
-							Count:  c.Count,
-							ID:     c.ID,
-							Source: c.Source,
+							Type:            "folder",
+							Path:            c.Path,
+							Count:           c.Count,
+							ID:              c.ID,
+							Source:          c.Source,
+							TotalImageCount: c.TotalImageCount,
 						})
 					}
 
@@ -390,6 +395,7 @@ func handleInspect(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 						}
 						// Always override/set the ID to the Cluster ID (c.ID)
 						p.ID = c.ID
+						p.TotalImageCount = c.TotalImageCount
 						matchPoints = append(matchPoints, p)
 					}
 					logger.Debug(fmt.Sprintf("Inspect: Appended %d points from cluster %s. Total matchPoints=%d", len(currentPoints), c.ID, len(matchPoints)))
@@ -457,6 +463,7 @@ func handleInspect(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 						}
 						// Propagate Parent Cluster ID
 						p.ID = cID
+						p.TotalImageCount = c.TotalImageCount
 						matchPoints = append(matchPoints, p)
 
 						if i == 0 {
@@ -521,14 +528,15 @@ func handleInspect(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 
 						logger.Debug(fmt.Sprintf("Inspect: Returning fallback node for %s (Path: %s) Type: %s", cID, c.Path, itemType))
 						matchPoints = append(matchPoints, heatmap.ClusterPoint{
-							Type:      itemType,
-							Path:      c.Path,
-							Count:     c.Count,
-							ID:        cID,
-							PreviewID: c.PreviewID,
-							Lat:       c.Lat,
-							Lon:       c.Lon,
-							Source:    c.Source,
+							Type:            itemType,
+							Path:            c.Path,
+							Count:           c.Count,
+							ID:              cID,
+							PreviewID:       c.PreviewID,
+							Lat:             c.Lat,
+							Lon:             c.Lon,
+							Source:          c.Source,
+							TotalImageCount: c.TotalImageCount,
 						})
 					}
 				}

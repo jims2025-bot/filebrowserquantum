@@ -69,19 +69,12 @@
       Status: {{ debugStatus }}
   </div>
   
-  <!-- Collapsed Panel Tab (Expand Inspector) -->
-  <div v-if="isPanelCollapsed && showSidePanel" 
-       @click="isPanelCollapsed = false"
-       title="Expand Panel"
-       class="panel-expand-tab"
-       style="position:absolute; top:60px; right:0; z-index:2500; background-color:#2c3e50; color:white; padding:10px 4px 10px 8px; border-radius:6px 0 0 6px; cursor:pointer; box-shadow:-2px 2px 5px rgba(0,0,0,0.3); display:flex; align-items:center;">
-       <i class="material-icons">chevron_left</i>
-  </div>
+  <!-- Collapsed Panel Tab REMOVED -->
 
   <!-- Map Overlays Side Tab (Always visible if panel is closed/collapsed or showing inspection) -->
   <div v-if="!showSidePanel || isPanelCollapsed || activeTab !== 'overlays'"
        @click="openOverlaysTab"
-       title="Map Overlays"
+       title="Show Inspection Panel"
        class="overlays-tab"
        style="position:absolute; top:120px; right:0; z-index:2500; background-color:#2c3e50; color:white; padding:10px 4px 10px 8px; border-radius:6px 0 0 6px; cursor:pointer; box-shadow:-2px 2px 5px rgba(0,0,0,0.3); display:flex; align-items:center;">
        <i class="material-icons">layers</i>
@@ -98,6 +91,7 @@
               <button v-if="currentInspectionFolder" @click="backToFolders" class="back-btn" title="Back to Folder List"
                       style="background:transparent; border:none; color:#b0bec5; cursor:pointer; padding:6px; display:flex; align-items:center;">
                   <i class="material-icons" style="font-size:18px;">arrow_back</i>
+                  <i class="material-icons" style="font-size:16px; margin-left:4px;">folder_copy</i>
               </button>
               
               <div class="spacer" style="flex:1;"></div>
@@ -110,11 +104,7 @@
                   <i class="material-icons" style="font-size:18px;">refresh</i>
               </button>
               
-              <!-- Collapse Button -->
-              <button @click="isPanelCollapsed = true" class="panel-action-btn collapse" title="Collapse Panel"
-                      style="background:transparent; border:none; color:#b0bec5; cursor:pointer; padding:6px; display:flex; align-items:center;">
-                  <i class="material-icons" style="font-size:18px;">chevron_right</i>
-              </button>
+              <!-- Collapse Button REMOVED -->
               
               <button @click="closeSidePanel" class="panel-action-btn close" title="Close Panel"
                       style="background:transparent; border:none; color:#b0bec5; cursor:pointer; padding:6px; display:flex; align-items:center;">
@@ -129,6 +119,9 @@
                     style="font-size:0.9rem; font-weight:500; cursor:pointer; color:#42a5f5; text-decoration:underline;">
                   {{ currentInspectionFolder.path.split('/').pop() }}
               </span>
+              <div v-if="currentInspectionFolder && currentInspectionFolder.totalImageCount" style="font-size: 11px; opacity: 0.7; color: #ccc; margin-top: 2px;">
+                  Total Folder Image Count: {{ currentInspectionFolder.totalImageCount }}
+              </div>
           </div>
       </div>
 
@@ -325,7 +318,7 @@ const overlaySiblings = ref([]); // Sibling GeoJSON files for overlay navigation
 const sidePanelLoading = ref(false);
 const isPanelCollapsed = ref(false);
 
-const showDebugInfo = computed(() => state.showDebugInfo);
+
 
 const isBoxSelectMode = ref(false); // Box Selection Mode State
 const selectionBox = ref({ visible: false, startX: 0, startY: 0, currentX: 0, currentY: 0, style: {} });
@@ -528,6 +521,8 @@ const backToFolders = () => {
     } else {
         currentInspectionFolder.value = null;
     }
+    // Ensure we switch to inspection tab
+    activeTab.value = 'inspection';
 };
 
 
@@ -556,6 +551,7 @@ const activeTab = ref('inspection'); // 'inspection' or 'overlays'
 const overlayMode = ref('context'); // 'context' (current folder) or 'all' (global)
 const availableOverlays = ref([]); // List of overlay objects
 const activeOverlayLayers = ref({}); // Map path -> Leaflet Layer
+const showDebugInfo = ref(false); // Debug overlay visibility
 
 // Watch for folder changes to fetch overlays (if in context mode)
 watch([() => route.query.path, () => route.query.source, overlayMode], () => {
@@ -927,7 +923,8 @@ const openFolderView = async (folderGroup) => {
          });
 
          // Use Inspect API to show items from these clusters. KEEP HISTORY.
-         inspectLocation(targetPath, targetSource, null, finalCID, true);
+         // Pass totalImageCount from the folder group so it can be preserved
+         inspectLocation(targetPath, targetSource, null, finalCID, true, folderGroup.totalImageCount);
     } else {
          // No ID -> Fallback to Resource API (Show All)
          console.log(`[Heatmap] Drilling down via Resource API (Show All) for: ${targetPath}`);
@@ -938,7 +935,7 @@ const openFolderView = async (folderGroup) => {
              title: sidePanelTitle.value
          });
 
-         inspectLocation(targetPath, targetSource, null, null, true);
+         inspectLocation(targetPath, targetSource, null, null, true, folderGroup.totalImageCount);
     }
 };
 
@@ -962,8 +959,8 @@ const isImageFile = (filename) => {
 
 // Main Inspector Logic
 // Main Inspector Logic
-const inspectLocation = async (path, source, directItems = null, coords = null, keepHistory = false) => {
-    console.log(`[Heatmap] inspectLocation called: path='${path}', source='${source}', keepHistory=${keepHistory}`);
+const inspectLocation = async (path, source, directItems = null, coords = null, keepHistory = false, preservedTotalImageCount = null) => {
+    console.log(`[Heatmap] inspectLocation called: path='${path}', source='${source}', keepHistory=${keepHistory}, preservedTotalImageCount=${preservedTotalImageCount}`);
     
     showSidePanel.value = true;
     isPanelCollapsed.value = false; // Ensure expanded
@@ -1046,7 +1043,8 @@ const inspectLocation = async (path, source, directItems = null, coords = null, 
                         count: item.count,
                         clusterID: item.id,
                         lat: item.lat,
-                        lon: item.lon
+                        lon: item.lon,
+                        totalImageCount: item.totalImageCount
                     }));
                     if (sidePanelData.value.length > 0) {
                         console.log('[Heatmap] Mapped SidePanel Item 0 ClusterID:', sidePanelData.value[0].clusterID);
@@ -1082,17 +1080,31 @@ const inspectLocation = async (path, source, directItems = null, coords = null, 
                                 lat: item.lat,
                                 lon: item.lon
                             };
-                            // Robust count: If item has count > 1, use it. Otherwise count as 1 item.
+                            // Robust count: If item has count > 1, use that. Otherwise count as 1 item.
                             groups[p].count += (item.count && item.count > 1 ? item.count : 1);
                             groups[p].items.push(item);
+
+                            if (item.totalImageCount) {
+                                groups[p].totalImageCount = item.totalImageCount;
+                            }
                         }
                     });
+                    
+                    // Apply preserved totalImageCount if not already set from items
+                    if (preservedTotalImageCount) {
+                        Object.values(groups).forEach(group => {
+                            if (!group.totalImageCount) {
+                                group.totalImageCount = preservedTotalImageCount;
+                            }
+                        });
+                    }
                     
                     formattedSidePanelData.value = Object.values(groups);
                     
                     // If only one folder, auto-open it?
                     // ONLY if it's NOT a virtual folder (virtual folders require click to drill)
                     if (formattedSidePanelData.value.length === 1 && !formattedSidePanelData.value[0].isVirtual) {
+                        console.log('[Heatmap] Auto-opening folder. TotalImageCount:', formattedSidePanelData.value[0].totalImageCount);
                         currentInspectionFolder.value = formattedSidePanelData.value[0];
                     }
                     
@@ -1824,10 +1836,7 @@ const initMap = async () => {
     map.on('contextmenu', (e) => {
         const lat = e.latlng.lat.toFixed(5);
         const lng = e.latlng.lng.toFixed(5);
-        
-        // Try to find if we clicked on a known location/path context?
-        // Hard to know without clicking a marker.
-        // But we can offer "Inspect Global" or just coordinate copy.
+        const zoom = map.getZoom();
         
         L.popup()
             .setLatLng(e.latlng)
@@ -1835,11 +1844,28 @@ const initMap = async () => {
                 <div style="text-align:center; font-size:12px;">
                     <b>Lat:</b> ${lat}<br>
                     <b>Lon:</b> ${lng}<br>
-                    <button onclick="window.copyLeafletCoords('${lat}', '${lng}')" 
-                        class="button button--flat" 
-                        style="margin-top:5px; padding:2px 8px; font-size:11px; cursor:pointer;">
-                        Copy Coordinates
-                    </button>
+                    <div style="display:flex; flex-direction:column; gap:5px; margin-top:5px;">
+                        <button onclick="window.toggleDebugInfo()" 
+                            class="button button--flat" 
+                            style="padding:2px 8px; font-size:11px; cursor:pointer;">
+                            Toggle Debug Window
+                        </button>
+                        <button onclick="window.copyLeafletCoords('${lat}', '${lng}')" 
+                            class="button button--flat" 
+                            style="padding:2px 8px; font-size:11px; cursor:pointer;">
+                            Copy Coordinates
+                        </button>
+                        <button onclick="window.copyText('${lat}')" 
+                            class="button button--flat" 
+                            style="padding:2px 8px; font-size:11px; cursor:pointer;">
+                            Copy Latitude
+                        </button>
+                        <button onclick="window.copyText('${lng}')" 
+                            class="button button--flat" 
+                            style="padding:2px 8px; font-size:11px; cursor:pointer;">
+                            Copy Longitude
+                        </button>
+                    </div>
                     <div id="copy-status-${lat.replace('.','-')}" style="color:green; display:none; font-size:10px; margin-top:2px;">Copied!</div>
                 </div>
             `)
@@ -1847,14 +1873,37 @@ const initMap = async () => {
     });
 
     // Global helper for the popup button
+    window.toggleDebugInfo = () => {
+        showDebugInfo.value = !showDebugInfo.value;
+        // Close popup? Maybe keep it open.
+    };
+
     window.copyLeafletCoords = (lat, lng) => {
         const text = `${lat}, ${lng}`;
+        window.copyText(text, lat); // Reuse helper
+    };
+
+    window.copyText = (text, latKey) => {
         navigator.clipboard.writeText(text).then(() => {
-            const statusEl = document.getElementById(`copy-status-${lat.replace('.','-')}`);
-            if (statusEl) {
-                statusEl.style.display = 'block';
-                setTimeout(() => { statusEl.style.display = 'none'; }, 2000);
-            }
+            // Try to find status element. If latKey is provided, use it for ID (legacy support for copyLeafletCoords)
+            // Otherwise we might need a more generic way to show status in the popup.
+            // But popups are transient.
+            // The existing ID logic used lat.replace('.','-').
+            // Let's rely on finding any copy-status element in the current popup if we can?
+            // Actually, for simplicity, Copy Latitude/Longitude buttons in the SAME popup can share the SAME status message div.
+            // The ID is based on ${lat} which is constant for this popup instance.
+            // So we need to pass that 'lat' value to finding the element.
+            
+            // Hack: search for the status element in the document (it's in the leaflet popup pane)
+            const statusEls = document.querySelectorAll('[id^="copy-status-"]');
+            statusEls.forEach(el => {
+                if (el.offsetParent !== null) { // visible-ish
+                     el.style.display = 'block';
+                     el.innerText = "Copied: " + (text.length > 20 ? text.substring(0,17)+"..." : text);
+                     setTimeout(() => { el.style.display = 'none'; }, 2000);
+                }
+            });
+
         }).catch(err => console.error('Failed to copy', err));
     };
 
@@ -1972,126 +2021,109 @@ const initMap = async () => {
 
     // Use MarkerClusterGroup to enable Spiderfy effect
     markers = L.markerClusterGroup({
-        spiderfyOnMaxZoom: true, // Enable spiderfy
-        showCoverageOnHover: false, // Disable hover for performance
-        zoomToBoundsOnClick: true,
+        spiderfyOnMaxZoom: false, // CHANGED: Disable spiderfy at max zoom to allow direct inspection
+        showCoverageOnHover: true, // Enable coverage (blue area) on hover
+        zoomToBoundsOnClick: false, // CHANGED: Manual control in clusterclick
         maxClusterRadius: 50, // Slightly larger radius to catch overlaps
-        disableClusteringAtZoom: 19, // CHANGED: Allow clustering at 18 to handle density
+        disableClusteringAtZoom: 20, // CHANGED: Always cluster overlaps (until max zoom + 1)
         spiderfyDistanceMultiplier: 2, 
         spiderLegPolylineOptions: { weight: 1.5, color: '#222', opacity: 0.5 },
         iconCreateFunction: function(cluster) {
-            var childCount = 0;
+            var childCount = cluster.getChildCount();
             var children = cluster.getAllChildMarkers();
-            var thumbs = [];
-
+            
+            // Find a representative thumbnail
+            var thumbPath = null;
+            var thumbSource = null;
+            
+            // Try to find a valid thumb path in children
             for (var i = 0; i < children.length; i++) {
-                var m = children[i];
-                // Sum up weights
-                childCount += (m.options.photoCount || 1);
-                
-                // Collect potential thumbnails (up to 4)
-                if (thumbs.length < 4 && m.options.thumbPath && m.options.thumbSource) {
-                    thumbs.push({ path: m.options.thumbPath, source: m.options.thumbSource });
+                if (children[i].options.thumbPath) {
+                    thumbPath = children[i].options.thumbPath;
+                    thumbSource = children[i].options.thumbSource;
+                    break;
                 }
             }
+            
+            // Count Aggregation
+            var totalCount = 0;
+            children.forEach(m => {
+                totalCount += (m.options.photoCount || 1);
+            });
 
-            var c = ' marker-cluster-';
-            if (childCount < 10) {
-                c += 'small';
-            } else if (childCount < 100) {
-                c += 'medium';
-            } else {
-                c += 'large';
+            // Calculate Border Color based on Folder (using representative path)
+            let borderColor = '#555';
+            if (thumbPath) {
+                 let folderPath = "/";
+                const lastSlash = thumbPath.lastIndexOf('/');
+                if (lastSlash > 0) {
+                    folderPath = thumbPath.substring(0, lastSlash);
+                }
+                borderColor = getClusterColor(folderPath); // Use existing helper
             }
 
-            // Generate HTML for thumbs (The Grid)
-            var innerHtml = '';
-            if (thumbs.length > 0) {
-                innerHtml = '<div class="cluster-thumb-grid" style="width:24px !important; height:24px !important; display:flex !important; flex-wrap:wrap !important; justify-content:center; align-items:center; overflow:hidden; border-radius:50%; border:1px solid white; background-color:rgba(0,0,0,0.6); box-shadow:0 2px 4px rgba(0,0,0,0.3); box-sizing:border-box;">';
-                thumbs.forEach(t => {
-                    // Force small size preview with cache bust
-                    var url = '/api/preview?path=' + encodeURIComponent(t.path) + '&source=' + encodeURIComponent(t.source) + '&size=small';
-                    var cls = thumbs.length === 1 ? 'cluster-thumb cluster-thumb-single-in-grid' : 'cluster-thumb';
-                    
-                    // Fallback handled by onerror - wrap in try-catch for safety
-                    var style = "width:11px !important; height:11px !important; object-fit:cover !important; margin:0 !important; padding:0 !important; display:block !important;";
-                    if (thumbs.length === 1) style = "width:24px !important; height:24px !important; object-fit:cover !important; display:block !important;";
-                    
-                    try {
-                        innerHtml += '<img src="' + url + '" class="' + cls + '" style="' + style + '" onerror="this.style.display=\'none\';" />';
-                    } catch (e) {
-                        console.warn('Failed to generate thumbnail HTML:', e);
-                    }
-                });
+            // Generate HTML
+            let innerHtml = '';
+            if (thumbPath) {
+                 // Force small size preview with cache bust
+                const url = '/api/preview?path=' + encodeURIComponent(thumbPath) + '&source=' + encodeURIComponent(thumbSource || '') + '&size=small';
                 
-                // Overlay count
-                innerHtml += '<span style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); background:rgba(0,0,0,0.7); border-radius:10px; padding:0 4px; color:white; font-size:10px; font-weight:bold; white-space:nowrap;">' + childCount + '</span>';
-                innerHtml += '</div>';
+                innerHtml = `<div class="cluster-thumb-container" style="border:3px solid ${borderColor} !important; box-shadow:0 2px 5px rgba(0,0,0,0.5); background-color: #555; width:48px !important; height:48px !important; border-radius:50%; overflow:hidden; position:relative; box-sizing:border-box;">
+                    <img src="${url}" class="fan-thumb-img" style="width:100% !important; height:100% !important; max-width:100% !important; max-height:100% !important; object-fit:cover !important; border-radius:50%; display:block;" onerror="window.fileBrowserHeatmapImageError(this, '${thumbPath.replace(/\'/g, "\\\'")}')" />
+                    <span style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); background:rgba(0,0,0,0.7); border-radius:10px; padding:1px 5px; color:white; font-size:11px; font-weight:bold; white-space:nowrap;">${totalCount}</span>
+                </div>`;
             } else {
-                 innerHtml = '<div style="background-color:rgba(100,100,100,0.5);border-radius:50%;width:24px;height:24px;text-align:center;"><span style="color:white;text-shadow:0 0 2px black;line-height:24px;">' + childCount + '</span></div>';
+                // Fallback (Generic Number)
+                 innerHtml = `<div style="background-color:rgba(100,100,100,0.8);border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;border:2px solid white;"><span style="color:white;text-shadow:0 0 2px black;font-weight:bold;">${totalCount}</span></div>`;
             }
 
             return new L.DivIcon({ 
                 html: innerHtml, 
-                className: 'marker-cluster' + c, 
-                iconSize: new L.Point(24, 24) 
+                className: 'custom-cluster-marker', 
+                iconSize: new L.Point(48, 48),
+                iconAnchor: [24, 24]
             });
         }
     });
 
-    // Debugging handlers
+    // Custom Handle for Max Zoom Click (instead of Spiderfy)
     markers.on('clusterclick', function (a) {
-        // console.log("DEBUG: clusterclick fired. Child count:", a.layer.getAllChildMarkers().length);
+        // Fix: Use map.getZoom() instead of a.layer.getZoom()
+        // OR if the cluster is fully contained in a small area (same location)
+        // a.layer.getBounds() might be a single point.
+        // We generally want "Inspection" if we are at max zoom OR if zooming won't help.
+        
+        const zoom = map.getZoom();
         const cluster = a.layer;
-        const children = cluster.getAllChildMarkers();
-        if (children.length === 0) return;
+        // Check if zooming in would actually help
+        // If current zoom is max, OR if the cluster bounds are effectively a point
+        // (But MarkerClusterGroup handles "spiderfy" for same-location points usually)
+        // Since we disabled spiderfyOnMaxZoom, we catch it here.
         
-        // Assume first child location is representative for the key
-        // Note: All markers in a cluster have the same lat/lon for the purpose of clusterDataStore key
-        const lat = children[0].getLatLng().lat;
-        const lon = children[0].getLatLng().lng;
-        const key = `${lat},${lon}`;
-        
-        // Check if we need to reshuffle
-        if (clusterDataStore.has(key) && renderedMarkerStore.has(key)) {
-            const allPoints = clusterDataStore.get(key);
-            const rendered = renderedMarkerStore.get(key);
-            
-            if (allPoints.length > 15) {
-                // Time to reshuffle!
-                console.log("Reshuffling cluster on click:", key);
-                
-                // Pick 15 NEW randoms
-                const newSelection = [];
-                const tempPool = [...allPoints];
-                 // Fisher-Yates shuffle for new selection
-                for (let i = tempPool.length - 1; i > 0; i--) {
-                    const j = Math.floor(Math.random() * (i + 1));
-                    [tempPool[i], tempPool[j]] = [tempPool[j], tempPool[i]];
-                }
-                const newPoints = tempPool.slice(0, 15);
-                
-                // Update existing markers in-place
-                // We iterate through the rendered *visible* markers (which are the first 15 in the array usually)
-                // Note: The renderedMarkerStore array holds the marker objects.
-                rendered.forEach((marker, index) => {
-                    if (index < newPoints.length) {
-                        const newP = newPoints[index];
-                        const source = marker.options.thumbSource || newP.source || ""; // Fallback to existing source if newP.source is undefined
-                        
-                        // Update Options
-                        marker.options.thumbPath = newP.path;
-                        marker.options.thumbSource = source; 
-                        
-                        // Update Icon
-                        marker.setIcon(generateMarkerIcon(newP.path, source, 1)); // Count is 1 for leaf
-                        
-                        // Update Popup
-                        marker.bindPopup(generatePopupHtml(newP.path, source, 1));
-                    }
-                });
-                // Note: The ghost marker (if it exists) is not in renderedMarkerStore, so it stays untouched (good).
-            }
+        if (zoom >= 18) { // Max Zoom Logic
+             const children = cluster.getAllChildMarkers();
+             
+             // Collect items for inspection
+             const directItems = [];
+             children.forEach(m => {
+                 let p = m.options.thumbPath || m.options.clusterPath; 
+                 let s = m.options.thumbSource || m.options.clusterSource;
+                 let c = m.options.photoCount || 1;
+                 let cid = m.options.clusterID || "";
+                 
+                 if (p) {
+                     directItems.push({ path: p, source: s, name: p.split('/').pop(), count: c, clusterID: cid });
+                 }
+             });
+             
+             if (directItems.length > 0) {
+                 // Open Inspection Panel DIRECTLY
+                 // Do not use inspectLocationDirect (helper ignores args)
+                 inspectLocation(null, null, directItems);
+             }
+        } else {
+             // Standard behavior: Zoom to cluster bounds
+             a.layer.zoomToBounds();
         }
     });
     
@@ -2160,10 +2192,6 @@ const initMap = async () => {
                  // Client-side cluster with items ready
                  window._tempInspectItems = directItems;
                  content += `<button onclick="window.inspectLocationDirect()" class="button button--flat" style="font-size:11px; cursor:pointer; background:rgba(0,100,200,0.3);">Inspect Files (${directItems.length})</button>`;
-             } else {
-                 // Fallback to Backend Inspection with Bounds?
-                 // Typically markercluster has children on client.
-                 // But if they are badges...
              }
              
              content += `</div><div id="copy-status-${lat.replace('.','-')}" style="color:green; display:none; font-size:10px; margin-top:2px;">Copied!</div></div>`;
@@ -2284,165 +2312,114 @@ const loadData = async () => {
             renderedPaths.add(renderKey);
 
             try {
-                const zoom = coords.z;
+                // UNIFIED LOGIC: Always create a marker with thumbnail metadata
+                // This allows L.markerCluster to handle everything.
                 
-                // Show badged markers for clusters (Zoom < 15)
-                if (zoom < 15) {
-                    const marker = L.marker([c.lat, c.lon], {
-                        icon: L.divIcon({
-                            html: `<div style="background:rgba(0,0,0,0.7);color:white;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;border:2px solid white;">${c.count}</div>`,
-                            className: 'tile-cluster-badge',
-                            iconSize: [30, 30]
-                        }),
-                        photoCount: c.count,
-                        clusterPath: c.path,
-                        clusterSource: c.source || source,
-                        clusterID: c.id // Store ID
+                // 1. Determine Preview Path
+                // Use c.previewID if available (Server Cluster), else c.path (Leaf)
+                let previewPath = c.path; 
+                // NOTE: We rely on c.path being the representative path.
+                
+                if (c.points && c.points.length > 0) {
+                     // Add individual markers for points
+                    c.points.forEach(p => {
+                         const marker = L.marker([p.lat, p.lon], { 
+                             icon: generateMarkerIcon(p.path, c.source || source, 1), // Single item icon (Fan Leaf Style)
+                             thumbPath: p.path,
+                             thumbSource: c.source || source,
+                             clusterID: c.id,
+                             photoCount: 1
+                         });
+                         
+                         // CHANGED: No popup, direct click inspect
+                         // marker.bindPopup(generatePopupHtml(p.path, c.source || source, 1));
+                         marker.on('click', (e) => {
+                             L.DomEvent.stopPropagation(e);
+                             const safePath = (p.path || "");
+                             const safeSource = (c.source || source);
+                             const boundsObj = {minLat: p.lat, minLon: p.lon, maxLat: p.lat, maxLon: p.lon, clusterID: c.id};
+                             // Direct open
+                             inspectLocationByCoords(p.lat, p.lon, safePath, safeSource, boundsObj);
+                         });
+                         
+                         // Context Menu
+                         marker.on('contextmenu', (e) => {
+                             L.DomEvent.stopPropagation(e);
+                              const lat = e.latlng.lat.toFixed(5);
+                              const lng = e.latlng.lng.toFixed(5);
+                              const safePath = (p.path || "").replace(/'/g, "\\'");
+                              const safeSource = (c.source || source).replace(/'/g, "\\'");
+                              // Bounds for single item are just its point
+                              const boundsObj = {minLat: p.lat, minLon: p.lon, maxLat: p.lat, maxLon: p.lon, clusterID: c.id};
+                              const boundsJson = JSON.stringify(boundsObj).replace(/"/g, "&quot;");
+                              
+                              L.popup().setLatLng(e.latlng).setContent(`
+                                <div style="text-align:center; font-size:12px;">
+                                    <b>Lat:</b> ${lat}<br><b>Lon:</b> ${lng}<br>
+                                    <div style="margin-top:5px; display:flex; flex-direction:column; gap:4px;">
+                                        <button onclick="window.copyLeafletCoords('${lat}', '${lng}')" class="button button--flat" style="font-size:11px; cursor:pointer;">Copy</button>
+                                        <button onclick='window.inspectLocationByCoords("${lat}", "${lng}", "${safePath}", "${safeSource}", ${boundsJson})' class="button button--flat" style="font-size:11px; cursor:pointer; background:rgba(0,100,200,0.3);">Inspect File</button>
+                                    </div>
+                                </div>`).openOn(map);
+                         });
+
+                         tileMarkerList.push(marker);
                     });
+                } else {
+                    // Add single marker for the Cluster itself (Server Aggregation)
                     
-                    const onBadgeContextMenu = (e, clusterPath, clusterSource, minLat, minLon, maxLat, maxLon, clusterID) => {
-                        L.DomEvent.stopPropagation(e);
-                        const lat = e.latlng.lat.toFixed(5);
-                        const lng = e.latlng.lng.toFixed(5);
-                        const safePath = (clusterPath || "").replace(/'/g, "\\'");
-                        const safeSource = (clusterSource || source).replace(/'/g, "\\'");
-                        const cID = clusterID || "";
-                        const boundsObj = {minLat, minLon, maxLat, maxLon, clusterID: cID};
-                        const boundsJson = JSON.stringify(boundsObj).replace(/"/g, "&quot;");
-                        
-                        L.popup().setLatLng(e.latlng).setContent(`
+                    const marker = L.marker([c.lat, c.lon], {
+                        icon: generateMarkerIcon(c.path, c.source || source, c.count),
+                        thumbPath: c.path,
+                        thumbSource: c.source || source,
+                        clusterID: c.id,
+                        photoCount: c.count,
+                        totalCount: c.count, // Ensure totalCount is set for selection logic
+                        clusterPath: c.path,
+                        clusterSource: c.source || source
+                    });
+                     
+                     // CHANGED: No popup, direct click inspect (if count is small or user clicks it)
+                     // If it's a cluster, the ClusterGroup usually handles click (zoom or spiderfy).
+                     // BUT if it's a single item cluster (count=1), it behaves like a marker.
+                     // Or if max zoom. 
+                     // We add the click handler here to be safe. 
+                     // If L.markerClusterGroup captures it, this might not fire unless spiderfy is off?
+                     // Actually, individual markers inside a cluster don't receive click events if they are clustered.
+                     // But if they are NOT clustered (e.g. single item in that area), they do.
+                     marker.on('click', (e) => {
+                         // Only if not clustered? 
+                         // No, if it's visible as a marker, we want this.
+                         L.DomEvent.stopPropagation(e);
+                         const safePath = (c.path || "");
+                         const safeSource = (c.source || source);
+                         const boundsObj = {minLat: c.min ? c.min[0] : c.lat, minLon: c.min ? c.min[1] : c.lon, maxLat: c.max ? c.max[0] : c.lat, maxLon: c.max ? c.max[1] : c.lon, clusterID: c.id};
+                         inspectLocationByCoords(c.lat, c.lon, safePath, safeSource, boundsObj);
+                     });
+
+                     // Context Menu for Cluster Marker
+                      marker.on('contextmenu', (e) => {
+                         L.DomEvent.stopPropagation(e);
+                          const lat = e.latlng.lat.toFixed(5);
+                          const lng = e.latlng.lng.toFixed(5);
+                          const safePath = (c.path || "").replace(/'/g, "\\'");
+                          const safeSource = (c.source || source).replace(/'/g, "\\'");
+                          const boundsObj = {minLat: c.min ? c.min[0] : c.lat, minLon: c.min ? c.min[1] : c.lon, maxLat: c.max ? c.max[0] : c.lat, maxLon: c.max ? c.max[1] : c.lon, clusterID: c.id};
+                          const boundsJson = JSON.stringify(boundsObj).replace(/"/g, "&quot;");
+                          
+                          L.popup().setLatLng(e.latlng).setContent(`
                             <div style="text-align:center; font-size:12px;">
                                 <b>Lat:</b> ${lat}<br><b>Lon:</b> ${lng}<br>
                                 <div style="margin-top:5px; display:flex; flex-direction:column; gap:4px;">
                                     <button onclick="window.copyLeafletCoords('${lat}', '${lng}')" class="button button--flat" style="font-size:11px; cursor:pointer;">Copy</button>
                                     <button onclick='window.inspectLocationByCoords("${lat}", "${lng}", "${safePath}", "${safeSource}", ${boundsJson})' class="button button--flat" style="font-size:11px; cursor:pointer; background:rgba(0,100,200,0.3);">Inspect Files</button>
                                 </div>
-                            </div>
-                        `).openOn(map);
-                    };
+                            </div>`).openOn(map);
+                      });
 
-                    if (c.min && c.max) {
-                        marker.on('contextmenu', (e) => onBadgeContextMenu(e, c.path, c.source || source, c.min[0], c.min[1], c.max[0], c.max[1], c.id));
-                    } else {
-                        marker.on('contextmenu', (e) => onBadgeContextMenu(e, c.path, c.source || source, 0, 0, 0, 0, c.id));
-                    }
-
-                    marker.bindPopup(`<b>${c.count} photos</b><br>Zoom in for details`);
                     tileMarkerList.push(marker);
-
-                } else if (c.count > 15) {
-                    // Large Badge
-                     const marker = L.marker([c.lat, c.lon], {
-                        icon: L.divIcon({
-                            html: `<div style="background:rgba(255,100,0,0.8);color:white;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.3);">${c.count}</div>`,
-                            className: 'tile-cluster-badge-large',
-                            iconSize: [36, 36]
-                        }),
-                        photoCount: c.count,
-                        clusterPath: c.path, // Add missing props
-                        clusterSource: c.source || source,
-                        clusterID: c.id // Store ID
-                    });
-                    marker.bindPopup(`<b>${c.count} photos</b>`);
-                    tileMarkerList.push(marker);
-                    
-                    const onBadgeContextMenu = (e, clusterPath, clusterSource, minLat, minLon, maxLat, maxLon, clusterID) => {
-                        L.DomEvent.stopPropagation(e);
-                        // ... context menu logic ...
-                    };
-                    // Simplified for brevity in replacement, but keeping original logic structure
-                     if (c.min && c.max) {
-                        marker.on('contextmenu', (e) => onBadgeContextMenu(e, c.path, c.source || source, c.min[0], c.min[1], c.max[0], c.max[1], c.id));
-                    } else {
-                        marker.on('contextmenu', (e) => onBadgeContextMenu(e, c.path, c.source || source, 0, 0, 0, 0, c.id));
-                    }
-
-                } else {
-                    // Fan/Small Clusters (Level 15+)
-                    // FIX: At Zoom 18+, DISABLE Manual Fan and Density Badges.
-                    // Instead, just dump the markers and let L.markerClusterGroup handle them.
-                    
-                    if (zoom >= 18) {
-                        // Max Zoom Strategy: Pure Markers (No Badges, No Fan)
-                         if (c.points && c.points.length > 0) {
-                             c.points.forEach(p => {
-                                 const marker = L.marker([c.lat, c.lon], { // Use cluster center (or p.lat/lon if available but backend simplifies)
-                                     icon: generateMarkerIcon(p.path, c.source || source, 1),
-                                     thumbPath: p.path,
-                                     thumbSource: c.source || source,
-                                     clusterID: c.id
-                                 });
-                                 marker.bindPopup(generatePopupHtml(p.path, c.source || source, 1));
-                                 tileMarkerList.push(marker);
-                             });
-                         } else {
-                             // Fallback for empty points (shouldn't happen with recent backend fix)
-                             const marker = L.marker([c.lat, c.lon], {
-                                 icon: generateMarkerIcon(c.path, c.source || source, c.count),
-                                 thumbPath: c.path,
-                                 thumbSource: c.source || source,
-                                 clusterID: c.id
-                             });
-                             marker.bindPopup(generatePopupHtml(c.path, c.source || source, c.count));
-                             tileMarkerList.push(marker);
-                         }
-
-                    } else {
-                        // Standard Fan Logic (Zoom 15-17)
-                        let maxFanSize = (zoom >= 17) ? 12 : (zoom === 16 ? 5 : 3);
-                        
-                        if (c.points && c.points.length > 0) {
-                            // Show Center Badge
-                            if (c.count > 1) {
-                                const centerBadge = L.marker([c.lat, c.lon], {
-                                    icon: L.divIcon({
-                                        html: `<div style="background:rgba(0,0,0,0.5);color:white;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:10px;border:1px solid white;">${c.count}</div>`,
-                                        className: 'tile-cluster-badge-small',
-                                        iconSize: [20, 20]
-                                    }),
-                                    interactive: false 
-                                });
-                                tileMarkerList.push(centerBadge);
-                            }
-
-                            // Show Fan
-                            const pointsToShow = c.points.slice(0, maxFanSize);
-                            const fanRadius = 0.0002; 
-                            const angleStep = (2 * Math.PI) / pointsToShow.length;
-                            const context = {
-                                lat: c.lat, lon: c.lon, clusterID: c.id,
-                                minLat: c.min ? c.min[0] : 0, minLon: c.min ? c.min[1] : 0,
-                                maxLat: c.max ? c.max[0] : 0, maxLon: c.max ? c.max[1] : 0
-                            };
-
-                            pointsToShow.forEach((p, idx) => {
-                                const angle = idx * angleStep;
-                                const marker = L.marker([c.lat + fanRadius * Math.cos(angle), c.lon + fanRadius * Math.sin(angle)], {
-                                    icon: generateMarkerIcon(p.path, c.source || source, 1),
-                                    thumbPath: p.path,
-                                    thumbSource: c.source || source,
-                                    clusterID: c.id
-                                });
-                                marker.bindPopup(generatePopupHtml(p.path, c.source || source, 1, context));
-                                marker.on('contextmenu', () => {
-                                    let parent = p.path.substring(0, p.path.lastIndexOf('/'));
-                                    inspectLocation(parent, c.source || source);
-                                });
-                                tileMarkerList.push(marker);
-                            });
-                        } else {
-                            // Single cluster marker
-                             const marker = L.marker([c.lat, c.lon], {
-                                 icon: generateMarkerIcon(c.path, c.source || source, c.count),
-                                 thumbPath: c.path,
-                                 thumbSource: c.source || source,
-                                 clusterID: c.id
-                            });
-                            marker.bindPopup(generatePopupHtml(c.path, c.source || source, c.count));
-                            tileMarkerList.push(marker);
-                        }
-                    }
                 }
+
             } catch (err) {
                 console.error("Error creating marker for tile:", err);
             }

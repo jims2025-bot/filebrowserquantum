@@ -4,8 +4,8 @@ import "time"
 
 // HeatmapVersion is the current version of the heatmap.json format
 // Increment this when the JSON structure changes to force re-scanning
-// Version 4: Re-scan Triggered by User (Fixing Missing IDs)
-const HeatmapVersion = 4
+// Version 5: Added TotalImageCount
+const HeatmapVersion = 5
 
 // Cluster represents a group of images or sub-clusters.
 type Cluster struct {
@@ -16,9 +16,10 @@ type Cluster struct {
 	Min   [2]float64 `json:"min"` // [Lat, Lon] min bounds
 	Max   [2]float64 `json:"max"` // [Lat, Lon] max bounds
 	// For leaf nodes (folder level)
-	PreviewID string `json:"previewID,omitempty"`
-	Path      string `json:"path,omitempty"`   // Path to the image or folder
-	Source    string `json:"source,omitempty"` // Derived source name
+	PreviewID       string `json:"previewID,omitempty"`
+	Path            string `json:"path,omitempty"`   // Path to the image or folder
+	Source          string `json:"source,omitempty"` // Derived source name
+	TotalImageCount int    `json:"totalImageCount,omitempty"`
 
 	// Individual points contained in this cluster (for spiderfy)
 	Points []ClusterPoint `json:"points,omitempty"`
@@ -29,11 +30,12 @@ type Cluster struct {
 }
 
 type ClusterPoint struct {
-	Lat       float64 `json:"lat"`
-	Lon       float64 `json:"lon"`
-	Path      string  `json:"path"`
-	PreviewID string  `json:"previewID"`
-	Source    string  `json:"source,omitempty"`
+	Lat             float64 `json:"lat"`
+	Lon             float64 `json:"lon"`
+	Path            string  `json:"path"`
+	PreviewID       string  `json:"previewID"`
+	Source          string  `json:"source,omitempty"`
+	TotalImageCount int     `json:"totalImageCount,omitempty"`
 	// Additional fields for inspection drill-down
 	Type  string `json:"type,omitempty"` // "folder" or "image"
 	Count int    `json:"count"`          // For folder count

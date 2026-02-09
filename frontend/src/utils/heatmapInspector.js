@@ -24,7 +24,8 @@ export function processDirectItems(directItems, urlGenerator) {
         thumbUrl: urlGenerator ? urlGenerator(item.path, item.source, 'small') : "",
         type: item.type || 'image', // Assume images if not specified? 
         count: item.count || 1,
-        clusterID: item.clusterID
+        clusterID: item.clusterID,
+        totalImageCount: item.totalImageCount
     }));
 
     // 2. Group by Parent Path
@@ -45,6 +46,11 @@ export function processDirectItems(directItems, urlGenerator) {
         // If item represents a cluster (has count > 1), use that. Else 1.
         const c = (item.count && item.count > 1) ? item.count : 1;
         groups[p].count += c;
+
+        // Capture TotalImageCount if available (from any item in the group)
+        if (item.totalImageCount) {
+            groups[p].totalImageCount = item.totalImageCount;
+        }
 
         groups[p].items.push(item);
 

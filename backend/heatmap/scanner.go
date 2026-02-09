@@ -128,6 +128,11 @@ func GetLocalClusters(sourceName, folderPath string, progress *ScanProgress) ([]
 		// logger.Debug(fmt.Sprintf("Heatmap: scanned %s - No images found", folderPath))
 	}
 
+	// Assign TotalImageCount to all points BEFORE clustering
+	for i := range points {
+		points[i].TotalImageCount = totalImageCount
+	}
+
 	// 2. Cluster the points (local only)
 	clusters := clusterPoints(points, ClusterRadius)
 
@@ -155,6 +160,10 @@ func clusterPoints(points []Cluster, radius float64) []Cluster {
 				c.Min[1] = math.Min(c.Min[1], p.Lon)
 				c.Max[0] = math.Max(c.Max[0], p.Lat)
 				c.Max[1] = math.Max(c.Max[1], p.Lon)
+				// Keep TotalImageCount from either (should be same for local clustering)
+				if c.TotalImageCount == 0 && p.TotalImageCount > 0 {
+					c.TotalImageCount = p.TotalImageCount
+				}
 
 				// Keep the ID of the larger cluster or generate new?
 				// Ideally stable ID if possible, but merging makes it a new entity.
