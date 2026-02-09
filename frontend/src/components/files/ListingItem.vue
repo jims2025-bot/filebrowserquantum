@@ -35,6 +35,16 @@
     <div class="text" :class="{ activecontent: isMaximized && isSelected }">
       <p :class="{ adjustment: quickDownloadEnabled }" class="name">
         {{ name }}
+        <i v-if="isNew && isDir" 
+           class="material-icons file-new-icon" 
+           title="New folder (created within last 30 days)">
+          star
+        </i>
+        <i v-else-if="containsNew && isDir" 
+           class="material-icons file-contains-new-icon" 
+           title="Contains new items">
+          folder_special
+        </i>
         <i v-if="gpsData" 
            class="material-icons file-gps-icon" 
            :title="`Location: ${gpsData.lat.toFixed(4)}, ${gpsData.lon.toFixed(4)}`">
@@ -110,6 +120,8 @@ export default {
     "issueData",
     "gpsData",
     "companionImage",
+    "isNew",
+    "containsNew",
   ],
   computed: {
     galleryView() {
@@ -478,5 +490,19 @@ export default {
   vertical-align: middle;
   margin-left: 0.5em;
   color: #4CAF50; /* Green globe */
+}
+
+.file-new-icon {
+  font-size: 1.1em !important;
+  vertical-align: middle;
+  margin-left: 0.5em;
+  color: #2196F3; /* Blue star for "new" */
+}
+
+.file-contains-new-icon {
+  font-size: 1.1em !important;
+  vertical-align: middle;
+  margin-left: 0.5em;
+  color: #FF9800; /* Orange for "contains new" */
 }
 </style>

@@ -2,6 +2,7 @@ package users
 
 import (
 	"strings"
+	"time"
 
 	jwt "github.com/golang-jwt/jwt/v4"
 )
@@ -65,6 +66,7 @@ type User struct {
 	TOTPNonce       string               `json:"totpNonce,omitempty"`
 	LoginMethod     LoginMethod          `json:"loginMethod"`
 	OtpEnabled      bool                 `json:"otpEnabled"` // true if TOTP is enabled, false otherwise
+	LastLogin       time.Time            `json:"lastLogin"`  // timestamp of last login for new folder detection
 	// legacy for migration purposes... og filebrowser has perm attribute
 	Perm Permissions `json:"perm,omitzero"`
 }

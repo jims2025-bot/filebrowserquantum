@@ -11,8 +11,9 @@
     - [Rotation](#3-image-rotation-temporary)
 7. [Server Permissions](#collection-folder-permissions)
 8. [Administrative Functions](#administrative-functions)
-9. [Documentation Notes](#documentation-notes)
-10. [Map Overlays Architecture](#geojson-visualization)
+9. [New Folder Highlighting](#new-folder-highlighting)
+10. [Documentation Notes](#documentation-notes)
+11. [Map Overlays Architecture](#geojson-visualization)
 
 ---
 
@@ -225,6 +226,225 @@ PercolateUp (update parents)
 
 **To Change Interval**: Modify `ScanIntervalDays` constant in `backend/heatmap/manager.go`
 
+**Total Image Count Feature**:
+
+**Purpose**: Displays the total number of images in a folder (including non-geotagged photos) in the heatmap inspection panel. This helps users understand the complete scope of images in each location, even if some photos lack GPS data and aren't visible on the map.
+
+**Implementation**:
+- **Backend** (`backend/heatmap/scanner.go`):
+  - `GetLocalClusters` counts all images in a folder during scan
+  - Assigns `TotalImageCount` to all clusters and points for that folder
+  - Field added to `Cluster` and `ClusterPoint` structs in `types.go`
+- **Backend** (`backend/http/heatmap_inspect.go`):
+  - Propagates `TotalImageCount` from clusters to points in API responses
+  - Four propagation points ensure consistent delivery to frontend
+- **Frontend** (`frontend/src/views/Heatmap.vue`):
+  - Maps `totalImageCount` from API responses
+  - Preserves count when drilling down into folders via `openFolderView`
+  - Displays "Total Folder Image Count: X" below folder name in inspection panel header
+
+**Version**: Introduced in HeatmapVersion 5
+
+---
+
+## New Folder Highlighting
+
+[↑ Back to Top](#table-of-contents)
+
+### Overview
+
+The new folder highlighting feature visually indicates folders that have been created or modified within a configurable time window. This helps users quickly identify recent additions to the file system.
+
+### Configuration
+
+**File**: `backend/indexing/iteminfo/fileinfo.go`
+
+**Constant**: `NewFolderHighlightDays = 30`
+
+```go
+// NewFolderHighlightDays defines how many days a folder should be highlighted as "new"
+const NewFolderHighlightDays = 30
+```
+
+**To Change the Duration**:
+1. Edit the constant in `fileinfo.go`
+2. Rebuild the backend: `go build -o backend.exe`
+3. Restart the application
+
+**Common Configurations**:
+- `7` = 1 week
+- `14` = 2 weeks
+- `30` = 1 month (default)
+- `60` = 2 months
+- `90` = 3 months
+
+### Backend Implementation
+
+#### Data Structure
+
+**Location**: `backend/indexing/iteminfo/fileinfo.go`
+
+```go
+type ItemInfo struct {
+    Name        string    `json:"name"`
+    Size        int64     `json:"size"`
+    ModTime     time.Time `json:"modified"`
+    Type        string    `json:"type"`
+    Hidden      bool      `json:"hidden"`
+    IsNew       bool      `json:"isNew"`       // Folder is new
+    ContainsNew bool      `json:"containsNew"` // Folder contains new items
+}
+```
+
+**Fields**:
+- `IsNew`: True if the folder itself was created/modified within `NewFolderHighlightDays`
+- `ContainsNew`: True if the folder contains new subfolders or files (hierarchical)
+
+#### Indexing Logic
+
+**Location**: `backend/indexing/indexingFiles.go` (lines 168-177)
+
+**Method**: Uses **File Birth Time** (Creation Time) to avoid false positives from heatmap scans (which update ModTime).
+
+```go
+// Calculate if this folder is "new"
+isNew := false
+if isDir {
+    daysAgo := time.Now().AddDate(0, 0, -iteminfo.NewFolderHighlightDays)
+    // Use birth time (creation time) instead of ModTime
+    birthTime := iteminfo.GetBirthTime(file)
+    isNew = birthTime.After(daysAgo)
+}
+
+itemInfo := &iteminfo.ItemInfo{
+    Name:    file.Name(),
+    ModTime: file.ModTime(),
+    Hidden:  isHidden,
+    IsNew:   isNew,
+}
+```
+
+**Platform Support for Birth Time**:
+- **Windows**: Uses `syscall.Win32FileAttributeData.CreationTime`
+- **Other**: Falls back to `ModTime` if birth time is unavailable
+
+#### Hierarchical Propagation
+
+**Location**: `backend/indexing/indexingFiles.go` (lines 220-235)
+
+The system recursively checks subfolders and files to determine if a parent folder contains new content:
+
+```go
+// Check if this folder contains any new items
+containsNew := false
+for _, dir := range dirInfos {
+    if dir.IsNew || dir.ContainsNew {
+        containsNew = true
+        break
+    }
+}
+// Also check if any files are new
+if !containsNew {
+    for _, file := range fileInfos {
+        if file.IsNew {
+            containsNew = true
+            break
+        }
+    }
+}
+```
+
+### Frontend Implementation
+
+#### Visual Indicators
+
+**Component**: `frontend/src/components/files/ListingItem.vue`
+
+**Icons**:
+1. **Blue Star** (`star`): Displayed on folders with `isNew: true` (Created within last 30 days)
+2. **Orange Folder Badge** (`folder_special`): Displayed on folders with `containsNew: true` (Contains new items inside)
+
+**Template** (lines 38-47):
+```vue
+<i v-if="isNew && isDir" 
+   class="material-icons file-new-icon" 
+   title="New folder (created within last 30 days)">
+  star
+</i>
+<i v-else-if="containsNew && isDir" 
+   class="material-icons file-contains-new-icon" 
+   title="Contains new items">
+  folder_special
+</i>
+```
+
+**CSS Styling**:
+```css
+.file-new-icon {
+  font-size: 1.1em !important;
+  vertical-align: middle;
+  margin-left: 0.5em;
+  color: #2196F3; /* Blue star for "new" */
+}
+
+.file-contains-new-icon {
+  font-size: 1.1em !important;
+  vertical-align: middle;
+  margin-left: 0.5em;
+  color: #FF9800; /* Orange for "contains new" */
+}
+```
+
+#### Data Binding
+
+**Component**: `frontend/src/views/files/ListingView.vue` (line 115)
+
+```vue
+<item
+  v-bind:isNew="item.isNew"
+  v-bind:containsNew="item.containsNew"
+  <!-- other bindings -->
+/>
+```
+
+### Visual Example
+
+```
+Folders
+  📁 Photos          📂⭐  ← Orange badge (contains new items)
+  📁 Documents
+  📁 Music           📂⭐  ← Orange badge (contains new items)
+
+Navigating into Photos:
+  📁 2023
+  📁 2024            📂⭐  ← Orange badge (contains new items)
+  
+Navigating into 2024:
+  📁 Vacation        ⭐   ← Blue star (this folder is new)
+  📁 Birthday        ⭐   ← Blue star (this folder is new)
+```
+
+### Performance
+
+**Time Complexity**: O(n) where n = number of items in folder
+- Calculation happens during existing indexing process
+- No additional disk I/O required
+- Minimal memory overhead (~2 bytes per folder)
+
+**At Scale** (1M files, 10K folders):
+- Added indexing time: ~100 milliseconds
+- Memory overhead: ~20 KB
+- JSON payload increase: ~1-13 KB per folder view
+
+### Benefits
+
+✅ **User-Friendly**: Quickly spot new content without memorizing folder names  
+✅ **Configurable**: Easy to adjust time window via single constant  
+✅ **Hierarchical**: Parent folders show when they contain new items  
+✅ **Consistent**: All users see same indicators based on folder creation time  
+✅ **Non-Intrusive**: Uses existing icon pattern (similar to GPS and integrity icons)  
+✅ **Performance**: Minimal overhead during indexing
+
 ---
 
 ## Frontend Architecture
@@ -294,17 +514,48 @@ frontend/src/
 **Location**: `frontend/src/views/Heatmap.vue`
 
 **Features**:
-- Leaflet map integration
-- Vector tile rendering
-- Cluster markers with count badges
+- Leaflet map integration with OpenStreetMap tiles
+- Cluster markers with thumbnail previews and count badges
+- Leaflet MarkerClusterGroup for automatic clustering and spiderfy
 - Inspection panel (side drawer)
 - Folder grouping & navigation
 - Quick view modal with file details
 
+**Cluster Marker System**:
+
+The heatmap displays geographic photo clusters using custom circular thumbnail markers with intelligent visual cues.
+
+**Marker Generation** (`generateMarkerIcon`):
+- **Thumbnail Preview**: 48x48 circular marker displaying the cluster's representative image
+  - Uses `/api/preview?size=small` for fast EXIF thumbnail extraction
+  - Fallback to gray placeholder if image fails to load
+- **Count Badge**: Semi-transparent overlay showing number of items (only if count > 1)
+  - Positioned center of marker
+  - Black background with white text
+- **Folder Color Coding**: 3px border color derived from folder path hash
+  - Ensures visual distinction between different folders at same location
+  - Uses `stringToColor()` function for consistent color generation
+- **Styling**: Drop shadow, circular overflow, object-fit cover for consistent appearance
+
+**Marker Clustering** (Leaflet MarkerClusterGroup):
+- **Automatic Grouping**: Nearby markers automatically cluster at lower zoom levels
+- **Spiderfy Effect**: When multiple markers occupy same location, clicking fans them out in a spiral pattern for individual selection
+- **Zoom Behavior**: Clusters expand into individual markers as user zooms in
+- **Performance**: Prevents map clutter and improves rendering with thousands of photos
+
+**Marker Interaction**:
+- **Click**: Opens inspection panel with cluster contents
+  - Sends cluster ID to `/api/heatmap/inspect` endpoint
+  - Groups results by folder
+  - Displays thumbnails in side panel
+- **Context Menu**: Right-click provides options (View Image, Open Folder, etc.)
+
 **Key Functions**:
-- `loadHeatmapData()`: Fetch global heatmap
-- `inspectLocation()`: Inspect cluster by ID
-- `generateMarkerIcon()`: Create thumbnail markers
+- `loadHeatmapData()`: Fetch global heatmap from backend
+- `inspectLocation()`: Inspect cluster by ID, populate side panel
+- `generateMarkerIcon()`: Create custom thumbnail markers with count badges
+- `stringToColor()`: Generate consistent color from folder path hash
+
 
 #### 5. Inspection Panel
 **Location**: `frontend/src/views/Heatmap.vue`

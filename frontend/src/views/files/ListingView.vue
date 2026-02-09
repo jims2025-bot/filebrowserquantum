@@ -112,6 +112,8 @@
             v-bind:size="item.size"
             v-bind:path="item.path"
             v-bind:reducedOpacity="item.hidden || isDragging"
+            v-bind:isNew="item.isNew"
+            v-bind:containsNew="item.containsNew"
           />
         </div>
         <div v-if="numFiles > 0">

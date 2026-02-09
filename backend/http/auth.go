@@ -13,13 +13,13 @@ import (
 	"github.com/golang-jwt/jwt/v4/request"
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/gtsteffaniak/go-logger/logger"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/errors"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/utils"
 	"github.com/jims2025-bot/filebrowserquantum/backend/database/share"
 	"github.com/jims2025-bot/filebrowserquantum/backend/database/storage"
 	"github.com/jims2025-bot/filebrowserquantum/backend/database/users"
-	"github.com/gtsteffaniak/go-logger/logger"
 )
 
 // first checks for cookie
@@ -121,6 +121,15 @@ func loginHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (in
 	if passwordUser && enforcedOtp && missingOtp {
 		return http.StatusForbidden, errors.ErrNoTotpConfigured
 	}
+
+	// Update LastLogin timestamp
+	d.user.LastLogin = time.Now()
+	err := store.Users.Update(d.user, true, "LastLogin")
+	if err != nil {
+		logger.Debug("Failed to update LastLogin: " + err.Error())
+		// Don't fail login if timestamp update fails, just log it
+	}
+
 	return printToken(w, r, d.user) // Pass the data object
 }
 

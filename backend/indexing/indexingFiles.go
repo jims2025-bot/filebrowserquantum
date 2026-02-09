@@ -165,10 +165,21 @@ func (idx *Index) indexDirectory(adjustedPath string, quick, recursive bool) err
 		if idx.shouldSkip(isDir, isHidden, fullCombined) {
 			continue
 		}
+
+		// Calculate if this folder is "new" based on creation time (birth time)
+		// This prevents heatmap scans from incorrectly marking folders as new
+		isNew := false
+		if isDir {
+			daysAgo := time.Now().AddDate(0, 0, -iteminfo.NewFolderHighlightDays)
+			birthTime := iteminfo.GetBirthTime(file)
+			isNew = birthTime.After(daysAgo)
+		}
+
 		itemInfo := &iteminfo.ItemInfo{
 			Name:    file.Name(),
 			ModTime: file.ModTime(),
 			Hidden:  isHidden,
+			IsNew:   isNew,
 		}
 
 		if isDir {
@@ -206,6 +217,25 @@ func (idx *Index) indexDirectory(adjustedPath string, quick, recursive bool) err
 	if totalSize == 0 && idx.Source.Config.IgnoreZeroSizeFolders {
 		return nil
 	}
+
+	// Check if this folder contains any new items (in subfolders or files)
+	containsNew := false
+	for _, dir := range dirInfos {
+		if dir.IsNew || dir.ContainsNew {
+			containsNew = true
+			break
+		}
+	}
+	// Also check if any files are new
+	if !containsNew {
+		for _, file := range fileInfos {
+			if file.IsNew {
+				containsNew = true
+				break
+			}
+		}
+	}
+
 	// Create FileInfo for the current directory
 	dirFileInfo := &iteminfo.FileInfo{
 		Path:    adjustedPath,
@@ -213,10 +243,11 @@ func (idx *Index) indexDirectory(adjustedPath string, quick, recursive bool) err
 		Folders: dirInfos,
 	}
 	dirFileInfo.ItemInfo = iteminfo.ItemInfo{
-		Name:    dirInfo.Name(),
-		Type:    "directory",
-		Size:    totalSize,
-		ModTime: dirInfo.ModTime(),
+		Name:        dirInfo.Name(),
+		Type:        "directory",
+		Size:        totalSize,
+		ModTime:     dirInfo.ModTime(),
+		ContainsNew: containsNew,
 	}
 
 	dirFileInfo.SortItems()

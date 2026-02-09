@@ -852,7 +852,10 @@ const navToFile = (file, editMode = false) => {
 };
 
 const navToFolder = (file) => {
-    window.heatmapNavigate(file.parentPath || "/", file.source, false); // Reuse existing helper logic for folder
+    // If called with a folder object (has 'items' property), navigate to that folder
+    // Otherwise, navigate to the parent folder of the file
+    const targetPath = file.items ? file.path : (file.parentPath || "/");
+    window.heatmapNavigate(targetPath, file.source, false);
 };
 
 const openFolderView = async (folderGroup) => {

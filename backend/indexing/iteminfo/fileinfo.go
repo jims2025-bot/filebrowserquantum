@@ -1,16 +1,24 @@
 package iteminfo
 
 import (
+	"os"
 	"path/filepath"
+	"runtime"
+	"syscall"
 	"time"
 )
 
+// NewFolderHighlightDays defines how many days a folder should be highlighted as "new"
+const NewFolderHighlightDays = 30
+
 type ItemInfo struct {
-	Name    string    `json:"name"`     // name of the file
-	Size    int64     `json:"size"`     // length in bytes for regular files
-	ModTime time.Time `json:"modified"` // modification time
-	Type    string    `json:"type"`     // type of the file, either "directory" or a file mimetype
-	Hidden  bool      `json:"hidden"`   // whether the file is hidden
+	Name        string    `json:"name"`        // name of the file
+	Size        int64     `json:"size"`        // length in bytes for regular files
+	ModTime     time.Time `json:"modified"`    // modification time
+	Type        string    `json:"type"`        // type of the file, either "directory" or a file mimetype
+	Hidden      bool      `json:"hidden"`      // whether the file is hidden
+	IsNew       bool      `json:"isNew"`       // whether the folder is new (created within NewFolderHighlightDays)
+	ContainsNew bool      `json:"containsNew"` // whether the folder contains new items in subfolders
 }
 
 // FileInfo describes a file.
@@ -48,4 +56,25 @@ type FileOptions struct {
 
 func (f FileOptions) Components() (string, string) {
 	return filepath.Dir(f.Path), filepath.Base(f.Path)
+}
+
+// GetBirthTime returns the creation time (birth time) of a file.
+// Falls back to ModTime if birth time is unavailable on the platform.
+func GetBirthTime(info os.FileInfo) time.Time {
+	// Get platform-specific stat data
+	stat, ok := info.Sys().(*syscall.Win32FileAttributeData)
+	if !ok {
+		// Fallback to ModTime if we can't get syscall data
+		return info.ModTime()
+	}
+
+	// Windows: Use CreationTime
+	if runtime.GOOS == "windows" {
+		// Convert Windows FILETIME to Unix time
+		nsec := stat.CreationTime.Nanoseconds()
+		return time.Unix(0, nsec)
+	}
+
+	// Fallback to ModTime for other platforms or if extraction fails
+	return info.ModTime()
 }
