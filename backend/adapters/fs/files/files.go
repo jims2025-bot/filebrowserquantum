@@ -312,6 +312,7 @@ func FileInfoFaster(opts iteminfo.FileOptions) (iteminfo.ExtendedFileInfo, error
 		isDir = stat.IsDir()
 	}
 	opts.IsDir = isDir
+
 	// Canonicalize the path using the resolved real path to ensure consistency with index keys
 	// This fixes issues where opts.Path has improper casing or duplication (e.g. /PHOTOS/PHOTOS/...)
 	opts.Path = index.MakeIndexPath(realPath)

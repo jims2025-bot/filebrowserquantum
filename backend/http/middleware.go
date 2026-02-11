@@ -10,13 +10,13 @@ import (
 	"time"
 
 	jwt "github.com/golang-jwt/jwt/v4"
+	"github.com/gtsteffaniak/go-logger/logger"
 	"github.com/jims2025-bot/filebrowserquantum/backend/adapters/fs/files"
 	"github.com/jims2025-bot/filebrowserquantum/backend/auth"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/errors"
 	"github.com/jims2025-bot/filebrowserquantum/backend/database/share"
 	"github.com/jims2025-bot/filebrowserquantum/backend/database/users"
 	"github.com/jims2025-bot/filebrowserquantum/backend/indexing/iteminfo"
-	"github.com/gtsteffaniak/go-logger/logger"
 )
 
 type requestContext struct {
@@ -55,20 +55,46 @@ func withHashFileHelper(fn handleFunc) handleFunc {
 		data.share = link
 		// Authenticate the share request if needed
 		var status int
-		if link.Hash != "" {
-			status, err = authenticateShareRequest(r, link)
-			if err != nil || status != http.StatusOK {
-				return status, fmt.Errorf("could not authenticate share request")
-			}
+		status, err = authenticateShareRequest(r, link)
+		if err != nil || status != http.StatusOK {
+			return status, fmt.Errorf("could not authenticate share request")
 		}
 		data.path = strings.TrimSuffix(link.Path, "/") + "/" + strings.TrimPrefix(path, "/")
 		if path == "" || path == "/" {
 			data.path = link.Path
 		}
 
+		// Try to find the source by path (link.Source is a path)
 		source, ok := config.Server.SourceMap[link.Source]
 		if !ok {
-			return http.StatusNotFound, fmt.Errorf("source not found")
+			// Fallback 1: Case-insensitive path lookup (common on Windows)
+			for path, s := range config.Server.SourceMap {
+				if strings.EqualFold(path, link.Source) {
+					source = s
+					ok = true
+					break
+				}
+			}
+		}
+
+		if !ok {
+			// Fallback 2: Try looking up by Name (just in case)
+			source, ok = config.Server.NameToSource[link.Source]
+		}
+
+		if !ok {
+			// Fallback 3: Case-insensitive name lookup
+			for name, s := range config.Server.NameToSource {
+				if strings.EqualFold(name, link.Source) {
+					source = s
+					ok = true
+					break
+				}
+			}
+		}
+
+		if !ok {
+			return http.StatusNotFound, fmt.Errorf("source not found for share: %s", link.Source)
 		}
 		// Get file information with options
 		file, err := FileInfoFasterFunc(iteminfo.FileOptions{

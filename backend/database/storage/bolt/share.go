@@ -6,9 +6,9 @@ import (
 	storm "github.com/asdine/storm/v3"
 	"github.com/asdine/storm/v3/q"
 
+	"github.com/gtsteffaniak/go-logger/logger"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/errors"
 	"github.com/jims2025-bot/filebrowserquantum/backend/database/share"
-	"github.com/gtsteffaniak/go-logger/logger"
 )
 
 type shareBackend struct {
@@ -39,6 +39,13 @@ func (s shareBackend) GetByHash(hash string) (*share.Link, error) {
 	var v share.Link
 	err := s.db.One("Hash", hash, &v)
 	if err == storm.ErrNotFound {
+		return nil, errors.ErrNotExist
+	}
+
+	// Check if the share has expired
+	if v.Expire != 0 && v.Expire < time.Now().Unix() {
+		// Delete the expired share
+		_ = s.db.DeleteStruct(&v)
 		return nil, errors.ErrNotExist
 	}
 

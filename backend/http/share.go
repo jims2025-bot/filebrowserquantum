@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -83,11 +84,47 @@ func shareGetHandler(w http.ResponseWriter, r *http.Request, d *requestContext) 
 		return http.StatusBadRequest, fmt.Errorf("invalid path encoding: %v", err)
 	}
 
-	sourcePath, ok := config.Server.NameToSource[source]
-	if !ok {
+	// Resolve the source name (which might be an alias or Name:Index) to the real source path/name
+	_, realSource, err := settings.GetScopeFromSourceString(d.user.Scopes, source)
+	if err != nil {
+		// FALLBACK: If user is Admin, try to resolve directly from NameToSource
+		if d.user.Perm.Admin {
+			// Clean source name (remove :Index suffix if present)
+			cleanSourceName := source
+			if strings.Contains(cleanSourceName, ":") {
+				parts := strings.Split(cleanSourceName, ":")
+				if len(parts) == 2 {
+					cleanSourceName = parts[0]
+				}
+			}
+
+			if src, ok := config.Server.NameToSource[cleanSourceName]; ok {
+				realSource = src.Name
+				err = nil
+			} else {
+				// Case-insensitive fallback for Admin
+				for name, src := range config.Server.NameToSource {
+					if strings.EqualFold(name, cleanSourceName) {
+						realSource = src.Name
+						err = nil
+						break
+					}
+				}
+			}
+		}
+	}
+
+	if err != nil {
 		return http.StatusBadRequest, fmt.Errorf("invalid source name: %s", source)
 	}
-	s, err := store.Share.Gets(path, sourcePath.Path, d.user.ID)
+
+	// Get the real source object to get the Path
+	sourceObj, ok := config.Server.NameToSource[realSource]
+	if !ok {
+		return http.StatusInternalServerError, fmt.Errorf("configured source not found for: %s", realSource)
+	}
+
+	s, err := store.Share.Gets(path, sourceObj.Path, d.user.ID)
 	if err == errors.ErrNotExist {
 		return renderJSON(w, r, []*share.Link{})
 	}
@@ -207,7 +244,63 @@ func sharePostHandler(w http.ResponseWriter, r *http.Request, d *requestContext)
 			return http.StatusBadRequest, fmt.Errorf("invalid source encoding: %v", err)
 		}
 	}
-	source := config.Server.NameToSource[sourceName]
+	// Resolve the source name (which might be an alias or Name:Index) to the real source path/name
+	scopePath, realSourceName, err := settings.GetScopeFromSourceString(d.user.Scopes, sourceName)
+	if err != nil {
+		// FALLBACK: If user is Admin, try to resolve directly from NameToSource
+		// Admins generally have access to all sources even if not explicitly in Scopes
+		if d.user.Perm.Admin {
+			// Clean source name (remove :Index suffix if present)
+			cleanSourceName := sourceName
+			if strings.Contains(cleanSourceName, ":") {
+				parts := strings.Split(cleanSourceName, ":")
+				if len(parts) == 2 {
+					cleanSourceName = parts[0]
+				}
+			}
+
+			if src, ok := config.Server.NameToSource[cleanSourceName]; ok {
+				scopePath = "/"
+				realSourceName = src.Name
+				err = nil
+			} else {
+				// Case-insensitive fallback for Admin
+				for name, src := range config.Server.NameToSource {
+					if strings.EqualFold(name, cleanSourceName) {
+						scopePath = "/"
+						realSourceName = src.Name
+						err = nil
+						break
+					}
+				}
+			}
+		}
+	}
+
+	if err != nil {
+		return http.StatusBadRequest, fmt.Errorf("invalid source: %v", err)
+	}
+
+	source, ok := config.Server.NameToSource[realSourceName]
+	if !ok {
+		return http.StatusBadRequest, fmt.Errorf("source configuration not found for: %s", realSourceName)
+	}
+
+	// If using an alias/scope, rewrite the path to be absolute within the source
+	if scopePath != "/" {
+		// Ensure scopePath has leading slash and no trailing slash
+		if !strings.HasPrefix(scopePath, "/") {
+			scopePath = "/" + scopePath
+		}
+		scopePath = strings.TrimSuffix(scopePath, "/")
+
+		// Ensure path has leading slash
+		if !strings.HasPrefix(path, "/") {
+			path = "/" + path
+		}
+
+		path = scopePath + path
+	}
 
 	s = &share.Link{
 		Path:         path,

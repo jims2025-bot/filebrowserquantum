@@ -13,7 +13,45 @@
 8. [Administrative Functions](#administrative-functions)
 9. [New Folder Highlighting](#new-folder-highlighting)
 10. [Documentation Notes](#documentation-notes)
-11. [Map Overlays Architecture](#geojson-visualization)
+
+---
+
+## 12. Share Link System
+
+[↑ Back to Top](#table-of-contents)
+
+### Overview
+The share link system allows users to create public, time-limited, and password-protected links to files and folders.
+
+### Path Resolution Logic
+To support multiple storage roots and user aliases, share links use a robust resolution strategy:
+
+1.  **Frontend Request**: Sends `path` (relative to source/alias) and `source` (e.g., "POWELL" or "POWELL:1").
+2.  **Source/Alias Resolution** (`GetScopeFromSourceString`):
+    *   Handles `Name:Index` format (e.g., "POWELL:1") by stripping the index.
+    *   Resolves Aliases to Real Source Paths (e.g., "POWELL" -> `/PHOTOCOLLECTIONS/POWELL-COLLECTION`).
+    *   **Admin Fallback**: If standard scope lookup fails (e.g., Admin has no specific scopes), the system checks global sources directly.
+3.  **Path Construction**:
+    *   The **Scope Path** (hidden internal path) is prepended to the **File Path**.
+    *   Example: `Source="E:\PHOTOS"`, `Scope="/Vacation"`, `File="/beach.jpg"` -> `Real Path = E:\PHOTOS\Vacation\beach.jpg`.
+    *   This ensures links point to the correct physical location even when using complex aliases.
+
+### Expiration Enforcement
+Expiration is enforced at the database level (`GetByHash`):
+*   Links with `expire < time.Now()` return `ErrNotExist`.
+*   This ensures expired links appear as 404s and cannot be accessed even if the token is known.
+
+---
+
+## 13. Mobile Interaction
+
+[↑ Back to Top](#table-of-contents)
+
+### Context Menu (Long Press)
+To support touch devices (iPad, Android Tablets, Mobile):
+*   **Touch Handling**: `ListingItem.vue` listens for `touchstart`, `touchmove`, and `touchend`.
+*   **Long Press Detection**: A timer (500ms) triggers the context menu if no movement (swipe) is detected.
+*   **Universal Support**: The logic is **device-agnostic** (previously restricted to Safari) to ensure consistent behavior across all mobile browsers (Chrome on iOS, Firefox on Android, etc.).
 
 ---
 

@@ -15,28 +15,28 @@
     </div>
 
     <action
-      v-if="!showCreate && !isSearchActive && userPerms.modify"
+      v-if="!showCreate && !isSearchActive && userPerms.modify && user.permissions.admin"
       icon="add"
       label="New"
       @action="startShowCreate"
     />
 
     <action
-      v-if="showCreate && !isSearchActive && userPerms.modify"
+      v-if="showCreate && !isSearchActive && userPerms.modify && user.permissions.admin"
       icon="create_new_folder"
       :label="$t('sidebar.newFolder')"
       @action="showHover('newDir')"
     />
 
     <action
-      v-if="showCreate && userPerms.modify && !isSearchActive"
+      v-if="showCreate && userPerms.modify && !isSearchActive && user.permissions.admin"
       icon="note_add"
       :label="$t('sidebar.newFile')"
       @action="showHover('newFile')"
     />
 
     <action
-      v-if="showCreate && userPerms.modify && !isSearchActive"
+      v-if="showCreate && userPerms.modify && !isSearchActive && user.permissions.admin"
       icon="file_upload"
       :label="$t('buttons.upload')"
       @action="uploadFunc"

@@ -101,7 +101,7 @@ func Initialize(source settings.Source, mock bool) {
 
 // Define a function to recursively index files and directories
 func (idx *Index) indexDirectory(adjustedPath string, quick, recursive bool) error {
-	realPath := strings.TrimRight(idx.Source.Path, "/") + adjustedPath
+	realPath := filepath.Clean(strings.TrimRight(idx.Source.Path, "/") + adjustedPath)
 	// Open the directory
 	dir, err := os.Open(realPath)
 	if err != nil {
@@ -347,7 +347,9 @@ func (idx *Index) RefreshFileInfo(opts iteminfo.FileOptions) (string, error) {
 	// (e.g. Source: .../A/B, Request: /A/B/C), naive joining creates .../A/B/A/B/C.
 	// We detect this overlap and strip it.
 	// logger.Debugf("RefreshFileInfo: Checking path %s against Source %s", refreshOptions.Path, idx.Source.Path)
-	naivePath := strings.TrimRight(idx.Source.Path, "/") + refreshOptions.Path
+	// naivePath might have mixed separators (e.g. E:\Foo/bar)
+	// filepath.Clean should fix this for the OS
+	naivePath := filepath.Clean(strings.TrimRight(idx.Source.Path, "/") + refreshOptions.Path)
 	if _, err := os.Stat(naivePath); os.IsNotExist(err) {
 
 		// logger.Debugf("RefreshFileInfo: Naive path %s does not exist. Attempting deduplication...", naivePath)

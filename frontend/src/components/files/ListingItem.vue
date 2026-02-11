@@ -215,7 +215,7 @@ export default {
       downloadFiles();
     },
     handleTouchMove(event) {
-      if (!state.isSafari) return;
+      // if (!state.isSafari) return; // Allow on all devices
       const touch = event.touches[0];
       const deltaX = Math.abs(touch.clientX - this.touchStartX);
       const deltaY = Math.abs(touch.clientY - this.touchStartY);
@@ -227,7 +227,7 @@ export default {
       }
     },
     handleTouchEnd() {
-      if (!state.isSafari) return;
+      // if (!state.isSafari) return; // Allow on all devices
       this.cancelContext(); // Clear timeout
       this.isSwipe = false; // Reset swipe state
     },
@@ -355,20 +355,35 @@ export default {
       action(overwrite, rename);
     },
     addSelected(event) {
-      if (!state.isSafari) return;
+      // Allow long press on all touch devices
       const touch = event.touches[0];
       this.touchStartX = touch.clientX;
       this.touchStartY = touch.clientY;
       this.isLongPress = false; // Reset state
       this.isSwipe = false; // Reset swipe detection
-      if (!state.multiple) {
-        this.contextTimeout = setTimeout(() => {
-          if (!this.isSwipe) {
+      
+      // Clear any existing timeout
+      if (this.contextTimeout) {
+        clearTimeout(this.contextTimeout);
+      }
+
+      this.contextTimeout = setTimeout(() => {
+        if (!this.isSwipe) {
+          this.isLongPress = true;
+          // Trigger context menu
+          this.onRightClick({
+            preventDefault: () => {},
+            clientX: this.touchStartX,
+            clientY: this.touchStartY
+          });
+          
+          // Also select the item if not multiple selection mode
+          if (!state.multiple) {
             mutations.resetSelected();
             mutations.addSelected(this.index);
           }
-        }, 500);
-      }
+        }
+      }, 500);
     },
     click(event) {
       if (event.button === 0) {
