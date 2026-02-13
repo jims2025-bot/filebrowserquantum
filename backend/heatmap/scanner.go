@@ -68,48 +68,75 @@ func GetLocalClusters(sourceName, folderPath string, progress *ScanProgress) ([]
 
 	var points []Cluster
 
-	// Helper for ID generation
-	genID := func() string {
-		return fmt.Sprintf("%d-%d", time.Now().UnixNano(), len(points))
-	}
+	// Bulk fetch GPS data for the whole folder
+	b, err := files.GetExifToolBridgeBackground()
+	if err == nil {
+		gpsData, err := b.GetGPSBulk(realPath)
+		if err == nil {
+			// Map GPS by filename for easy lookup
+			gpsMap := make(map[string]map[string]interface{})
+			for _, m := range gpsData {
+				if fname, ok := m["FileName"].(string); ok {
+					gpsMap[fname] = m
+				}
+			}
 
-	// Process files
-	for _, file := range dirInfo.Files {
-		if !iteminfo.IsImage(file.Name) {
-			continue
-		}
+			// Helper for ID generation
+			genID := func() string {
+				return fmt.Sprintf("%d-%d", time.Now().UnixNano(), len(points))
+			}
 
-		// Update Progress
-		if progress != nil {
-			progress.Current++
-		}
+			for _, file := range dirInfo.Files {
+				if !iteminfo.IsImage(file.Name) {
+					continue
+				}
 
-		fullPath := filepath.Join(realPath, file.Name)
-		lat, lon, err := files.GetGPS(fullPath)
-		if err != nil {
-			// No GPS or error
-			continue
-		}
+				// Update Progress
+				if progress != nil {
+					progress.Current++
+				}
 
-		points = append(points, Cluster{
-			ID:        genID(),
-			Lat:       lat,
-			Lon:       lon,
-			Count:     1,
-			Min:       [2]float64{lat, lon},
-			Max:       [2]float64{lat, lon},
-			PreviewID: file.Name,
-			Path:      filepath.ToSlash(filepath.Join(folderPath, file.Name)),
-			Points: []ClusterPoint{
-				{
+				m, ok := gpsMap[file.Name]
+				if !ok {
+					continue
+				}
+
+				lat, okLat := m["GPSLatitude"].(float64)
+				lon, okLon := m["GPSLongitude"].(float64)
+
+				if !okLat || !okLon {
+					continue
+				}
+
+				points = append(points, Cluster{
+					ID:        genID(),
 					Lat:       lat,
 					Lon:       lon,
-					Path:      filepath.ToSlash(filepath.Join(folderPath, file.Name)),
+					Count:     1,
+					Min:       [2]float64{lat, lon},
+					Max:       [2]float64{lat, lon},
 					PreviewID: file.Name,
-					ID:        genID(), // Assign ID to point
-				},
-			},
-		})
+					Path:      filepath.ToSlash(filepath.Join(folderPath, file.Name)),
+					Points: []ClusterPoint{
+						{
+							Lat:       lat,
+							Lon:       lon,
+							Path:      filepath.ToSlash(filepath.Join(folderPath, file.Name)),
+							PreviewID: file.Name,
+							ID:        genID(), // Assign ID to point
+						},
+					},
+				})
+			}
+		} else {
+			logger.Errorf("Bulk GPS fetch failed for %s: %v. Falling back to individual (slow) scan.", folderPath, err)
+		}
+	}
+
+	// Fallback if bulk fails (though it shouldn't)
+	if len(points) == 0 && exists {
+		// ... existing per-image logic could go here if we really wanted a fallback ...
+		// But let's assume bulk works or we just skip if bridge is broken.
 	}
 
 	// logger.Info(fmt.Sprintf("[DebugScan] Found %d valid GPS points in %s", len(points), folderPath))

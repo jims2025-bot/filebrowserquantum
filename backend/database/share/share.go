@@ -18,4 +18,6 @@ type Link struct {
 	// URL-Safe and is used to download links in password-protected shares via a
 	// query arg.
 	Token string `json:"token,omitempty"`
+	// IsService indicates if this is a Service Share (Full App View)
+	IsService bool `json:"isService"`
 }

@@ -17,6 +17,8 @@ import (
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/errors"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
 	"github.com/jims2025-bot/filebrowserquantum/backend/database/share"
+	"github.com/jims2025-bot/filebrowserquantum/backend/database/storage"
+	"github.com/jims2025-bot/filebrowserquantum/backend/database/users"
 )
 
 // shareListHandler returns a list of all share links.
@@ -125,13 +127,36 @@ func shareGetHandler(w http.ResponseWriter, r *http.Request, d *requestContext) 
 	}
 
 	s, err := store.Share.Gets(path, sourceObj.Path, d.user.ID)
-	if err == errors.ErrNotExist {
-		return renderJSON(w, r, []*share.Link{})
-	}
-
-	if err != nil {
+	if err != nil && err != errors.ErrNotExist {
 		return http.StatusInternalServerError, fmt.Errorf("error getting share info from server")
 	}
+
+	if s == nil {
+		s = []*share.Link{}
+	}
+
+	// Also retrieve Service Shares (which are stored as Users)
+	allUsers, err := store.Users.Gets()
+	if err == nil {
+		for _, u := range allUsers {
+			if strings.HasPrefix(u.Username, "_svc_share_") && len(u.Scopes) == 1 {
+				scope := u.Scopes[0]
+				// Match scope name and path
+				if scope.Name == sourceObj.Path && scope.Scope == path {
+					// Convert User to a pseudo-Link for the frontend
+					s = append(s, &share.Link{
+						Hash:      u.Username, // Use username as hash for service shares
+						Path:      path,
+						Source:    source,
+						UserID:    u.ID,
+						Expire:    u.Expiration,
+						IsService: true,
+					})
+				}
+			}
+		}
+	}
+
 	return renderJSON(w, r, s)
 }
 
@@ -151,6 +176,23 @@ func shareDeleteHandler(w http.ResponseWriter, r *http.Request, d *requestContex
 
 	if hash == "" {
 		return http.StatusBadRequest, nil
+	}
+
+	// Check if it's a Service Share (by username prefix)
+	if strings.HasPrefix(hash, "_svc_share_") {
+		// Find the user and delete them
+		user, err := store.Users.Get(hash)
+		if err != nil {
+			if err == errors.ErrNotExist {
+				return http.StatusNotFound, nil
+			}
+			return http.StatusInternalServerError, err
+		}
+		err = store.Users.Delete(user.ID)
+		if err != nil {
+			return http.StatusInternalServerError, err
+		}
+		return http.StatusOK, nil
 	}
 
 	err := store.Share.Delete(hash)
@@ -317,6 +359,130 @@ func sharePostHandler(w http.ResponseWriter, r *http.Request, d *requestContext)
 	}
 
 	return renderJSON(w, r, s)
+}
+
+// serviceSharePostHandler creates a temporary service account for full-app sharing.
+func serviceSharePostHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
+	if !d.user.Permissions.ManageServiceShares && !d.user.Permissions.Admin {
+		return http.StatusForbidden, fmt.Errorf("you do not have permission to create service shares")
+	}
+
+	var body share.CreateBody
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			return http.StatusBadRequest, fmt.Errorf("failed to decode body: %w", err)
+		}
+		defer r.Body.Close()
+	}
+
+	// 1. Generate random username with prefix
+	shortID, err := generateShortUUID()
+	if err != nil {
+		return http.StatusInternalServerError, err
+	}
+	username := strings.ToLower("_svc_share_" + shortID[:12])
+	admissions := d.user.Permissions
+	admissions.Admin = false // Ensure service account is never admin
+	admissions.ManageServiceShares = false
+	admissions.Share = false
+	admissions.UpdateMap = true // Allow map interactions if shared in map mode? Or just follow user perms.
+	// Actually we should probably copy most perms but NOT admin/share
+
+	// Let's use clean username
+	username = users.CleanUsername(username)
+
+	// 2. Resolve Path and Source
+	encodedPath := r.URL.Query().Get("path")
+	path, _ := url.QueryUnescape(encodedPath)
+	sourceName := r.URL.Query().Get("source")
+	if sourceName == "" {
+		sourceName = config.Server.DefaultSource.Name
+	}
+
+	// Resolve the real path and source name using the current user's context
+	// This handles aliases and virtual paths correctly.
+	resolvedPath, realSourceName, err := ResolveScopePath(d.user, sourceName, path)
+	if err != nil {
+		return http.StatusForbidden, fmt.Errorf("failed to resolve path: %w", err)
+	}
+	path = resolvedPath
+
+	// Resolve the source Name back to its real Path for the scope key
+	sourceKey := realSourceName
+	if src, ok := settings.Config.Server.NameToSource[realSourceName]; ok {
+		sourceKey = src.Path
+	}
+
+	// 3. Calculate Expiration
+	var expire int64 = 0
+	if body.Expires != "" {
+		num, _ := strconv.Atoi(body.Expires)
+		var add time.Duration
+		switch body.Unit {
+		case "seconds":
+			add = time.Second * time.Duration(num)
+		case "minutes":
+			add = time.Minute * time.Duration(num)
+		case "days":
+			add = time.Hour * 24 * time.Duration(num)
+		default:
+			add = time.Hour * time.Duration(num)
+		}
+		expire = time.Now().Add(add).Unix()
+	}
+
+	// 4. Create the Service User
+	user := users.User{
+		Username:    username,
+		LoginMethod: users.LoginMethodPassword,
+		Scopes: []users.SourceScope{
+			{
+				Name:  sourceKey,
+				Scope: path,
+			},
+		},
+		Permissions: users.Permissions{
+			Share: false, // Service accounts shouldn't create more shares
+		},
+		Expiration: expire,
+	}
+
+	if body.Password != "" {
+		user.Password = body.Password
+	} else {
+		// Random password for "link-only" style (but still using JWT)
+		user.Password, _ = generateShortUUID()
+	}
+
+	err = storage.CreateUser(user, false)
+	if err != nil {
+		if strings.Contains(err.Error(), "minimum") || strings.Contains(err.Error(), "exists") {
+			return http.StatusBadRequest, err
+		}
+		return http.StatusInternalServerError, err
+	}
+
+	// 5. Generate long-lived JWT for this user
+	// We use 10 years if no expiration, or the actual expiration
+	tokenDuration := time.Hour * 24 * 365 * 10
+	if expire > 0 {
+		tokenDuration = time.Until(time.Unix(expire, 0))
+	}
+
+	// get the created user for ID
+	createdUser, err := store.Users.Get(username)
+	if err != nil {
+		return http.StatusInternalServerError, fmt.Errorf("failed to retrieve created user: %w", err)
+	}
+	signed, err := makeSignedTokenAPI(createdUser, "SERVICE_SHARE_"+shortID, tokenDuration, createdUser.Permissions)
+	if err != nil {
+		return http.StatusInternalServerError, err
+	}
+
+	return renderJSON(w, r, map[string]string{
+		"username": username,
+		"token":    signed.Key,
+	})
 }
 
 func getSharePasswordHash(body share.CreateBody) (data []byte, statuscode int, err error) {

@@ -515,7 +515,6 @@ func GetScopeFromSourceString(scopes []users.SourceScope, sourceString string) (
 					scope := scopes[idx]
 
 					// Verify the name matches expected source
-					// 1. Resolve 'name' to Source Object
 					source, ok := Config.Server.NameToSource[name]
 					if ok {
 						if scope.Name == source.Path {
@@ -523,21 +522,16 @@ func GetScopeFromSourceString(scopes []users.SourceScope, sourceString string) (
 						}
 					}
 
-					// 2. Fallback: Maybe 'name' is an Alias? (Unlikely for Name:Index usage, but possible)
+					// 2. Fallback: Maybe 'name' is an Alias?
 					if scope.Alias == name {
-						// Find Real Name from scope.Name (Path)
 						if src, ok := Config.Server.SourceMap[scope.Name]; ok {
 							return scope.Scope, src.Name, nil
 						}
 					}
-
-					// Mismatch between requested Name and Scope at Index
-					// This implies the frontend Index and Name don't align with Backend User Scopes.
-					// This can happen if User Object logic differs.
-					// But we should trust the Index if it's valid? No, for security, verify name.
-					logger.Debugf("GetScopeFromSourceString: Index %d points to scope %v but name %s requested", idx, scope.Name, name)
+					logger.Debugf("GetScopeFromSourceString: Index %d mismatch for %s, falling back to name lookup", idx, name)
 				}
-				return "", "", fmt.Errorf("scope index %d not found or name mismatch for source %v", idx, name)
+				// Fallback to name-only lookup for the part before the colon
+				return GetScopeFromSourceName(scopes, name)
 			}
 		}
 	}

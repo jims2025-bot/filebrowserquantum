@@ -5,11 +5,12 @@
         <Icon mimetype="directory" />
       </div>
       <div class="login-brand brand-text">
-        <h3>{{ loginName }}</h3>
+        <h3>{{ isShareAccess ? "Access Shared Content" : loginName }}</h3>
       </div>
       <div v-if="passwordAvailable" class="password-entry">
         <div v-if="error !== ''" class="wrong-login">{{ error }}</div>
         <input
+          v-if="!isShareAccess"
           autofocus
           class="input input--block"
           type="text"
@@ -18,6 +19,7 @@
           :placeholder="$t('login.username')"
         />
         <input
+          :autofocus="isShareAccess"
           class="input input--block"
           type="password"
           v-model="password"
@@ -98,9 +100,37 @@ export default {
       password: "",
       recaptcha: recaptcha,
       passwordConfirm: "",
+      isShareAccess: false,
     };
   },
-  mounted() {
+  async mounted() {
+    const userParam = state.route.query.u || state.route.query.username;
+    const tokenParam = state.route.query.auth || state.route.query.token;
+
+    if (userParam) {
+      this.username = userParam;
+      this.isShareAccess = true;
+    }
+
+    if (tokenParam) {
+      try {
+        // Automatically login if token is provided
+        const { setNewToken, initAuth } = await import("@/utils/auth");
+        await setNewToken(tokenParam);
+        await initAuth();
+        
+        let redirect = state.route.query.redirect;
+        if (!redirect || redirect === "/") {
+          redirect = "/files/";
+        }
+        router.push(redirect);
+        return;
+      } catch (e) {
+        console.error("Automatic login failed", e);
+        this.error = "Invalid or expired share link";
+      }
+    }
+
     if (!recaptcha) return;
     window.grecaptcha.ready(function () {
       window.grecaptcha.render("recaptcha", {
@@ -141,7 +171,7 @@ export default {
         }
         await usersApi.login(this.username, this.password, captcha);
         await initAuth();
-        router.push({ path: redirect });
+        router.push(redirect);
       } catch (e) {
         if (e.message.includes("OTP authentication is enforced")) {
           mutations.showHover({

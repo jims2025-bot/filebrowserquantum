@@ -20,6 +20,11 @@
       v-model="permissions.updateMap"
       :name="$t('settings.permissions.updateMap')"
     />
+    <ToggleSwitch
+      class="item"
+      v-model="permissions.manageServiceShares"
+      name="Create Service Shares (Full App View)"
+    />
   </div>
 </template>
 

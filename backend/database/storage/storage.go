@@ -5,15 +5,16 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	storm "github.com/asdine/storm/v3"
+	"github.com/gtsteffaniak/go-logger/logger"
 	"github.com/jims2025-bot/filebrowserquantum/backend/auth"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/utils"
 	"github.com/jims2025-bot/filebrowserquantum/backend/database/share"
 	"github.com/jims2025-bot/filebrowserquantum/backend/database/storage/bolt"
 	"github.com/jims2025-bot/filebrowserquantum/backend/database/users"
-	"github.com/gtsteffaniak/go-logger/logger"
 )
 
 // Storage is a storage powered by a Backend which makes the necessary
@@ -134,4 +135,28 @@ func CreateUser(userInfo users.User, asAdmin bool) error {
 		return err
 	}
 	return nil
+}
+
+func StartExpirationJob() {
+	go func() {
+		for {
+			logger.Info("Running user expiration cleanup job...")
+			usersList, err := store.Users.Gets()
+			if err != nil {
+				logger.Errorf("expiration job: error fetching users: %v", err)
+			} else {
+				now := time.Now().Unix()
+				for _, u := range usersList {
+					if u.Expiration > 0 && u.Expiration < now {
+						logger.Infof("Deleting expired service share user: %s (id: %d)", u.Username, u.ID)
+						err := store.Users.Delete(u.ID)
+						if err != nil {
+							logger.Errorf("expiration job: error deleting user %s: %v", u.Username, err)
+						}
+					}
+				}
+			}
+			time.Sleep(1 * time.Hour)
+		}
+	}()
 }

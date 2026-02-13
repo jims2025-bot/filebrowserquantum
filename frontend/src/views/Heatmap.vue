@@ -582,12 +582,16 @@ const fetchOverlays = async () => {
         }
     }
 
-    if (!s) return;
+    if (!s) {
+        console.warn("[Heatmap] fetchOverlays: Source missing, skipping fetch.");
+        return;
+    }
 
     // Aggressively decode source and path to prevent double/triple encoding
-    // This handles chaos from router or state differences
     s = recursiveDecode(s);
     p = recursiveDecode(p);
+
+    console.log(`[Heatmap] Fetching overlays for source='${s}', path='${p}', mode='${overlayMode.value}'`);
 
     sidePanelLoading.value = true;
     try {
@@ -596,7 +600,9 @@ const fetchOverlays = async () => {
         // console.log("Fetching overlays: " + url);
         const res = await fetch(url);
         if (res.ok) {
-            const data = await res.json();
+            const rawBody = await res.text();
+            console.log("[Heatmap] Fetch Overlays Raw Response:", rawBody);
+            const data = JSON.parse(rawBody);
             if ((!data.overlays || data.overlays.length === 0) && !url.includes('scan=true')) {
                  // Optimization: If no overlays found, maybe they are not generated yet?
                  // Trigger a scan and retry once.
@@ -626,7 +632,7 @@ const fetchOverlays = async () => {
     }
 };
 
-const toggleOverlay = async (path) => {
+const toggleOverlay = async (path, providedSource = null) => {
     // Check if active
     if (activeOverlayLayers.value[path]) {
         // Remove
@@ -641,7 +647,16 @@ const toggleOverlay = async (path) => {
             return;
         }
 
-        const overlay = availableOverlays.value.find(o => o.path === path);
+        let overlay = availableOverlays.value.find(o => o.path === path);
+        
+        // If not in available list (e.g. initial load from share link), construct a virtual overlay object
+        if (!overlay && providedSource) {
+            overlay = {
+                path: path,
+                source: providedSource
+            };
+        }
+
         if (!overlay) return;
 
         // Fetch GeoJSON content
@@ -654,16 +669,20 @@ const toggleOverlay = async (path) => {
         }
 
         try {
+            // AGGRESSIVE DECODE: Prevent double/triple encoding issues from shared links
+            const cleanSource = recursiveDecode(overlay.source);
+            const cleanPath = recursiveDecode(rawPath);
+
             // Construct request for /api/raw
             // Format: files=SOURCE::PATH
-            const fileSpec = `${overlay.source}::${rawPath}`;
+            const fileSpec = `${cleanSource}::${cleanPath}`;
             const url = `/api/raw?files=${encodeURIComponent(fileSpec)}`;
             
             // 1. Try to fetch Sidecar Style File first
             let styleConfig = null;
             try {
-                const stylePath = rawPath + ".style.json";
-                const styleSpec = `${overlay.source}::${stylePath}`;
+                const stylePath = cleanPath + ".style.json";
+                const styleSpec = `${cleanSource}::${stylePath}`;
                 const styleUrl = `/api/raw?files=${encodeURIComponent(styleSpec)}`;
                 const styleRes = await fetch(styleUrl);
                 if (styleRes.ok) {
@@ -810,9 +829,8 @@ const toggleOverlay = async (path) => {
             if (Object.keys(activeOverlayLayers.value).length === 1) {
                 map.fitBounds(layer.getBounds());
             }
-
         } catch (e) {
-            notify.error("Failed to load overlay: " + e.message);
+            notify.showError("Failed to load overlay: " + e.message);
         }
     }
 };
@@ -960,10 +978,9 @@ const isImageFile = (filename) => {
     return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'heic'].includes(ext);
 };
 
-// Main Inspector Logic
-// Main Inspector Logic
-const inspectLocation = async (path, source, directItems = null, coords = null, keepHistory = false, preservedTotalImageCount = null) => {
-    console.log(`[Heatmap] inspectLocation called: path='${path}', source='${source}', keepHistory=${keepHistory}, preservedTotalImageCount=${preservedTotalImageCount}`);
+
+const inspectLocation = async (path, sourceArg, directItems = null, coords = null, keepHistory = false, preservedTotalImageCount = null) => {
+    console.log(`[Heatmap] inspectLocation called: path='${path}', source='${sourceArg}', keepHistory=${keepHistory}, preservedTotalImageCount=${preservedTotalImageCount}`);
     
     showSidePanel.value = true;
     isPanelCollapsed.value = false; // Ensure expanded
@@ -1005,17 +1022,19 @@ const inspectLocation = async (path, source, directItems = null, coords = null, 
          try {
             // Include Zoom Level for radius search
             const currentZoom = map.getZoom();
-            let url = `/api/heatmap/inspect?zoom=${currentZoom}&source=${encodeURIComponent(source||'')}&path=${encodeURIComponent(path||'')}`;
+            // Aggressive Decode incoming parameters to prevent double-encoding
+            const cleanSource = recursiveDecode(sourceArg || '');
+            const cleanPath = recursiveDecode(path || '');
             
+            let url = `/api/heatmap/inspect?zoom=${currentZoom}&source=${encodeURIComponent(cleanSource)}&path=${encodeURIComponent(cleanPath)}`;
+
             // Handle Coordinates or ID
             if (typeof coords === 'string') {
                  // It's a Cluster ID (or comma list)
                  url += `&cluster_id=${encodeURIComponent(coords)}`;
                  // Add dummy lat/lon to satisfy strict backend validation (until backend is relaxed)
-                 // Or better: ensure backend is relaxed first. 
-                 // But for robustness, I'll add 0,0.
                  url += `&lat=0&lon=0`;
-            } else {
+            } else if (coords) {
                  // It's an object {lat, lon, minLat...}
                  url += `&lat=${coords.lat}&lon=${coords.lon}`;
                  if (coords.minLat !== undefined) {
@@ -1025,7 +1044,8 @@ const inspectLocation = async (path, source, directItems = null, coords = null, 
                      url += `&cluster_id=${encodeURIComponent(coords.clusterID)}`;
                  }
             }
-            
+
+            console.log(`[Heatmap] inspectLocation called: path='${cleanPath}', source='${cleanSource}', keepHistory=${keepHistory}, preservedTotalImageCount=${preservedTotalImageCount}`);
             console.log(`[Heatmap] Inspect API URL: ${url}`);
 
             const res = await fetch(url);
@@ -1038,9 +1058,9 @@ const inspectLocation = async (path, source, directItems = null, coords = null, 
                      sidePanelData.value = items.map(item => ({
                         name: item.previewID || item.path.split('/').pop(),
                         path: item.path,
-                        source: item.source || source,
+                        source: item.source || cleanSource,
                         parentPath: item.path.substring(0, item.path.lastIndexOf('/')), // Grouping Key
-                        thumbUrl: getPreviewUrl(item.path, item.source || source, 'thumb'),
+                        thumbUrl: getPreviewUrl(item.path, item.source || cleanSource, 'thumb'),
                         // Drill-down fields
                         type: item.type,
                         count: item.count,
@@ -1211,7 +1231,8 @@ const inspectLocation = async (path, source, directItems = null, coords = null, 
     // Fallback logic for general folder inspection (no coordinates interaction)
     try {
         let targetPath = path;
-        const apiUrl = `/api/resources?path=${encodeURIComponent(targetPath)}&source=${encodeURIComponent(source || "")}`;
+        const cleanS = recursiveDecode(sourceArg || "");
+        const apiUrl = `/api/resources?path=${encodeURIComponent(targetPath)}&source=${encodeURIComponent(cleanS)}`;
         const res = await fetchJSON(apiUrl);
         let items = res.items || [];
         if (!items.length && (res.files || res.folders)) {
@@ -1224,9 +1245,9 @@ const inspectLocation = async (path, source, directItems = null, coords = null, 
                 .map(item => ({
                     name: item.name,
                     path: item.path || (targetPath + "/" + item.name), 
-                    source: item.source || source,
+                    source: item.source || cleanS,
                     parentPath: targetPath,
-                    thumbUrl: getPreviewUrl(item.path || (targetPath + "/" + item.name), item.source || source, 'small'),
+                    thumbUrl: getPreviewUrl(item.path || (targetPath + "/" + item.name), item.source || cleanS, 'small'),
                     type: item.type,
                     clusterID: item.id // Use id if available
                 }));
@@ -1544,225 +1565,37 @@ const fetchSiblings = async (parentPath, sourceVal) => {
 };
 
 const loadOverlay = async () => {
-    const overlayPath = route.query.overlay;
-    const source = route.query.source;
+    let overlayInput = route.query.overlay;
+    let source = route.query.source;
+    if (!overlayInput || !source) return;
 
-    // Cleanup existing
-    if (overlayLayer && map) {
-        map.removeLayer(overlayLayer);
-        overlayLayer = null;
+    overlayInput = recursiveDecode(overlayInput);
+    source = recursiveDecode(source);
+
+    console.log("[Heatmap] Auto-loading overlay requested:", overlayInput);
+
+    // Wait for availableOverlays to be populated (it might still be fetching)
+    let attempts = 0;
+    while (availableOverlays.value.length === 0 && attempts < 10 && sidePanelLoading.value) {
+        await new Promise(r => setTimeout(r, 500));
+        attempts++;
     }
 
-    if (!overlayPath) {
-            // Do not clear siblings
-            // Ensure panel stays open if we have overlays to show
-            if (overlaySiblings.value.length > 0) {
-                showSidePanel.value = true;
-            }
-            return;
-    }
+    // Reconciliation: Shared Link might provide Name or Path
+    let targetOverlay = availableOverlays.value.find(o => o.path === overlayInput || o.name === overlayInput);
 
-    console.log(`[Heatmap] Loading overlay: ${overlayPath}`);
-    
-    // FIX: Decode source fully to prevent double-encoding
-    let decodedSource = source || "";
-    try {
-        decodedSource = decodeURIComponent(decodedSource);
-        // Double check for remnants
-        if (decodedSource.includes('%')) {
-             decodedSource = decodeURIComponent(decodedSource);
+    if (targetOverlay) {
+        console.log("[Heatmap] Resolved overlay to path:", targetOverlay.path);
+        toggleOverlay(targetOverlay.path, source);
+    } else {
+        console.warn("[Heatmap] Could not resolve overlay:", overlayInput);
+        // Fallback to direct path if it looks like one
+        if (overlayInput.includes('/') || overlayInput.endsWith('.geojson')) {
+             toggleOverlay(overlayInput, source);
         }
-        console.log(`[Heatmap] Source raw: '${source}', decoded: '${decodedSource}'`);
-    } catch (e) {}
-    
-    // Trigger UI
-    showSidePanel.value = true;
-    sidePanelTitle.value = "Map Overlay"; 
-    
-    // Also fetch siblings
-    const parentPath = overlayPath.substring(0, overlayPath.lastIndexOf('/'));
-    fetchSiblings(parentPath || "/", decodedSource);
-    
-    try {
-        // Fetch logic
-        const filesParam = (decodedSource || "") + "::" + overlayPath;
-        const url = `/api/raw?files=${encodeURIComponent(filesParam)}&inline=true`;
-        console.log(`[Heatmap] Fetching overlay URL: ${url}`);
-        
-        // Try to fetch Sidecar Style File first if we have a source
-        let styleConfig = null;
-        if (decodedSource) {
-            try {
-                // Construct style path: "filename.geojson.style.json"
-                const stylePath = overlayPath + ".style.json";
-                const styleParam = (decodedSource || "") + "::" + stylePath;
-                const styleUrl = `/api/raw?files=${encodeURIComponent(styleParam)}&inline=true`;
-                
-                const styleRes = await fetch(styleUrl);
-                if (styleRes.ok) {
-                    styleConfig = await styleRes.json();
-                    console.log("[Heatmap] Loaded sidecar style:", styleConfig);
-                }
-            } catch (styleErr) {
-                // Ignore
-            }
-        }
-
-        const res = await fetch(url);
-        if (!res.ok) throw new Error("Failed to fetch geojson: " + res.status);
-        
-        if (route.query.overlay !== overlayPath) {
-                console.log("[Heatmap] Overlay load cancelled (route changed)");
-                return;
-        }
-        
-        const geoData = await res.json();
-        
-        // Helper for Feature Styling
-        const getStyleForFeature = (feature) => {
-            // Default fallback
-            let finalStyle = { color: "#ff7800", weight: 5, opacity: 0.65 };
-
-            if (!styleConfig) {
-                // Fallback to internal properties if no sidecar
-                if (feature.properties && feature.properties.color) {
-                        finalStyle.color = feature.properties.color;
-                }
-                return finalStyle;
-            }
-            
-            // 1. Apply Global Default
-            if (styleConfig.default) {
-                finalStyle = { ...finalStyle, ...styleConfig.default };
-            }
-            
-            // 2. Apply Rules
-            if (styleConfig.rules && Array.isArray(styleConfig.rules)) {
-                for (const rule of styleConfig.rules) {
-                    if (!rule.if || !rule.style) continue;
-                    
-                    let match = true;
-                    // Simple property match
-                    if (rule.if.property) {
-                            if (feature.properties[rule.if.property] !== rule.if.value) {
-                                match = false;
-                            }
-                    }
-                    // ID match
-                    if (rule.if.id) {
-                        if (feature.id !== rule.if.id && feature.properties?.id !== rule.if.id) {
-                            match = false;
-                        }
-                    }
-                    
-                    if (match) {
-                        finalStyle = { ...finalStyle, ...rule.style };
-                    }
-                }
-            }
-            
-            return finalStyle;
-        };
-
-        overlayLayer = L.geoJSON(geoData, {
-            style: getStyleForFeature,
-            pointToLayer: function(feature, latlng) {
-                const props = feature.properties || {};
-                
-                // 1. Circle Marker
-                if (props.markerType === 'circle') {
-                    const style = {
-                        radius: props.radius || 6,
-                        fillColor: props.fill || "#ff7800",
-                        color: props.stroke || "#000",
-                        weight: props.strokeWidth || 1,
-                        opacity: props.strokeOpacity || 1,
-                        fillOpacity: props.fillOpacity || 0.8
-                    };
-                    return L.circleMarker(latlng, style);
-                }
-                
-                // 2. Custom Icon
-                const iconUrl = props.icon || props.iconUrl;
-                if (iconUrl) {
-                    // Determine Base Size
-                    let w = 32; 
-                    let h = 32;
-                    
-                    if (props.iconSize) {
-                        w = props.iconSize[0];
-                        h = props.iconSize[1];
-                    }
-                    
-                    // Handle KML-style icon-scale
-                    if (props['icon-scale']) {
-                        const scale = parseFloat(props['icon-scale']);
-                        w = w * scale;
-                        h = h * scale;
-                    }
-
-                    // Anchor
-                    let anchor = [w/2, h]; // Default bottom-center
-                    if (props.iconAnchor) {
-                        anchor = props.iconAnchor;
-                    }
-                    
-                    const myIcon = L.icon({
-                        iconUrl: iconUrl,
-                        iconSize: [w, h],
-                        iconAnchor: anchor,
-                        popupAnchor: [0, -h]
-                    });
-                    return L.marker(latlng, {icon: myIcon});
-                }
-
-                // 3. Default Marker
-                return L.marker(latlng);
-            },
-            onEachFeature: function (feature, layer) {
-                if (feature.properties) {
-                    let content = "";
-                    
-                    // Title / Name
-                    if (feature.properties.name || feature.properties.Name) {
-                        content += `<b>${feature.properties.name || feature.properties.Name}</b>`;
-                    }
-                    
-                    // Description (check common keys)
-                    const desc = feature.properties.description || feature.properties.Description || feature.properties.desc || feature.properties.Desc;
-                    if (desc) {
-                        if (content) content += "<br>";
-                        content += `<div style="margin-top:5px; max-height:200px; overflow-y:auto;">${desc}</div>`;
-                    }
-
-                    if (content) {
-                        layer.bindPopup(content);
-                    }
-                }
-            }
-        });
-        
-        if (overlayLayer) {
-            if (map) {
-                    overlayLayer.addTo(map);
-                    
-                    // Check if we should fit bounds (e.g. initial load from listing)
-                    if (route.query.fit === 'true' && overlayLayer.getBounds().isValid()) {
-                        console.log("[Heatmap] Fitting bounds to overlay as requested");
-                        map.fitBounds(overlayLayer.getBounds());
-                    }
-            } else {
-                    console.warn("[Heatmap] Map not initialized yet, cannot add overlay layer");
-            }
-        } else {
-            console.error("[Heatmap] Failed to create Leaflet GeoJSON layer");
-        }
-
-    } catch (e) {
-        console.error("[Heatmap] Failed to load overlay", e);
-        notify.showError("Failed to load map overlay");
     }
 };
+
 
 // Watch for overlay changes
 watch(() => route.query.overlay, () => {
@@ -1781,6 +1614,16 @@ watch(() => [route.query.path, route.query.source], (newVals, oldVals) => {
                 console.log("[Heatmap] Context changed and no overlay, clearing overlay siblings.");
                 overlaySiblings.value = [];
         }
+    }
+});
+
+// Watch for major context changes in URL (Source or Path)
+// This ensures we react when redirected from Login or when navigating via browser history
+watch(() => [route.query.source, route.query.path], () => {
+    console.log("[Heatmap] Route query changed - source/path update detected. Re-loading data.");
+    if (map) {
+        loadData();
+        fetchOverlays();
     }
 });
 
@@ -1936,33 +1779,33 @@ const initMap = async () => {
 
     const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { 
         attribution: '&copy; OpenStreetMap contributors',
-        noWrap: true
+        noWrap: false
     });
     const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { 
         attribution: 'Tiles &copy; Esri',
-        noWrap: true
+        noWrap: false
     });
     const topo = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', { 
         attribution: 'Tiles &copy; Esri',
-        noWrap: true
+        noWrap: false
     });
     const dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { 
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>', 
         subdomains: 'abcd', 
         maxZoom: 20,
-        noWrap: true
+        noWrap: false
     });
     
     // Google Basemaps
     const googleStreets = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
         maxZoom: 20,
         attribution: 'Google',
-        noWrap: true
+        noWrap: false
     });
     const googleHybrid = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
         maxZoom: 20,
         attribution: 'Google',
-        noWrap: true
+        noWrap: false
     });
 
     const baseMaps = {
@@ -2247,8 +2090,8 @@ const loadData = async () => {
     clusterDataStore.clear();
     renderedMarkerStore.clear();
 
-    const source = route.query.source || "";
-    const path = route.query.path || "";
+    const source = recursiveDecode(route.query.source || "");
+    const path = recursiveDecode(route.query.path || "");
     
     // Determine if folder or global
     if (path) {
@@ -3031,10 +2874,25 @@ onMounted(() => {
         if (!items) window._tempInspectItems = null;
     };
 
-    initMap().then(() => { 
+    initMap().then(() => {
         loadData();
+        
+        // Ensure overlays list is fetched immediately, especially for shared links
+        fetchOverlays();
+
+        // Auto-inspect if path is provided (e.g. from a shared link)
+        if (route.query.path) {
+            const p = recursiveDecode(route.query.path);
+            const s = recursiveDecode(route.query.source);
+            console.log("[Heatmap] Auto-inspecting path:", p);
+            inspectLocation(p, s);
+        }
+
         // Now it's safe to load overlay if present
         if (route.query.overlay) {
+            // Switch to overlays tab to show the list
+            activeTab.value = 'overlays';
+            showSidePanel.value = true;
             loadOverlay();
         }
     });

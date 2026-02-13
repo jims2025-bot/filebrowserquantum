@@ -148,6 +148,9 @@
             {{ tab.label }}
             </button>
         </div>
+        <div v-if="isPreFetching" class="prefetching-indicator" title="Background metadata pre-fetching in progress...">
+          <i class="material-icons spin" style="font-size: 18px; color: var(--accent-green);">sync</i>
+        </div>
       </div>
       
       <div class="tabs-content">
@@ -587,6 +590,7 @@ export default {
       faceFontSize: 24, // Default font size
       metadataCache: {}, // Cache for pre-fetched metadata
       textContent: '', // For text/JSON file preview
+      isPreFetching: false, // background scan status
     };
   },
   computed: {
@@ -1654,6 +1658,9 @@ export default {
       // Use getMetadata to fetch for current file (checks cache)
       const data = await this.getMetadata(state.req.source, state.req.path);
       
+      // Update pre-fetching status from backend
+      this.isPreFetching = data.isPreFetching || false;
+
       // Clone to ensure we don't mutate cache directly if we don't want to, 
       // OR mostly we do want to cache the parsed result. 
       // For now, let's just assign.
@@ -2821,5 +2828,22 @@ toggleNavigation: throttle(function () {
   .button {
     margin: 0 0.5rem;
   }
+}
+
+.spin {
+  animation: spin 2s linear infinite;
+}
+
+@keyframes spin {
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.prefetching-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 10px;
 }
 </style>

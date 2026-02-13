@@ -1,8 +1,8 @@
 import { fetchURL, fetchJSON, adjustedData } from "./utils";
 import { state } from '@/store'
 import { notify } from "@/notify";
-import { getApiPath,removePrefix } from "@/utils/url.js";
-import { externalUrl,baseURL } from "@/utils/constants";
+import { getApiPath, removePrefix } from "@/utils/url.js";
+import { externalUrl, baseURL } from "@/utils/constants";
 
 export async function list() {
   const apiPath = getApiPath("api/shares");
@@ -12,7 +12,7 @@ export async function list() {
 export async function get(path, source) {
   try {
     const params = { path, source };
-    const apiPath = getApiPath("api/share",params);
+    const apiPath = getApiPath("api/share", params);
     let data = fetchJSON(apiPath);
     return adjustedData(data, path);
   } catch (err) {
@@ -23,7 +23,7 @@ export async function get(path, source) {
 
 export async function remove(hash) {
   const params = { hash };
-  const apiPath = getApiPath("api/share",params);
+  const apiPath = getApiPath("api/share", params);
   await fetchURL(apiPath, {
     method: "DELETE",
   });
@@ -31,7 +31,7 @@ export async function remove(hash) {
 
 export async function create(path, source, password = "", expires = "", unit = "hours") {
   const params = { path: encodeURIComponent(path), source: source };
-  const apiPath = getApiPath("api/share",params);
+  const apiPath = getApiPath("api/share", params);
   let body = "{}";
   if (password != "" || expires !== "" || unit !== "hours") {
     body = JSON.stringify({ password: password, expires: expires, unit: unit });
@@ -47,7 +47,7 @@ export function getShareURL(share) {
     const apiPath = getApiPath(`share/${share.hash}`)
     return externalUrl + removePrefix(apiPath, baseURL);
   }
-  return window.origin+getApiPath(`share/${share.hash}`);
+  return window.origin + getApiPath(`share/${share.hash}`);
 }
 
 export function getPreviewURL(hash, path) {
@@ -64,4 +64,14 @@ export function getPreviewURL(hash, path) {
     notify.showError(err.message || 'Error getting preview URL')
     throw err
   }
+}
+
+export async function createServiceShare(path, source, password = "", expires = "", unit = "hours") {
+  const params = { path: encodeURIComponent(path), source: source };
+  const apiPath = getApiPath("api/service-share", params);
+  let body = JSON.stringify({ password: password, expires: expires, unit: unit });
+  return fetchJSON(apiPath, {
+    method: "POST",
+    body: body,
+  });
 }

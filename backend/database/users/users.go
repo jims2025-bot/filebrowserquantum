@@ -32,8 +32,9 @@ type Permissions struct {
 	Admin     bool `json:"admin"`
 	Modify    bool `json:"modify"`
 	Share     bool `json:"share"`
-	Realtime  bool `json:"realtime"`
-	UpdateMap bool `json:"updateMap"`
+	Realtime           bool `json:"realtime"`
+	UpdateMap          bool `json:"updateMap"`
+	ManageServiceShares bool `json:"manageServiceShares"`
 }
 
 // SortingSettings represents the sorting settings.
@@ -67,6 +68,7 @@ type User struct {
 	LoginMethod     LoginMethod          `json:"loginMethod"`
 	OtpEnabled      bool                 `json:"otpEnabled"` // true if TOTP is enabled, false otherwise
 	LastLogin       time.Time            `json:"lastLogin"`  // timestamp of last login for new folder detection
+	Expiration      int64                `json:"expiration"` // unix timestamp of account expiration
 	// legacy for migration purposes... og filebrowser has perm attribute
 	Perm Permissions `json:"perm,omitzero"`
 }

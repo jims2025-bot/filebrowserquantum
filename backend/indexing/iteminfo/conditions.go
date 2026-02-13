@@ -116,14 +116,15 @@ var textTypes = []string{
 	// Other Text-Based Formats
 	".css",          // Cascading Style Sheets
 	".html", ".htm", // HyperText Markup Language
-	".sql", // SQL
-	".csv", // Comma-Separated Values
-	".tsv", // Tab-Separated Values
-	".log", // Log file
-	".bat", // Batch file
-	".ps1", // PowerShell script
-	".tex", // LaTeX
-	".bib", // BibTeX
+	".sql",     // SQL
+	".csv",     // Comma-Separated Values
+	".tsv",     // Tab-Separated Values
+	".log",     // Log file
+	".bat",     // Batch file
+	".ps1",     // PowerShell script
+	".tex",     // LaTeX
+	".bib",     // BibTeX
+	".geojson", // GeoJSON
 }
 
 // Compressed file extensions

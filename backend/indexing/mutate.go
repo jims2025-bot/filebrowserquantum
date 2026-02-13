@@ -3,12 +3,13 @@ package indexing
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
-	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
-	"github.com/jims2025-bot/filebrowserquantum/backend/indexing/iteminfo"
 	"github.com/gtsteffaniak/go-cache/cache"
 	"github.com/gtsteffaniak/go-logger/logger"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
+	"github.com/jims2025-bot/filebrowserquantum/backend/indexing/iteminfo"
 
 	"github.com/shirou/gopsutil/v3/disk"
 )
@@ -36,7 +37,17 @@ func (idx *Index) GetReducedMetadata(target string, isDir bool) (*iteminfo.FileI
 	}
 	dir, exists := idx.Directories[checkDir]
 	if !exists {
-		return nil, false
+		// Case-insensitive fallback for Windows compatibility
+		for path, d := range idx.Directories {
+			if strings.EqualFold(path, checkDir) {
+				dir = d
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			return nil, false
+		}
 	}
 
 	if isDir {
@@ -71,6 +82,16 @@ func (idx *Index) GetMetadataInfo(target string, isDir bool) (*iteminfo.FileInfo
 		checkDir = "/"
 	}
 	dir, exists := idx.Directories[checkDir]
+	if !exists {
+		// Case-insensitive fallback for Windows compatibility
+		for path, d := range idx.Directories {
+			if strings.EqualFold(path, checkDir) {
+				dir = d
+				exists = true
+				break
+			}
+		}
+	}
 	return dir, exists
 }
 

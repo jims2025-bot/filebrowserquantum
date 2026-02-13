@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/gtsteffaniak/go-logger/logger"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/errors"
@@ -43,28 +44,28 @@ func userGetHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (
 	if givenUserIdString == "self" {
 		givenUserId = d.user.ID
 	} else if givenUserIdString == "" {
-
 		userList, err := store.Users.Gets()
 		if err != nil {
 			return http.StatusInternalServerError, err
 		}
 
-		selfUserList := []*users.User{}
+		filteredUserList := []*users.User{}
 		for _, u := range userList {
+			// Filter out service share users from the list
+			if strings.HasPrefix(u.Username, "_svc_share_") {
+				continue
+			}
 			prepForFrontend(u)
-			if u.ID == d.user.ID {
-				selfUserList = append(selfUserList, u)
+			if d.user.Permissions.Admin || u.ID == d.user.ID {
+				filteredUserList = append(filteredUserList, u)
 			}
 		}
 
-		sort.Slice(userList, func(i, j int) bool {
-			return userList[i].ID < userList[j].ID
+		sort.Slice(filteredUserList, func(i, j int) bool {
+			return filteredUserList[i].ID < filteredUserList[j].ID
 		})
 
-		if !d.user.Permissions.Admin {
-			userList = selfUserList
-		}
-		return renderJSON(w, r, userList)
+		return renderJSON(w, r, filteredUserList)
 	} else {
 		num, _ := strconv.ParseUint(givenUserIdString, 10, 32)
 		givenUserId = uint(num)

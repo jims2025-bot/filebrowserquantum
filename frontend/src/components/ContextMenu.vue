@@ -62,6 +62,12 @@
       :counter="selectedCount"
     />
     <action
+      v-if="selectedCount == 1 && user.permissions.manageServiceShares"
+      icon="share"
+      label="Create Service Share"
+      @action="showHover({ name: 'share', props: { initialShareType: 'service' } })"
+    />
+    <action
       v-if="selectedCount <= 1 && showShare"
       icon="share"
       :label="$t('buttons.share')"

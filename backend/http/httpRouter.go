@@ -102,6 +102,7 @@ func StartHttp(ctx context.Context, storage *storage.Storage, shutdownComplete c
 	api.HandleFunc("GET /shares", withPermShare(shareListHandler))
 	api.HandleFunc("GET /share", withPermShare(shareGetHandler))
 	api.HandleFunc("POST /share", withPermShare(sharePostHandler))
+	api.HandleFunc("POST /service-share", withUser(serviceSharePostHandler))
 	api.HandleFunc("DELETE /share", withPermShare(shareDeleteHandler))
 
 	// Public routes
