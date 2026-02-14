@@ -39,13 +39,35 @@ func ResolveScopePath(user *users.User, source string, path string) (string, str
 	if source == "ALL" {
 		// For the virtual "ALL" source, we use the path as-is (scoped by middleware)
 		// and return "ALL" as the real source name.
+		// NOTE: "ALL" is NOT a physical index, so handlers calling this MUST handle aggregation.
 		return path, "ALL", nil
 	}
 
 	// 1. Determine Initial Scope (Default Behavior)
-	// This validates the source and gets the primary scope for this user/source context.
+	// If source is empty, try to find a default.
+	if source == "" {
+		source = settings.Config.Server.DefaultSource.Name
+	}
+
 	userscope, realSource, err := settings.GetScopeFromSourceString(user.Scopes, source)
 	if err != nil {
+		// Fallback: If the user doesn't have the default source, use the first available scope.
+		// This prevents 403 errors when the frontend initializes with an empty source.
+		if len(user.Scopes) > 0 {
+			firstScope := user.Scopes[0]
+			// We try to resolve the real name if it's an alias
+			if firstScope.Alias != "" {
+				return ResolveScopePath(user, firstScope.Alias, path)
+			}
+			// Otherwise resolve by Name (which is Source Path)
+			for name, src := range settings.Config.Server.NameToSource {
+				if src.Path == firstScope.Name {
+					return ResolveScopePath(user, name, path)
+				}
+			}
+			// Absolute fallback
+			return firstScope.Scope, firstScope.Name, nil
+		}
 		return "", "", err
 	}
 

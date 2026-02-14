@@ -340,8 +340,8 @@ func GetXMPInstructions(filePath string) (string, error) {
 
 func FileInfoFaster(opts iteminfo.FileOptions) (iteminfo.ExtendedFileInfo, error) {
 	response := iteminfo.ExtendedFileInfo{}
-	if opts.Source == "" {
-		opts.Source = settings.Config.Server.DefaultSource.Name
+	if opts.Source == "ALL" {
+		return response, fmt.Errorf("file listing is not supported for pseudo-source 'ALL'")
 	}
 	index := indexing.GetIndex(opts.Source)
 	if index == nil {
