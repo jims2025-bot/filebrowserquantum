@@ -255,9 +255,8 @@ export default {
       this.links = links;
       console.log("[Share] Successfully fetched", this.links.length, "shares");
     } catch (err) {
-      console.error("[Share] Failed to fetch shares:", err);
-      notify.showError(err);
-      return;
+      console.warn("[Share] Failed to fetch shares (continuing to check for overlays):", err.status || err.message || err);
+      // Don't return here, we still want to try loading overlays
     }
     this.sort();
 
