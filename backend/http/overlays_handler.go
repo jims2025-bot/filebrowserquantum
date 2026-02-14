@@ -37,6 +37,62 @@ func HandleGetOverlays(w http.ResponseWriter, r *http.Request, d *requestContext
 		return http.StatusBadRequest, fmt.Errorf("source is required")
 	}
 
+	// Handle "ALL" pseudo-source: Aggregate overlays across all visible scopes
+	if sourceName == "ALL" {
+		var allOverlays []heatmap.MapOverlay
+		visited := make(map[string]bool)
+
+		for _, s := range d.user.Scopes {
+			idx := indexing.GetIndex(s.Name)
+			if idx == nil {
+				continue
+			}
+
+			// Determine target path for this scope
+			target := path
+			if target == "" {
+				target = "/"
+			}
+
+			// Resolve relative to THIS specific scope (to handle nested shares/permissions correctly)
+			// But for "ALL" aggregation, we usually want the same path across all.
+			// RESOLUTION: Use the absolute path if possible.
+			realPath, _, err := idx.GetRealPath(target)
+			if err != nil {
+				continue
+			}
+
+			overlayPath := filepath.Join(realPath, heatmap.MapOverlaysFilename)
+			dedupKey := strings.ToLower(filepath.Clean(overlayPath))
+			if visited[dedupKey] {
+				continue
+			}
+			visited[dedupKey] = true
+
+			if _, err := os.Stat(overlayPath); err == nil {
+				bytes, err := os.ReadFile(overlayPath)
+				if err == nil {
+					var data heatmap.OverlayData
+					if err := json.Unmarshal(bytes, &data); err == nil {
+						for _, ov := range data.Overlays {
+							// Inject source alias so the frontend knows which source to use for /api/raw
+							ov.Source = s.Alias
+							if ov.Source == "" {
+								ov.Source = s.Name
+							}
+							allOverlays = append(allOverlays, ov)
+						}
+					}
+				}
+			}
+		}
+
+		return renderJSON(w, r, OverlayResponse{
+			Overlays: allOverlays,
+			Path:     path,
+		})
+	}
+
 	var idx *indexing.Index
 
 	// Optimization: Resolve Alias First to avoid "Index Not Found" logs

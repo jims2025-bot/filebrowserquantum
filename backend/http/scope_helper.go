@@ -35,6 +35,13 @@ func ResolveScopePath(user *users.User, source string, path string) (string, str
 	}
 	// ...
 
+	// Handle "ALL" pseudo-source for global aggregation
+	if source == "ALL" {
+		// For the virtual "ALL" source, we use the path as-is (scoped by middleware)
+		// and return "ALL" as the real source name.
+		return path, "ALL", nil
+	}
+
 	// 1. Determine Initial Scope (Default Behavior)
 	// This validates the source and gets the primary scope for this user/source context.
 	userscope, realSource, err := settings.GetScopeFromSourceString(user.Scopes, source)

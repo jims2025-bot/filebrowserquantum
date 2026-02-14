@@ -440,15 +440,34 @@ func serviceSharePostHandler(w http.ResponseWriter, r *http.Request, d *requestC
 	}
 
 	// 4. Create the Service User
-	user := users.User{
-		Username:    username,
-		LoginMethod: users.LoginMethodPassword,
-		Scopes: []users.SourceScope{
+	var scopes []users.SourceScope
+	if sourceName == "ALL" {
+		// Inherit and Scope: Access the SAME shared path across all visible sources
+		for _, s := range d.user.Scopes {
+			// We skip restricted scopes that don't match the path if we wanted to be even more strict,
+			// but usually "ALL" means "Show me this path everywhere it exists".
+			scopes = append(scopes, users.SourceScope{
+				Name:  s.Name,
+				Scope: path,
+				Alias: s.Alias,
+			})
+		}
+		// If user is admin but has no explicit scopes (unlikely in this app),
+		// we might need to add all configured sources.
+		// But in this codebase, d.user.Scopes is usually fully populated.
+	} else {
+		scopes = []users.SourceScope{
 			{
 				Name:  sourceKey,
 				Scope: path,
 			},
-		},
+		}
+	}
+
+	user := users.User{
+		Username:    username,
+		LoginMethod: users.LoginMethodPassword,
+		Scopes:      scopes,
 		Permissions: users.Permissions{
 			Share: false, // Service accounts shouldn't create more shares
 		},

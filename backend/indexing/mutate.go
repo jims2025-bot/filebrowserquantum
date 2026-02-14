@@ -107,6 +107,10 @@ func GetIndex(name string) *Index {
 	defer indexesMutex.Unlock()
 	index, ok := indexes[name]
 	if !ok {
+		// Silent return for virtual "ALL" source used in global map views
+		if name == "ALL" {
+			return nil
+		}
 		// try path if name fails
 		// todo: update everywhere else so this isn't needed.
 		source, ok := settings.Config.Server.SourceMap[name]
