@@ -120,6 +120,7 @@ func withAdminHelper(fn handleFunc) handleFunc {
 	return withUserHelper(func(w http.ResponseWriter, r *http.Request, data *requestContext) (int, error) {
 		// Ensure the user has admin permissions
 		if !data.user.Permissions.Admin {
+			logger.Debugf("forbidden: user %s is not an admin for %s", data.user.Username, r.URL.Path)
 			return http.StatusForbidden, nil
 		}
 		return fn(w, r, data)
@@ -238,6 +239,7 @@ func withSelfOrAdminHelper(fn handleFunc) handleFunc {
 	return withUserHelper(func(w http.ResponseWriter, r *http.Request, data *requestContext) (int, error) {
 		// Check if the current user is the same as the requested user or if they are an admin
 		if !data.user.Permissions.Admin {
+			logger.Debugf("forbidden: user %s is not an admin (self-or-admin check) for %s", data.user.Username, r.URL.Path)
 			return http.StatusForbidden, nil
 		}
 		// Call the actual handler function with the updated context
@@ -288,6 +290,7 @@ func wrapHandler(fn handleFunc) http.HandlerFunc {
 func withPermShareHelper(fn handleFunc) handleFunc {
 	return withUserHelper(func(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
 		if !d.user.Permissions.Share {
+			logger.Debugf("forbidden: user %s does not have share permissions for %s", d.user.Username, r.URL.Path)
 			return http.StatusForbidden, nil
 		}
 		return fn(w, r, d)

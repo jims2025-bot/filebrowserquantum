@@ -115,10 +115,12 @@ func setupProxyUser(r *http.Request, data *requestContext, proxyUser string) (*u
 // @Failure 500 {object} map[string]string "Internal server error"
 // @Router /api/login [post]
 func loginHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
+	logger.Debugf("login attempt for user: %s", d.user.Username)
 	passwordUser := d.user.LoginMethod == users.LoginMethodPassword
 	enforcedOtp := config.Auth.Methods.PasswordAuth.EnforcedOtp
 	missingOtp := d.user.TOTPSecret == ""
 	if passwordUser && enforcedOtp && missingOtp {
+		logger.Debugf("login forbidden: user %s has no TOTP configured but OTP is enforced", d.user.Username)
 		return http.StatusForbidden, errors.ErrNoTotpConfigured
 	}
 
@@ -279,6 +281,8 @@ func authenticateShareRequest(r *http.Request, l *share.Link) (int, error) {
 		return 200, nil
 	}
 
+	logger.Debugf("authenticating share request for hash: %s, source: %s, path: %s", l.Hash, l.Source, l.Path)
+
 	password := r.Header.Get("X-SHARE-PASSWORD")
 	password, err := url.QueryUnescape(password)
 	if err != nil {
@@ -289,8 +293,10 @@ func authenticateShareRequest(r *http.Request, l *share.Link) (int, error) {
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(l.PasswordHash), []byte(password)); err != nil {
 		if libError.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
+			logger.Debugf("share authentication failed: password mismatch for hash %s", l.Hash)
 			return http.StatusUnauthorized, nil
 		}
+		logger.Debugf("share authentication error for hash %s: %v", l.Hash, err)
 		return 401, err
 	}
 	return 200, nil

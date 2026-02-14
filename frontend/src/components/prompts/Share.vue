@@ -250,9 +250,12 @@ export default {
 
     try {
       // get last element of the path
+      console.log("[Share] Fetching existing shares for path:", this.subpath, "source:", this.source);
       const links = await shareApi.get(this.subpath, this.source);
       this.links = links;
+      console.log("[Share] Successfully fetched", this.links.length, "shares");
     } catch (err) {
+      console.error("[Share] Failed to fetch shares:", err);
       notify.showError(err);
       return;
     }
@@ -311,6 +314,7 @@ export default {
   },
   methods: {
     async submit() {
+      console.log("[Share] Submitting share request. Path:", this.subpath, "Source:", this.source, "Type:", this.shareType);
       let isPermanent = !this.time || this.time === 0;
       let res = null;
       if (this.shareType === "service" && this.password && this.password.length < 5) {
@@ -367,7 +371,9 @@ export default {
             );
           }
         }
+        console.log("[Share] Share created successfully:", res);
       } catch (err) {
+        console.error("[Share] Create share failed:", err.status || err.message || err);
         if (err.status === 403) {
           notify.showError(
             "Permission denied. You may have been logged out or switched to a restricted session. Refreshing state..."

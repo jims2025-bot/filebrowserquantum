@@ -14,6 +14,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/gtsteffaniak/go-logger/logger"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/errors"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
 	"github.com/jims2025-bot/filebrowserquantum/backend/database/share"
@@ -70,6 +71,7 @@ func shareListHandler(w http.ResponseWriter, r *http.Request, d *requestContext)
 func shareGetHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
 	encodedPath := r.URL.Query().Get("path")
 	source := r.URL.Query().Get("source")
+	logger.Debugf("shareGetHandler: path=%s, source=%s, user=%s", encodedPath, source, d.user.Username)
 	if source == "" {
 		source = settings.Config.Server.DefaultSource.Name
 	} else {
@@ -128,6 +130,7 @@ func shareGetHandler(w http.ResponseWriter, r *http.Request, d *requestContext) 
 
 	s, err := store.Share.Gets(path, sourceObj.Path, d.user.ID)
 	if err != nil && err != errors.ErrNotExist {
+		logger.Debugf("shareGetHandler: error getting shares for path %s: %v", path, err)
 		return http.StatusInternalServerError, fmt.Errorf("error getting share info from server")
 	}
 
@@ -217,6 +220,7 @@ func shareDeleteHandler(w http.ResponseWriter, r *http.Request, d *requestContex
 // @Failure 500 {object} map[string]string "Internal server error"
 // @Router /api/shares [post]
 func sharePostHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
+	logger.Debugf("sharePostHandler: user=%s, path=%s, source=%s", d.user.Username, r.URL.Query().Get("path"), r.URL.Query().Get("source"))
 	var s *share.Link
 	var body share.CreateBody
 	if r.Body != nil {
@@ -355,8 +359,11 @@ func sharePostHandler(w http.ResponseWriter, r *http.Request, d *requestContext)
 	}
 
 	if err := store.Share.Save(s); err != nil {
+		logger.Debugf("sharePostHandler: error saving share: %v", err)
 		return http.StatusInternalServerError, err
 	}
+
+	logger.Debugf("sharePostHandler: share created successfully: hash=%s", s.Hash)
 
 	return renderJSON(w, r, s)
 }
@@ -364,6 +371,7 @@ func sharePostHandler(w http.ResponseWriter, r *http.Request, d *requestContext)
 // serviceSharePostHandler creates a temporary service account for full-app sharing.
 func serviceSharePostHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
 	if !d.user.Permissions.ManageServiceShares && !d.user.Permissions.Admin {
+		logger.Debugf("serviceSharePostHandler: forbidden for user %s (missing ManageServiceShares/Admin)", d.user.Username)
 		return http.StatusForbidden, fmt.Errorf("you do not have permission to create service shares")
 	}
 

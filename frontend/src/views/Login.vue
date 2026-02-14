@@ -145,6 +145,7 @@ export default {
     async submit(event) {
       event.preventDefault();
       event.stopPropagation();
+      console.log("[Login] Attempting login for user:", this.username);
       let redirect = state.route.query.redirect;
       if (redirect === "" || redirect === undefined || redirect === null) {
         redirect = "/files/";
@@ -168,8 +169,10 @@ export default {
       try {
         if (this.createMode) {
           await usersApi.signupLogin(this.username, this.password);
+          console.log("[Login] Signup successful for:", this.username);
         }
         await usersApi.login(this.username, this.password, captcha);
+        console.log("[Login] Login successful for:", this.username);
         await initAuth();
         router.push(redirect);
       } catch (e) {
@@ -209,6 +212,7 @@ export default {
         } else if (e.message == 409) {
           this.error = this.$t("login.usernameTaken");
         } else {
+          console.error("[Login] Login failed:", e.status || e.message || e);
           this.error = this.$t("login.wrongCredentials");
         }
       }
