@@ -101,6 +101,21 @@ func regenerateHeatmapHandler(w http.ResponseWriter, r *http.Request, d *request
 		return http.StatusForbidden, err
 	}
 
+	// FIX: If source is virtual, we must resolve the physical source from the path
+	// because the heatmap scanner needs a physical index.
+	if settings.IsVirtualSource(realSource) {
+		if physicalSource, relPath, ok := settings.GetSourceFromPath(scopePath); ok {
+			realSource = physicalSource
+			scopePath = relPath
+			logger.Debugf("Heatmap Regen: Resolved virtual source to physical: %s -> %s", physicalSource, relPath)
+		} else {
+			logger.Error(fmt.Sprintf("Heatmap Regen: Failed to resolve physical source for virtual path: %s", scopePath))
+			return http.StatusBadRequest, fmt.Errorf("cannot regenerate heatmap for virtual root or unresolved path")
+		}
+	} else {
+		logger.Debugf("Heatmap Regen: Physical source used directly: %s -> %s", realSource, scopePath)
+	}
+
 	// Check if already scanning
 	if heatmap.IsScanning(realSource, scopePath) {
 		return http.StatusConflict, fmt.Errorf("scan already in progress for %s", path)
@@ -108,6 +123,7 @@ func regenerateHeatmapHandler(w http.ResponseWriter, r *http.Request, d *request
 
 	// Start scan asynchronously so frontend can poll for progress
 	go func() {
+		logger.Debugf("Heatmap Regen: Starting ScanSafe async for %s %s", realSource, scopePath)
 		err := heatmap.ScanSafe(realSource, scopePath, true) // Manual scan - force rebuild
 		if err != nil {
 			logger.Error("Heatmap scan failed: " + err.Error())
@@ -137,8 +153,22 @@ func getHeatmapStatusHandler(w http.ResponseWriter, r *http.Request, d *requestC
 		return http.StatusForbidden, err
 	}
 
+	// FIX: If source is virtual, resolve physical source/path
+	if settings.IsVirtualSource(realSource) {
+		if physicalSource, relPath, ok := settings.GetSourceFromPath(scopePath); ok {
+			realSource = physicalSource
+			scopePath = relPath
+		}
+	}
+
 	isScanning := heatmap.IsScanning(realSource, scopePath)
 	progress := heatmap.GetScanProgress(realSource, scopePath)
+
+	if isScanning {
+		logger.Debugf("Heatmap Status: Scanning IS active for %s %s", realSource, scopePath)
+	} else {
+		// logger.Debugf("Heatmap Status: Scanning NOT active for %s %s", realSource, scopePath)
+	}
 
 	resp := map[string]interface{}{
 		"isScanning": isScanning,

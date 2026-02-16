@@ -561,3 +561,48 @@ func GetSources(u *users.User) []string {
 	}
 	return sources
 }
+
+// IsVirtualSource returns true if the source name matches a configured aggregator (like ALL or ALL_SOURCES).
+func IsVirtualSource(name string) bool {
+	if strings.EqualFold(name, "ALL") {
+		return true
+	}
+	for _, vs := range Config.Server.VirtualSources {
+		if strings.EqualFold(name, vs) {
+			return true
+		}
+	}
+	return false
+}
+
+// GetSourceFromPath attempts to find a physical source that matches the start of the path.
+// This is used when a virtual source is active but we need to target a physical index.
+// Returns: realSource, relativePath, found
+func GetSourceFromPath(virtualPath string) (string, string, bool) {
+	virtualPath = filepath.ToSlash(virtualPath)
+	cleanPath := strings.Trim(virtualPath, "/")
+
+	// 1. Try exact match against configured sources names
+	segments := strings.Split(cleanPath, "/")
+	if len(segments) > 0 {
+		potentialName := segments[0]
+
+		// Check explicit names
+		if src, ok := Config.Server.NameToSource[potentialName]; ok {
+			// Found it!
+			// Rel path is the rest
+			relPath := "/" + strings.Join(segments[1:], "/")
+			return src.Name, relPath, true
+		}
+
+		// Check aliases/paths case-insensitive
+		for _, src := range Config.Server.Sources {
+			if strings.EqualFold(src.Name, potentialName) {
+				relPath := "/" + strings.Join(segments[1:], "/")
+				return src.Name, relPath, true
+			}
+		}
+	}
+
+	return "", virtualPath, false
+}

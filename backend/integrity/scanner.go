@@ -383,10 +383,8 @@ func ScanFolder(idx *indexing.Index, virtualPath string, recordIssue func(string
 	logMsg := fmt.Sprintf("Folder ( %s ) scan completed, %d files, %d issues.", virtualPath, fileCount, issueCount)
 	if issueCount > 0 {
 		logMsg += fmt.Sprintf(" Bad files: %v", badFiles)
+		logger.Error(logMsg) // Log errors if issues found
+	} else {
+		logger.Debug(logMsg) // Debug only for clean folders
 	}
-
-	// We use Info? Or maybe only Info if issues found?
-	// User said: "Output server logs that indicate ... Folder (...) scan completed... If there are bad files list them."
-	// Implies always log the summary.
-	logger.Info(logMsg)
 }

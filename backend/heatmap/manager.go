@@ -33,9 +33,11 @@ const OverlayScanIntervalHours = 12
 // SafeClusterCollector removed as we are using aggregation.
 
 type ScanProgress struct {
-	Current int    `json:"current"`
-	Total   int    `json:"total"`
-	Message string `json:"message"`
+	Current    int        `json:"current"`
+	Total      int        `json:"total"`
+	Message    string     `json:"message"`
+	LastUpdate time.Time  `json:"-"`
+	mu         sync.Mutex `json:"-"`
 }
 
 var (
@@ -62,13 +64,15 @@ type activeFolderInfo struct {
 // isManualScan: if true, forces rebuild regardless of version/timestamp
 func ScanSafe(sourceName, path string, isManualScan bool) error {
 	key := sourceName + "|" + path
-	progress := &ScanProgress{Current: 0, Total: 0, Message: "Starting scan..."}
+	// Mutex is zero-value initialized
+	progress := &ScanProgress{Current: 0, Total: 0, Message: "Starting scan...", LastUpdate: time.Now()}
 	if _, loaded := activeScans.LoadOrStore(key, progress); loaded {
 		return fmt.Errorf("scan already in progress for %s", path)
 	}
 	defer activeScans.Delete(key)
 
-	logger.Info("Heatmap: Manually started safe scan for " + sourceName + " " + path)
+	// logger.Info("Heatmap: Manually started safe scan for " + sourceName + " " + path)
+	logger.Debug(fmt.Sprintf("Heatmap: ScanSafe START Source=%s Path=%s", sourceName, path))
 
 	// Pre-count files for progress reporting
 	idx := indexing.GetIndex(sourceName)
@@ -87,11 +91,13 @@ func ScanSafe(sourceName, path string, isManualScan bool) error {
 	if isManualScan {
 		PurgeClustersFromParents(sourceName, path)
 	}
-
 	_, err := ScanRecursive(sourceName, path, progress, sem, isManualScan)
 	if err == nil {
 		// Update parents
 		go PercolateUp(sourceName, path)
+		logger.Debug(fmt.Sprintf("Heatmap: ScanSafe FINISHED Source=%s Path=%s", sourceName, path))
+	} else {
+		logger.Error(fmt.Sprintf("Heatmap: ScanSafe FAILED Source=%s Path=%s Error=%v", sourceName, path, err))
 	}
 	return nil
 }
@@ -110,6 +116,7 @@ func PurgeClustersFromParents(sourceName, scopePath string) {
 	// We walk UP from the target folder.
 	for {
 		parent := filepath.Dir(currentPath)
+		logger.Debug(fmt.Sprintf("Heatmap Check Purge: Current='%s' Parent='%s'", currentPath, parent))
 		// Break if we hit root or top or weirdness
 		if parent == currentPath || parent == "." {
 			if currentPath == "/" {
@@ -190,7 +197,24 @@ func PurgeClustersFromParents(sourceName, scopePath string) {
 func GetScanProgress(sourceName, path string) *ScanProgress {
 	key := sourceName + "|" + path
 	if val, ok := activeScans.Load(key); ok {
-		return val.(*ScanProgress)
+		// Return a copy to avoid race conditions on read
+		// But wait, ScanProgress has a Mutex field now. We cannot copy the mutex.
+		// We should return a struct with just the data.
+		// But existing callers expect *ScanProgress.
+		// Let's rely on the fact that the JSON marshaller (in the handler) accesses fields.
+		// If we return the pointer, we race.
+		// FIX: The handler marshalling will race.
+		// We need a thread-safe way to get the snapshot.
+		sp := val.(*ScanProgress)
+		sp.mu.Lock()
+		defer sp.mu.Unlock()
+
+		return &ScanProgress{
+			Current:    sp.Current,
+			Total:      sp.Total,
+			Message:    sp.Message,
+			LastUpdate: sp.LastUpdate,
+		}
 	}
 	return nil
 }
@@ -199,6 +223,7 @@ func GetScanProgress(sourceName, path string) *ScanProgress {
 func IsScanning(sourceName, path string) bool {
 	key := sourceName + "|" + path
 	_, loaded := activeScans.Load(key)
+	// logger.Debug(fmt.Sprintf("Heatmap: IsScanning Check Key='%s' Result=%v", key, loaded))
 	return loaded
 }
 

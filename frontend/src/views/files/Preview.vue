@@ -2270,25 +2270,25 @@ findInstructionDeep(obj) {
         }
         for (let j = i - 1; j >= 0; j--) {
           let composedListing = this.listing[j];
-          composedListing.path = directoryPath + "/" + composedListing.name;
-          this.previousLink = composedListing.url;
           if (getTypeInfo(composedListing.type).simpleType == "image") {
+            composedListing.path = directoryPath + "/" + composedListing.name;
+            this.previousLink = composedListing.url;
             this.previousRaw = this.prefetchUrl(composedListing);
             // Prefetch metadata for previous image
             this.getMetadata(state.req.source, composedListing.path);
+            break;
           }
-          break;
         }
         for (let j = i + 1; j < this.listing.length; j++) {
           let composedListing = this.listing[j];
-          composedListing.path = directoryPath + "/" + composedListing.name;
-          this.nextLink = composedListing.url;
           if (getTypeInfo(composedListing.type).simpleType == "image") {
+            composedListing.path = directoryPath + "/" + composedListing.name;
+            this.nextLink = composedListing.url;
             this.nextRaw = this.prefetchUrl(composedListing);
             // Prefetch metadata for next image
             this.getMetadata(state.req.source, composedListing.path);
+            break;
           }
-          break;
         }
         return;
       }

@@ -2,6 +2,9 @@
 
 ## Table of Contents
 1. [Heatmap Cluster ID Architecture](#heatmap-cluster-id-architecture)
+    - [Cluster ID Generation](#cluster-id-generation)
+    - [Folder Hierarchy & Percolation](#folder-hierarchy-&-percolation)
+    - [Manual Regeneration & Cleanup](#manual-regeneration)
 2. [Backend Architecture](#backend-architecture)
 3. [Frontend Architecture](#frontend-architecture)
 4. [File Viewing](#file-viewing)
@@ -13,6 +16,9 @@
 8. [Administrative Functions](#administrative-functions)
 9. [New Folder Highlighting](#new-folder-highlighting)
 10. [Documentation Notes](#documentation-notes)
+11. [Share Link System](#12-share-link-system)
+12. [Mobile Interaction](#13-mobile-interaction)
+13. [Background Scans & Jobs](#14-background-scans--jobs)
 
 ---
 
@@ -72,7 +78,11 @@ genID := func() string {
 }
 ```
 
-- **Random IDs**: Each cluster gets a unique random ID
+- **Format**: `[TimestampNano]-[SequenceIndex]`
+- **Uniqueness**:
+    - The ID is unique to the *specific scan execution* and the *file's position* in the scan order.
+    - **Regeneration Impact**: Every time a heatmap is regenerated, **NEW IDs** are generated for every cluster and point.
+    - **Persistence**: IDs are NOT persistent across scans. Clients must reload the heatmap data after a regeneration event to get valid IDs.
 - **Per Geographic Location**: Multiple clusters per folder based on GPS proximity
 - **Cluster Radius**: 0.0005 degrees (~50 meters)
 
@@ -150,7 +160,7 @@ const HeatmapVersion = 4
 - Incrementing this constant forces a complete re-scan of all heatmaps on server startup.
 - Version check acts as a cache buster.
 
-### Manual Regeneration
+### Manual Regeneration & Cleanup
 
 To allow users to fix missing or corrupted data without a full system re-scan:
 
@@ -159,6 +169,21 @@ To allow users to fix missing or corrupted data without a full system re-scan:
 **Triggers**:
 1.  **UI Button**: A refresh icon in the Heatmap Side Panel header allows regenerating the currently inspected folder.
 2.  **Logic**: Bypasses the 7-day interval check and forces a rebuild of the `heatmap.json` for the target folder.
+
+**Process Flow & Integrity**:
+
+1.  **Local Rebuild (`ScanRecursive`)**:
+    - Scans the target folder and its subfolders for images.
+    - Extracts GPS data (using robust individual file processing).
+    - **Replaces** the local `heatmap.json` entirely.
+    - **Cleanup**: Any clusters from deleted files are automatically removed because the file is regenerated from scratch.
+
+2.  **Percolation Upwards (`PercolateUp`)**:
+    - Immediately after a folder is updated, the system walks **UP** the directory tree to the source root.
+    - At each parent level, it performs an **Aggregation**:
+        - Reads `heatmap.json` from all child subfolders.
+        - Combines them into a new parent `heatmap.json`.
+    - **Propagation**: This ensures that valid clusters bubble up, and removed clusters are dropped from parents, keeping the entire hierarchy consistent.
 
 
 ---
@@ -1702,6 +1727,41 @@ The application includes several advanced features restricted to users with **Ad
 #### 4. Settings Management
 - **Feature**: Access to the global "Settings" page.
 - **Purpose**: Configure user accounts, permissions, and system-wide preferences.
-- **Restriction**: **Admin Only**. 
+- **Restriction**: **Admin Only**.
+
+---
+
+## 14. Background Scans & Jobs
+
+[↑ Back to Top](#table-of-contents)
+
+The system runs several background jobs to maintain data integrity and update visualizations.
+
+### 1. Heatmap Generation Scan
+- **Name**: Heatmap Generation Scan
+- **Trigger**: Server Startup (1-minute delay)
+- **Interval**: Every 7 Days
+- **Description**:
+  - Iterates through all user scopes (excluding Admins to prevent root scanning).
+  - Scans for images, extracts GPS data, and generates `heatmap.json` files recursively.
+  - Aggregates clusters up the folder hierarchy.
+
+### 2. GeoJSON Overlay Scan
+- **Name**: GeoJSON Overlay Scan
+- **Trigger**: Server Startup (1-minute delay)
+- **Interval**: Every 12 Hours
+- **Description**:
+  - Scans all scopes for `.geojson` files.
+  - Extracts metadata (name, description) and aggregates them into `mapoverlays.json`.
+  - Percolates overlay data up the folder tree so parents know about child overlays.
+
+### 3. Integrity Scan
+- **Name**: Integrity Scan
+- **Trigger**: Completion of Heatmap Generation Scan (Chained)
+- **Interval**: Every 7 Days (following Heatmap Scan)
+- **Description**:
+  - Checks image files for corruption (e.g., truncated data, missing EOI markers) using ExifTool validation.
+  - Identifies files with size < 20KB or critical format errors.
+  - Generates `ProbFolders.json` and `exif_issues.json` in affected folders.
 
 
