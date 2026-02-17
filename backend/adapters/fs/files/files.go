@@ -255,12 +255,11 @@ func formatMetadata(fullMetadata map[string]interface{}) map[string]interface{} 
 		group := parts[0]
 		tag := parts[1]
 
-		switch group {
-		case "EXIF":
+		if strings.HasPrefix(group, "EXIF") {
 			exifData[tag] = value
-		case "IPTC":
+		} else if strings.HasPrefix(group, "IPTC") {
 			iptcData[tag] = value
-		case "XMP":
+		} else if strings.HasPrefix(group, "XMP") {
 			xmpData[tag] = value
 		}
 	}

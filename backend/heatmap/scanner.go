@@ -69,7 +69,7 @@ func GetLocalClusters(sourceName, folderPath string, progress *ScanProgress) ([]
 	var points []Cluster
 
 	// Use individual file scanning (Old logic restored)
-	logger.Info("[DebugScan] Scanning " + realPath + " using individual ExifTool calls")
+	// logger.Info("[DebugScan] Scanning " + realPath + " using individual ExifTool calls")
 
 	// Helper for ID generation
 	genID := func() string {

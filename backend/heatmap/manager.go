@@ -723,7 +723,7 @@ func AggregateLevel(sourceName, rootPath string, progress *ScanProgress, isManua
 	})
 
 	if fileCount > 0 {
-		logger.Info(fmt.Sprintf("Heatmap [START]: %s (%d files)", rootPath, fileCount))
+		// logger.Info(fmt.Sprintf("Heatmap [START]: %s (%d files)", rootPath, fileCount))
 	}
 
 	// Defer a DONE log if not skipped
@@ -732,9 +732,9 @@ func AggregateLevel(sourceName, rootPath string, progress *ScanProgress, isManua
 		activeFolders.Delete(rootPath)
 
 		if fileCount > 0 {
-			duration := time.Since(startTime)
-			logger.Info(fmt.Sprintf("Heatmap [DONE ]: %s (%d files, %d w/GPS) - took %s",
-				rootPath, fileCount, totalValidGPS, duration.Round(time.Millisecond)))
+			// duration := time.Since(startTime)
+			// logger.Info(fmt.Sprintf("Heatmap [DONE ]: %s (%d files, %d w/GPS) - took %s",
+			// 	rootPath, fileCount, totalValidGPS, duration.Round(time.Millisecond)))
 		}
 	}()
 

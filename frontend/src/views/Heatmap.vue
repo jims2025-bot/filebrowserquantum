@@ -227,7 +227,9 @@
                           <i class="material-icons cluster-target-icon">my_location</i>
                       </div>
                       <div class="cluster-items-grid">
-                          <div v-for="file in group.items" :key="file.path" class="panel-item" @click="openQuickView(file)">
+                          <div v-for="file in group.items" :key="file.path" class="panel-item" 
+                               :class="{ 'active-preview': quickViewFile && (quickViewFile.path === file.path || quickViewFile.path.endsWith(file.path) || file.path.endsWith(quickViewFile.path)) }"
+                               @click="openQuickView(file)">
                               <img :src="file.thumbUrl" class="panel-thumb" loading="lazy">
                               <span class="panel-item-name">{{ file.name }}</span>
                           </div>
@@ -244,16 +246,18 @@
       </div>
   </div>
 
-  <!-- Quick View Modal (Inline Styled for reliability) -->
-  <div v-if="quickViewFile" class="quick-view-modal" @click="closeQuickView"
-       style="position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:10000; background:rgba(0,0,0,0.8); display:flex; justify-content:center; align-items:center; overflow:hidden;">
-      
-      <!-- Content Frame (Blue Background acts as border) -->
-      <div class="quick-view-content" @click.stop
-           style="display:inline-flex; flex-direction:column; width:auto; max-width:90vw; max-height:90vh; background-color:rgba(59, 82, 206, 0.9); padding:6px; box-shadow:0 14px 40px rgba(0,0,0,0.8); border-radius:4px; box-sizing:border-box;">
+  <!-- Quick View Modal -->
+  <!-- Enhanced Quick View Modal (Restored Layout) -->
+  <div v-if="quickViewFile" class="quick-view-modal">
+      <div class="quick-view-content" @click.stop 
+           style="display:inline-flex; flex-direction:column; width:auto; max-width:90vw; max-height:90vh; background-color:rgba(59, 82, 206, 0.9); padding:6px; box-shadow:0 14px 40px rgba(0,0,0,0.8); border-radius:4px; box-sizing:border-box; position:relative;">
           
-          <!-- Controls (Top, Static flow) -->
-          <div class="quick-view-header controls-only" style="width:100%; display:flex; justify-content:flex-end; padding-bottom:6px;">
+          <!-- Navigation Zones (Absolute Overlay) -->
+          <div class="nav-zone nav-zone-left" @click="prevItem" title="Previous Image" style="position:absolute; top:0; left:0; width:33%; height:100%; z-index:10; cursor:pointer;"></div>
+          <div class="nav-zone nav-zone-right" @click="nextItem" title="Next Image" style="position:absolute; top:0; right:0; width:33%; height:100%; z-index:10; cursor:pointer;"></div>
+
+          <!-- Controls (Top, Restored Original Style) -->
+          <div class="quick-view-header controls-only" style="width:100%; display:flex; justify-content:flex-end; padding-bottom:6px; z-index:20; position:relative;">
               <div class="quick-view-controls" style="padding:0; display:flex; gap:12px;">
                   <button @click="navToFile(quickViewFile)" class="qv-btn" title="Go to Image" style="background:transparent; border:none; color:white; cursor:pointer;"><i class="material-icons">image</i></button>
                   <button @click="navToFolder(quickViewFile)" class="qv-btn" title="Open Folder" style="background:transparent; border:none; color:white; cursor:pointer;"><i class="material-icons">folder</i></button>
@@ -261,13 +265,26 @@
               </div>
           </div>
           
-          <!-- Image (Drives Width) -->
-          <img :src="quickViewFile.previewUrl" class="quick-view-img"
-               style="flex:1; display:block; width:auto; object-fit:contain; background:black; max-height:calc(90vh - 100px);">
+          <!-- Main Image -->
+          <img :src="quickViewFile.previewUrl" class="quick-view-img" 
+               style="flex:1; display:block; width:auto; object-fit:contain; background:black; max-height:calc(90vh - 100px); z-index:5; position:relative;" />
           
-          <!-- Footer (Text at bottom, wrapped) -->
+          <!-- Footer (Text at bottom + Metadata) -->
           <div class="quick-view-footer"
-               style="width:0; min-width:100%; box-sizing:border-box; padding:8px 4px 4px 4px;">
+               style="width:0; min-width:100%; box-sizing:border-box; padding:8px 4px 4px 4px; z-index:20; position:relative; pointer-events:none;">
+               
+               <!-- Metadata Section -->
+               <div v-if="quickViewFile.metadata" style="margin-bottom:8px;">
+                   <div v-if="quickViewFile.metadata.instructions" style="color:#ffca28; font-weight:bold; font-size:13px; text-shadow: 0 1px 2px black;">
+                       {{ quickViewFile.metadata.instructions }}
+                   </div>
+                   <div style="color:#ddd; font-size:11px; text-shadow: 0 1px 2px black;">
+                       <span v-if="quickViewFile.metadata.caption">{{ quickViewFile.metadata.caption }}</span>
+                       <span v-if="quickViewFile.metadata.caption && quickViewFile.metadata.byline"> | </span>
+                       <span v-if="quickViewFile.metadata.byline">Photo: {{ quickViewFile.metadata.byline }}</span>
+                   </div>
+               </div>
+
                <span class="quick-view-path" style="white-space:pre-wrap; word-break:break-word; color:white; font-size:0.9em; font-weight:500; line-height:1.3;">{{ quickViewFile.path }}</span>
           </div>
       </div>
@@ -837,15 +854,145 @@ const toggleOverlay = async (path, providedSource = null) => {
 
 const isOverlayActive = (path) => !!activeOverlayLayers.value[path];
 
-const openQuickView = (file) => {
+const metadataCache = new Map(); // Cache for IPTC/Instructions
+
+const fetchMetadata = async (file) => {
+    if (!file || !file.path) return null;
+    if (metadataCache.has(file.path)) return metadataCache.get(file.path);
+
+    // Using existing api/files.js functionality logic manually to avoid importing full heavy object if possible.
+    // Or just use the global `files` API if available?
+    // We'll use a direct fetch to /api/files/metadata or similar?
+    // Actually, `files.js` has `get(path)`.
+    
+    // Construct Path
+    let reqPath = file.path;
+    // ensure leading slash
+    if (!reqPath.startsWith('/')) reqPath = '/' + reqPath;
+    
+    // API expects /api/metadata?path={path}&source={source}
+    const source = file.source || state.source;
+    // Construct URL for /api/metadata
+    // Note: getMetadataHandler expects 'path' and 'source' query params
+    const url = `/api/metadata?path=${encodeURIComponent(reqPath)}&source=${encodeURIComponent(source)}`;
+    
+    try {
+        const res = await fetch(url);
+        if (res.ok) {
+            const data = await res.json();
+            console.log("[QuickView] Metadata Raw:", data); // DEBUG
+            // Extract IPTC and Instructions
+            // Structure: { exif: { ... }, iptc: { ... }, ... }
+            const meta = {
+                instructions: data.instructions || 
+                              (data.iptc ? (data.iptc.SpecialInstructions || data.iptc.Instructions) : "") || 
+                              (data.xmp ? (data.xmp["photoshop:Instructions"] || data.xmp.Instructions) : "") || "", // Check XMP too
+                byline: (data.iptc ? (data.iptc.Byline || data.iptc["By-line"] || data.iptc.Artist) : "") || 
+                        (data.exif ? data.exif.Artist : "") || "",
+                caption: (data.iptc ? (data.iptc.Caption || data.iptc["Caption-Abstract"] || data.iptc.Description) : "") || "",
+            };
+            console.log("[QuickView] Metadata Parsed:", meta); // DEBUG
+            metadataCache.set(file.path, meta);
+            return meta;
+        }
+    } catch (e) {
+        console.warn("Metadata fetch failed", e);
+    }
+    return null;
+};
+
+// Prefetch Window
+const prefetchMetadata = async (currentIndex) => {
+    const list = sidePanelData.value;
+    if (!list || list.length === 0) return;
+
+    // Prefetch Next 5
+    for (let i = 1; i <= 5; i++) {
+        const idx = currentIndex + i;
+        if (idx < list.length) {
+            const item = list[idx];
+             if (!metadataCache.has(item.path)) {
+                 fetchMetadata(item); // Fire and forget
+             }
+        }
+    }
+    // Prefetch Prev 5
+    for (let i = 1; i <= 5; i++) {
+        const idx = currentIndex - i;
+        if (idx >= 0) {
+            const item = list[idx];
+             if (!metadataCache.has(item.path)) {
+                 fetchMetadata(item); // Fire and forget
+             }
+        }
+    }
+};
+
+const updateQuickViewMetadata = async () => {
+    if (!quickViewFile.value) return;
+    
+    // Set loading state or clear previous?
+    quickViewFile.value.metadata = null;
+    
+    const meta = await fetchMetadata(quickViewFile.value);
+    if (quickViewFile.value && meta) {
+        // Ensure we are still viewing the same file
+        quickViewFile.value.metadata = meta;
+    }
+};
+
+const openQuickView = async (file) => {
+    console.log("[QuickView] Opening:", file.path); // DEBUG
     quickViewFile.value = {
         ...file,
-        previewUrl: getPreviewUrl(file.path, file.source, 'large')
+        previewUrl: getPreviewUrl(file.path, file.source, 'large'),
+        metadata: metadataCache.get(file.path) || null
     };
+    console.log("[QuickView] Initial Metadata:", quickViewFile.value.metadata); // DEBUG
+    
+    // Find index
+    const index = sidePanelData.value.findIndex(f => f.path === file.path);
+    if (index >= 0) {
+        prefetchMetadata(index);
+    }
+    
+    if (!quickViewFile.value.metadata) {
+        updateQuickViewMetadata();
+    }
+    
+    // Scroll active thumbnail into view
+    nextTick(() => {
+        const activeEl = document.querySelector('.panel-item.active-preview');
+        if (activeEl) {
+            activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    });
 };
 
 const closeQuickView = () => {
     quickViewFile.value = null;
+};
+
+const nextItem = (e) => {
+    if (e) e.stopPropagation();
+    if (!quickViewFile.value) return;
+    
+    const list = sidePanelData.value;
+    const idx = list.findIndex(f => f.path === quickViewFile.value.path);
+    if (idx < list.length - 1) {
+        openQuickView(list[idx + 1]);
+    }
+};
+
+const prevItem = (e) => {
+    if (e) e.stopPropagation();
+    if (!quickViewFile.value) return;
+    
+    const list = sidePanelData.value;
+    const idx = list.findIndex(f => f.path === quickViewFile.value.path);
+    if (idx > 0) {
+        openQuickView(list[idx - 1]);
+    }
 };
 
 const navToFile = (file, editMode = false) => {
@@ -1060,7 +1207,7 @@ const inspectLocation = async (path, sourceArg, directItems = null, coords = nul
                         path: item.path,
                         source: item.source || cleanSource,
                         parentPath: item.path.substring(0, item.path.lastIndexOf('/')), // Grouping Key
-                        thumbUrl: getPreviewUrl(item.path, item.source || cleanSource, 'thumb'),
+                        thumbUrl: getPreviewUrl(item.path, item.source || cleanSource, 'small'),
                         // Drill-down fields
                         type: item.type,
                         count: item.count,
@@ -3062,6 +3209,13 @@ const openOverlaysTab = () => {
     border-radius: 4px;
     overflow: hidden;
     width: calc(50% - 3px); /* 2 per row with small gap */
+    border: 2px solid transparent; /* Reserve space for border */
+    transition: border-color 0.2s;
+}
+.panel-item.active-preview {
+    border-color: #ffeb3b !important; /* Bright Yellow highlight */
+    box-shadow: 0 0 8px rgba(255, 235, 59, 0.6);
+    z-index: 10;
 }
 .panel-thumb {
     width: 100%;
@@ -3118,6 +3272,26 @@ const openOverlaysTab = () => {
     max-height: 80vh;
     border-radius: 4px;
     box-shadow: 0 0 20px rgba(0,0,0,0.5);
+    user-select: none; /* Prevent selection */
+}
+/* Navigation Zones */
+.nav-zone {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    width: 33%;
+    z-index: 10;
+    cursor: pointer;
+    /* border: 1px solid red; /* Debug */ 
+}
+.nav-zone-left {
+    left: 0;
+}
+.nav-zone-right {
+    right: 0;
+}
+.nav-zone:hover {
+    background: rgba(255,255,255,0.05); /* Subtle hint */
 }
 .quick-view-close {
     position: absolute;
@@ -3128,6 +3302,39 @@ const openOverlaysTab = () => {
     color: white;
     font-size: 30px;
     cursor: pointer;
+    z-index: 20; /* Above nav zones */
+}
+/* Metadata Overlay */
+.metadata-overlay {
+    position: absolute;
+    bottom: 0px; /* Above bottom edge of image? No, overlay ON image */
+    left: 0;
+    width: 100%;
+    background: rgba(0,0,0,0.7);
+    color: white;
+    padding: 10px;
+    box-sizing: border-box;
+    pointer-events: none; /* Let clicks pass through to Nav Zones */
+    text-align: left;
+    border-bottom-left-radius: 4px;
+    border-bottom-right-radius: 4px;
+}
+.meta-instructions {
+    font-size: 15px; /* Increased from 13px */
+    color: #ffca28; /* Amber for importance */
+    margin-bottom: 4px;
+    font-weight: bold;
+    text-shadow: 0 1px 2px black;
+}
+.meta-iptc {
+    font-size: 13px; /* Increased from 11px */
+    color: #ddd;
+    margin-bottom: 4px;
+}
+.meta-path {
+    font-size: 10px;
+    color: #aaa;
+    word-break: break-all;
 }
 /* Folder List Styles */
 .panel-folder-list {
