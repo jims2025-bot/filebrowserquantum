@@ -172,7 +172,7 @@ func prefetchFolder(folderPath string) {
 
 		// Fetch all metadata for all images in the folder
 		// We use the folder path directly with exiftool to get all files
-		args := []string{"-m", "-j", "-G", "-EXIF:All", "-IPTC:All", "-XMP:All", folderPath}
+		args := []string{"-m", "-j", "-G", "-struct", "-EXIF:All", "-IPTC:All", "-XMP:All", folderPath}
 		output, err := b.Execute(args)
 		if err != nil {
 			logger.Errorf("Background pre-fetch failed for %s: %v", folderPath, err)
@@ -218,7 +218,7 @@ func GetMetadata(filePath string) (map[string]interface{}, error) {
 		return nil, err
 	}
 
-	args := []string{"-m", "-j", "-G", "-EXIF:All", "-IPTC:All", "-XMP:All", filePath}
+	args := []string{"-m", "-j", "-G", "-struct", "-EXIF:All", "-IPTC:All", "-XMP:All", filePath}
 	output, err := b.Execute(args)
 	if err != nil {
 		return nil, fmt.Errorf("exiftool extraction failed: %w", err)

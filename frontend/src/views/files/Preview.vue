@@ -14,7 +14,7 @@
           
           <div class="image-container" v-if="previewType == 'image'" :style="{ height: showInstructionsModal && !isMobile ? '100%' : '100%' }">
              <div ref="panzoomContent" class="panzoom-content" style="position: relative; display: inline-block; transform-origin: 0 0;">
-                <div class="rotation-wrapper" :style="{ transform: `rotate(${rotation}deg)`, transformOrigin: 'center', transition: 'transform 0.3s ease', display: 'inline-block' }">
+                <div class="rotation-wrapper" :style="{ transform: `rotate(${rotation}deg)`, transformOrigin: 'center', transition: 'transform 0.3s ease', display: 'inline-block', position: 'relative' }">
                   <img 
                     ref="image" 
                     :src="raw" 
@@ -23,12 +23,12 @@
                     style="display: block; max-width: 100%; max-height: 100%;"
                   >
                   <div
-                    v-if="activeTab === 'xmp' && metadata && metadata.xmp && metadata.xmp.Regions && metadata.xmp.Regions.length > 0 && isMetadataVisible"
+                    v-if="activeTab === 'xmp' && faceRegions.length > 0 && isMetadataVisible"
                     class="face-overlay"
-                    style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;"
+                    style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10;"
                   >
                     <div
-                      v-for="(region, index) in metadata.xmp.Regions"
+                      v-for="(region, index) in faceRegions"
                       :key="index"
                       class="face-box"
                       :style="getFaceBoxStyle(region)"
@@ -240,7 +240,7 @@
           <h3>FACE</h3>
           
           <!-- Font Size Control for Face Boxes -->
-          <div v-if="metadata.xmp && metadata.xmp.Regions && metadata.xmp.Regions.length > 0" style="margin-bottom: 1rem; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 4px;">
+          <div v-if="faceRegions.length > 0" style="margin-bottom: 1rem; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 4px;">
              <label for="fontSizeRange" style="display: block; margin-bottom: 5px;">Face Label Size: {{ faceFontSize }}px</label>
              <input 
                type="range" 
@@ -253,8 +253,14 @@
              >
           </div>
 
+
+
+
+
+
+
           <div v-if="metadata && metadata.xmp && Object.keys(metadata.xmp).length > 0" class="metadata-table">
-            <table v-if="metadata.xmp.Regions && metadata.xmp.Regions.length > 0">
+            <table v-if="faceRegions.length > 0">
               <thead>
                 <tr>
                   <th>Name</th>
@@ -262,7 +268,7 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="(region, index) in metadata.xmp.Regions" :key="index">
+                <tr v-for="(region, index) in faceRegions" :key="index">
                   <td>{{ region.Name || 'Unnamed' }}</td>
                   <td>{{ JSON.stringify(region) }}</td>
                 </tr>
@@ -596,6 +602,38 @@ export default {
   computed: {
     isMobile() {
         return state.isMobile;
+    },
+    faceRegions() {
+      if (!this.metadata || !this.metadata.xmp) {
+        return [];
+      }
+      
+      // Check for various XMP region container keys
+      // 1. Regions (Microsoft/Live Photo Gallery)
+      // 2. RegionInfo (MWG Standard)
+      // 3. RegionInfoACDSee (ACDSee)
+      const container = this.metadata.xmp.Regions || 
+                        this.metadata.xmp.RegionInfo || 
+                        this.metadata.xmp.RegionInfoACDSee;
+
+      if (!container) return [];
+      
+      // If the container IS the array (Legacy flattened format)
+      if (Array.isArray(container)) {
+        return container;
+      }
+      
+      // If the container is an object with RegionList
+      if (container.RegionList) {
+          if (Array.isArray(container.RegionList)) {
+            return container.RegionList;
+          }
+          if (typeof container.RegionList === 'object') {
+             return [container.RegionList];
+          }
+      }
+
+      return [];
     },
     canShare() {
       // Check if basic sharing is supported. Strict file sharing check happens at runtime or we assume support if navigator.share exists.
@@ -1044,7 +1082,7 @@ export default {
         },
         immediate: true 
       },
-      pinnedLocation: {
+    pinnedLocation: {
           handler(newVal) {
             // Keep local backup in sync
             // Only update if truthy, or if we need to clear local because of explicit unpin?
@@ -1057,7 +1095,10 @@ export default {
             // to allow local backup to survive transient backend nulls.
           },
           immediate: true
-      }
+      },
+    req() {
+        mutations.resetPreviewRotation();
+    }
   },
   created() {
       // Non-reactive properties for Leaflet
@@ -1752,24 +1793,32 @@ export default {
     },
     
     getFaceBoxStyle(region) {
-      // Check if we have valid ALGArea data
-      if (!region.ALGArea || 
-          region.ALGArea.X === undefined || 
-          region.ALGArea.Y === undefined || 
-          region.ALGArea.W === undefined || 
-          region.ALGArea.H === undefined) {
+      // Support Area (Std), ALGArea (Legacy), DLYArea (ACDSee)
+      const area = region.Area || region.ALGArea || region.DLYArea;
+
+      // Check if we have valid Area data
+      if (!area || 
+          area.X === undefined || 
+          area.Y === undefined || 
+          area.W === undefined || 
+          area.H === undefined) {
         return {
           left: "10px",
           top: "10px",
           width: "100px",
           height: "100px",
-          border: "2px solid var(--accent-blue)",
-          background: "rgba(0, 0, 255, 0.2)",
+          border: "2px solid var(--accent-red)", // Red for error/fallback
+          background: "rgba(255, 0, 0, 0.2)",
           position: "absolute"
         };
       }
 
-      const { X, Y, W, H } = region.ALGArea;
+      // Extract coordinates (Area or ALGArea)
+      // Note: X, Y, W, H might be strings or numbers. Ensure float.
+      const X = parseFloat(area.X);
+      const Y = parseFloat(area.Y);
+      const W = parseFloat(area.W);
+      const H = parseFloat(area.H);
       
       // Calculate percentages based on center X/Y
       // Left = (CenterX - Width/2) * 100%
