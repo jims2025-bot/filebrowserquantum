@@ -502,3 +502,81 @@ export async function fixThumbnails(source, path) {
     throw err;
   }
 }
+
+// ── Folder Details ────────────────────────────────────────────────────────────
+
+export async function getFolderDetails(source, path) {
+  try {
+    const apiPath = getApiPath('api/folderdetails', {
+      source: source,
+      path: encodeURIComponent(path)
+    });
+    const res = await fetchURL(apiPath, { headers: { 'X-Auth': state.jwt } });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (err) {
+    console.error('Error fetching folder details:', err);
+    return null;
+  }
+}
+
+export async function saveFolderDetails(source, path, details) {
+  try {
+    const apiPath = getApiPath('api/folderdetails', {
+      source: source,
+      path: encodeURIComponent(path)
+    });
+    const res = await fetchURL(apiPath, {
+      method: 'PUT',
+      body: JSON.stringify(details),
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Auth': state.jwt
+      }
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || `HTTP ${res.status}`);
+    }
+    return res;
+  } catch (err) {
+    notify.showError(err.message || 'Error saving folder details');
+    throw err;
+  }
+}
+
+// ── People List ───────────────────────────────────────────────────────────────
+
+export async function getPeopleList(source) {
+  try {
+    const apiPath = getApiPath('api/peoplelist', { source: source });
+    const res = await fetchURL(apiPath, { headers: { 'X-Auth': state.jwt } });
+    if (!res.ok) return { people: [] };
+    return await res.json();
+  } catch (err) {
+    console.error('Error fetching people list:', err);
+    return { people: [] };
+  }
+}
+
+export async function savePeopleList(source, people) {
+  try {
+    const apiPath = getApiPath('api/peoplelist', { source: source });
+    const res = await fetchURL(apiPath, {
+      method: 'PUT',
+      body: JSON.stringify({ people }),
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Auth': state.jwt
+      }
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || `HTTP ${res.status}`);
+    }
+    return res;
+  } catch (err) {
+    notify.showError(err.message || 'Error saving people list');
+    throw err;
+  }
+}

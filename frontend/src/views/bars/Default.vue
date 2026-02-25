@@ -29,6 +29,12 @@
       @action="openHeatmap"
     />
     <action
+      v-if="isListingView"
+      icon="folder_open"
+      label="Folder Info"
+      @action="openFolderDetails"
+    />
+    <action
       v-if="isListingView && canRegenerate"
       icon="sync"
       :label="regenerationLabel"
@@ -449,6 +455,9 @@ export default {
           const targetPath = this.req.path || "/";
           router.push({ path: '/heatmap', query: { source: this.req.source, path: targetPath } });
       }
+    },
+    openFolderDetails() {
+      mutations.showHover({ name: "FolderDetails" });
     },
     async handleRegenerateHeatmap() {
         if (this.isRegenerating) return;

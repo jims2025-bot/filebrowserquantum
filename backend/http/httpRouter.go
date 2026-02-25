@@ -145,6 +145,12 @@ func StartHttp(ctx context.Context, storage *storage.Storage, shutdownComplete c
 	api.HandleFunc("POST /integrity/scan", withUser(integrityScanHandler))
 	api.HandleFunc("GET /integrity/issues", withUser(getIntegrityIssuesHandler))
 
+	// Folder Details routes
+	api.HandleFunc("GET /folderdetails", withUser(getFolderDetailsHandler))
+	api.HandleFunc("PUT /folderdetails", withUser(putFolderDetailsHandler))
+	api.HandleFunc("GET /peoplelist", withUser(getPeopleListHandler))
+	api.HandleFunc("PUT /peoplelist", withUser(putPeopleListHandler))
+
 	// XMP Instructions routes
 	api.HandleFunc("GET /resources/instructions", withUser(resourceGetInstructionsHandler))
 	api.HandleFunc("POST /resources/instructions", withUser(resourceInstructionsHandler))
