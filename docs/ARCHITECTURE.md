@@ -131,6 +131,7 @@ genID := func() string {
    - **Clusters and their IDs percolate all the way up**
    - **Sample preview image URL maintained** throughout hierarchy
    - Continues to source root
+   - Called by **both** `ScanSafe` (manual regeneration) **and** `StartJob` (automatic weekly scan) after each `ScanRecursive` completes — this was a bug fix (see [Known Bug Fixes](#known-bug-fixes-percolation))
 
 ### Inspection Flow
 
@@ -153,12 +154,47 @@ Frontend displays 28 images in inspection panel
 **Location**: `backend/heatmap/types.go`
 
 ```go
-const HeatmapVersion = 4
+const HeatmapVersion = 6
 ```
 
-- **Version 4**: Introduced Fix for missing IDs in frontend inspection.
-- Incrementing this constant forces a complete re-scan of all heatmaps on server startup.
-- Version check acts as a cache buster.
+| Version | Change |
+|---------|--------|
+| 4 | Fix for missing IDs in frontend inspection |
+| 5 | Added `TotalImageCount` field |
+| 6 | Force full re-scan after cluster percolation bug fixes |
+
+- Incrementing this constant forces a complete re-scan of all `heatmap.json` files on next server startup (version mismatch causes `AggregateLevel` to treat existing files as stale).
+- The scan starts ~1 minute after server startup, then repeats every `ScanIntervalDays` (7 days).
+
+### Known Bug Fixes — Percolation
+
+#### Bug 1 — `StartJob` was missing `PercolateUp` call *(Fixed)*
+
+The automatic weekly background scan (`StartJob`) called `ScanRecursive` per scope path but **never called `PercolateUp`** afterwards. This meant parent folders (up to the source root) were never updated during automatic scans. Manual regeneration via `ScanSafe` did call `PercolateUp`, which is why clicking "Regenerate" in the UI worked but the automatic scan did not propagate clusters upward.
+
+**Fix** (in `StartJob`, `manager.go`):
+```go
+_, err := ScanRecursive(sourceName, path, nil, sem, false)
+if err == nil {
+    PercolateUp(sourceName, path)
+}
+```
+
+#### Bug 2 — Overly broad path deduplication in `AggregateLevel` *(Fixed)*
+
+When reading child `heatmap.json` files in `AggregateLevel`, the code used `strings.Contains` to detect whether a cluster path already contained a subfolder name — to avoid double-prepending. This check was too broad: a subfolder named `"day"` would match any path containing the substring `"day"` (e.g., `"holiday/beach.jpg"`).
+
+Since `GetLocalClusters` saves cluster paths as **absolute from the source root** (e.g., `/vacation/day1/img.jpg`), the correct check is simply whether the path starts with `/`.
+
+**Fix** (in `AggregateLevel`, `manager.go`):
+```go
+if strings.HasPrefix(cleanPath, "/") {
+    data.Clusters[i].Path = cleanPath
+// removed: } else if strings.Contains(pathLower, subLower) { ...
+} else {
+    data.Clusters[i].Path = filepath.ToSlash(filepath.Join(subName, cleanPath))
+}
+```
 
 ### Manual Regeneration & Cleanup
 

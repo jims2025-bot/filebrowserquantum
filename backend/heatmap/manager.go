@@ -311,7 +311,13 @@ func StartJob(store *storage.Storage, onComplete func()) {
 						logger.Info("Heatmap: Scanning scope " + sourceName + " " + path)
 						// Limit concurrency
 						sem := make(chan struct{}, 20)
-						ScanRecursive(sourceName, path, nil, sem, false) // Automatic scan
+						_, err := ScanRecursive(sourceName, path, nil, sem, false) // Automatic scan
+						if err == nil {
+							// Percolate clusters up to parent directories after scan completes
+							PercolateUp(sourceName, path)
+						} else {
+							logger.Error(fmt.Sprintf("Heatmap: Automatic scan failed Source=%s Path=%s Error=%v", sourceName, path, err))
+						}
 					}
 				}
 			}
@@ -768,25 +774,17 @@ func AggregateLevel(sourceName, rootPath string, progress *ScanProgress, isManua
 							for i := range data.Clusters {
 								data.Clusters[i].Points = nil
 
-								// CRITICAL FIX: Do NOT prepend subName if path already contains it
-								// or if path is already absolute from source root
+								// Absolute paths (from GetLocalClusters) are kept as-is; relative paths get the subfolder prepended.
 								if data.Clusters[i].Path != "" {
 									cleanPath := filepath.ToSlash(filepath.Clean(data.Clusters[i].Path))
 
-									// Check if path already contains the subName (case-insensitive)
-									pathLower := strings.ToLower(cleanPath)
-									subLower := strings.ToLower(subName)
-
-									// If path already starts with "/" it's absolute - don't touch it
+									// Paths saved by GetLocalClusters are always absolute from source root (start with "/").
+									// Keep them as-is. Only prepend subName for legacy relative paths.
 									if strings.HasPrefix(cleanPath, "/") {
 										logger.Debug(fmt.Sprintf("AggregateLevel: Path '%s' is absolute, keeping as-is", cleanPath))
 										data.Clusters[i].Path = cleanPath
-									} else if strings.Contains(pathLower, subLower) {
-										// Path already contains subName somewhere - likely already has full structure
-										logger.Debug(fmt.Sprintf("AggregateLevel: Path '%s' already contains subName '%s', keeping as-is", cleanPath, subName))
-										data.Clusters[i].Path = cleanPath
 									} else {
-										// Path is relative and doesn't contain subName - prepend it
+										// Path is relative — prepend subfolder name
 										data.Clusters[i].Path = filepath.ToSlash(filepath.Join(subName, cleanPath))
 										logger.Debug(fmt.Sprintf("AggregateLevel: Joined subName '%s' + path '%s' = '%s'", subName, cleanPath, data.Clusters[i].Path))
 									}
