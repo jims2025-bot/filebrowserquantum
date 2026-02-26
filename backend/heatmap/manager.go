@@ -704,10 +704,31 @@ func AggregateLevel(sourceName, rootPath string, progress *ScanProgress, isManua
 						if existingData.Version == HeatmapVersion {
 							age := time.Since(existingData.GeneratedAt)
 							if age < time.Duration(ScanIntervalDays)*24*time.Hour {
-								// Log SKIP only
-								logger.Info(fmt.Sprintf("Heatmap [SKIP ]: %s (%d files) - HeatmapJSON v%d - last run: %s",
-									rootPath, fileCount, existingData.Version, existingData.GeneratedAt.Format(time.RFC3339)))
-								return existingData.Clusters, nil
+								// Also check: skip only if no child heatmap.json is newer than this one.
+								// If a child was updated more recently, the parent needs to re-aggregate.
+								childNewer := false
+								if childDirInfo, childExists := idx.GetReducedMetadata(rootPath, true); childExists {
+									for _, sub := range childDirInfo.Folders {
+										childVirtualPath := filepath.ToSlash(filepath.Join(rootPath, sub.Name))
+										childRealPath, _, cerr := idx.GetRealPath(childVirtualPath)
+										if cerr == nil {
+											childHeatmap := filepath.Join(childRealPath, HeatmapFilename)
+											if info, serr := os.Stat(childHeatmap); serr == nil {
+												if info.ModTime().After(existingData.GeneratedAt) {
+													childNewer = true
+													break
+												}
+											}
+										}
+									}
+								}
+
+								if !childNewer {
+									logger.Info(fmt.Sprintf("Heatmap [SKIP ]: %s (%d files) - HeatmapJSON v%d - last run: %s",
+										rootPath, fileCount, existingData.Version, existingData.GeneratedAt.Format(time.RFC3339)))
+									return existingData.Clusters, nil
+								}
+								logger.Info(fmt.Sprintf("Heatmap [RE-AGG]: %s - child heatmap newer than parent, re-aggregating", rootPath))
 							}
 						}
 					}

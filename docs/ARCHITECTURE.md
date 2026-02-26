@@ -154,7 +154,7 @@ Frontend displays 28 images in inspection panel
 **Location**: `backend/heatmap/types.go`
 
 ```go
-const HeatmapVersion = 6
+const HeatmapVersion = 7
 ```
 
 | Version | Change |
@@ -162,6 +162,7 @@ const HeatmapVersion = 6
 | 4 | Fix for missing IDs in frontend inspection |
 | 5 | Added `TotalImageCount` field |
 | 6 | Force full re-scan after cluster percolation bug fixes |
+| 7 | Force full re-scan after child-freshness skip logic fix |
 
 - Incrementing this constant forces a complete re-scan of all `heatmap.json` files on next server startup (version mismatch causes `AggregateLevel` to treat existing files as stale).
 - The scan starts ~1 minute after server startup, then repeats every `ScanIntervalDays` (7 days).
@@ -195,6 +196,38 @@ if strings.HasPrefix(cleanPath, "/") {
     data.Clusters[i].Path = filepath.ToSlash(filepath.Join(subName, cleanPath))
 }
 ```
+
+#### Bug 3 — Parent folder skipped even when child heatmap was updated *(Fixed)*
+
+The skip logic in `AggregateLevel` returned early (without re-aggregating) whenever a `heatmap.json` had the current version **and** was younger than 7 days — even if a child's `heatmap.json` had been updated more recently. This meant a freshly-regenerated child folder would never bubble its new clusters up into the parent during the same run.
+
+The fix adds a **child-freshness check**: before skipping, the code checks via `os.Stat` whether any direct child's `heatmap.json` has a `ModTime` newer than the parent's `GeneratedAt`. If so, the parent falls through to a full re-aggregation.
+
+**Fix** (in `AggregateLevel`, `manager.go`):
+```go
+childNewer := false
+if childDirInfo, childExists := idx.GetReducedMetadata(rootPath, true); childExists {
+    for _, sub := range childDirInfo.Folders {
+        childRealPath, _, cerr := idx.GetRealPath(filepath.Join(rootPath, sub.Name))
+        if cerr == nil {
+            if info, serr := os.Stat(filepath.Join(childRealPath, HeatmapFilename)); serr == nil {
+                if info.ModTime().After(existingData.GeneratedAt) {
+                    childNewer = true
+                    break
+                }
+            }
+        }
+    }
+}
+if !childNewer {
+    return existingData.Clusters, nil // safe to skip
+}
+// otherwise: fall through and re-aggregate
+```
+
+New log messages:
+- **`Heatmap [SKIP  ]`** — nothing changed underneath, skipped as before
+- **`Heatmap [RE-AGG]`** — a child was updated more recently, parent is re-aggregating
 
 ### Manual Regeneration & Cleanup
 

@@ -5,8 +5,9 @@ import "time"
 // HeatmapVersion is the current version of the heatmap.json format
 // Increment this when the JSON structure changes to force re-scanning
 // Version 5: Added TotalImageCount
-// Version 6: Force full re-scan
-const HeatmapVersion = 6
+// Version 6: Force full re-scan after cluster percolation bug fixes
+// Version 7: Force full re-scan after child-freshness skip logic fix
+const HeatmapVersion = 7
 
 // Cluster represents a group of images or sub-clusters.
 type Cluster struct {
