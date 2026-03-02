@@ -32,6 +32,7 @@ import buttons from "@/utils/buttons";
 import Totp from "./Totp.vue";
 import FolderDetails from "./FolderDetails.vue";
 import AdminJobs from "./AdminJobs.vue";
+import SearchPrompt from "./SearchPrompt.vue";
 import { state, getters, mutations } from "@/store"; // Import your custom store
 
 export default {
@@ -58,6 +59,7 @@ export default {
     ActionApi,
     FolderDetails,
     AdminJobs,
+    SearchPrompt,
   },
   data() {
     return {

@@ -370,6 +370,24 @@ func ScanFolder(dirPath string, cfg settings.FacialRecognition, store *storage.S
 	jsonBytes, err := os.ReadFile(facesFilePath)
 	if err == nil {
 		json.Unmarshal(jsonBytes, &facesData)
+		// Fast-sync existing faces to people.db to ensure all boxes are populated
+		for filename, entries := range facesData {
+			fullPath := filepath.Join(dirPath, filename)
+			for _, f := range entries {
+				if f.Name != "" && f.Name != "Unknown" {
+					boxStr := ""
+					if len(f.Box) == 4 {
+						boxStr = fmt.Sprintf("%d,%d,%d,%d", f.Box[0], f.Box[1], f.Box[2], f.Box[3])
+					}
+					// Use 1.0 confidence for manual/unknown, or the actual confidence
+					conf := f.Confidence
+					if conf == 0 {
+						conf = 1.0
+					}
+					people.MapFaceToIndex(f.Name, fullPath, conf, boxStr)
+				}
+			}
+		}
 	}
 	if facesData == nil {
 		facesData = make(FacesFile)
@@ -466,7 +484,11 @@ func processSingleFile(dirPath string, name string, facesData FacesFile, cfg set
 		baseFaces, _ = ExtractACDSeeRegions(fullPath)
 		for i, f := range baseFaces {
 			if f.Name != "" && f.Name != "Unknown" {
-				people.MapFaceToIndex(f.Name, fullPath, 1.0)
+				boxStr := ""
+				if len(f.Box) == 4 {
+					boxStr = fmt.Sprintf("%d,%d,%d,%d", f.Box[0], f.Box[1], f.Box[2], f.Box[3])
+				}
+				people.MapFaceToIndex(f.Name, fullPath, 1.0, boxStr)
 
 				// "LEARN": Get embedding for the ACDSee box if it's manual
 				if f.Source == "acdsee" && f.Confidence >= 0.99 && (f.Box != nil && len(f.Box) == 4 && f.Box[1] > 0) {
@@ -546,7 +568,11 @@ func processSingleFile(dirPath string, name string, facesData FacesFile, cfg set
 		// Map high-confidence ML faces to `people.db`
 		for _, f := range filteredMLFaces {
 			if f.Name != "" && f.Name != "Unknown" && f.Confidence > 0.90 {
-				people.MapFaceToIndex(f.Name, fullPath, f.Confidence)
+				boxStr := ""
+				if len(f.Box) == 4 {
+					boxStr = fmt.Sprintf("%d,%d,%d,%d", f.Box[0], f.Box[1], f.Box[2], f.Box[3])
+				}
+				people.MapFaceToIndex(f.Name, fullPath, f.Confidence, boxStr)
 				if len(f.Embedding) > 0 {
 					people.SaveFaceEmbedding(f.Name, fullPath, f.Embedding)
 				}

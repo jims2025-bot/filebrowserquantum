@@ -1,6 +1,6 @@
 <template>
   <errors v-if="error" :errorCode="error.status" />
-  <div class="card">
+  <div class="card" :class="{ active: active }">
     <div class="card-title">
       <h2>{{ $t("settings.users") }}</h2>
       <router-link v-if="isAdmin" to="/settings/users/new">
@@ -48,7 +48,7 @@ import { usersApi } from "@/api";
 import Errors from "@/views/Errors.vue";
 
 export default {
-  name: "users",
+  name: "UserManagement",
   components: {
     Errors,
   },
@@ -59,10 +59,14 @@ export default {
     };
   },
   async created() {
-    mutations.setLoading("users", true);
-    // Set loading state to true
-    this.users = await usersApi.getAllUsers();
-    mutations.setLoading("users", false);
+    try {
+      mutations.setLoading("users", true);
+      this.users = await usersApi.getAllUsers();
+    } catch (e) {
+      this.error = e;
+    } finally {
+      mutations.setLoading("users", false);
+    }
   },
   computed: {
     settings() {
@@ -74,6 +78,9 @@ export default {
     // Access the loading state directly from the store
     loading() {
       return getters.isLoading();
+    },
+    active() {
+      return state.activeSettingsView === "users-main";
     },
   },
 };

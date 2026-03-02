@@ -168,7 +168,7 @@ export const getters = {
   showOverlay: () => {
     const hasPrompt = getters.currentPrompt() !== null && getters.currentPromptName() !== "more"
     const showForSidebar = getters.isSidebarVisible() && !getters.isStickySidebar()
-    return hasPrompt || showForSidebar || state.isSearchActive;
+    return hasPrompt || showForSidebar;
   },
   showBreadCrumbs: () => {
     return getters.currentView() == "listingView";
@@ -309,4 +309,8 @@ export const getters = {
   },
   isMetadataVisible: () => state.isMetadataVisible,
   isInstructionsEditMode: () => state.isInstructionsEditMode,
+  showSearchSidebar: () => state.showSearchSidebar,
+  searchSidebarWidth: () => state.searchSidebarWidth,
+  searchResults: () => state.searchResults,
+  currentSearchResultIndex: () => state.currentSearchResultIndex,
 };

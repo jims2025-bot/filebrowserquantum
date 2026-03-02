@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
@@ -60,29 +61,98 @@ func searchHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 	query := r.URL.Query().Get("query")
 
 	// Intercept Facial Recognition searches
-	if strings.HasPrefix(strings.ToLower(query), "person:") {
-		nameQuery := strings.TrimSpace(query[7:]) // trim "person:"
-		// remove surrounding quotes if present (e.g., person:"George Outlaw")
-		nameQuery = strings.Trim(nameQuery, `"'`)
+	personRegex := regexp.MustCompile(`(?i)(person|face):"([^"]+)"`)
+	personMatches := personRegex.FindAllStringSubmatch(query, -1)
 
-		paths, err := people.SearchImagesByPerson(nameQuery)
+	if len(personMatches) > 0 {
+		combinedResults := []indexing.SearchResult{}
+		var seenPaths = make(map[string]bool)
+
+		// Extract unique person names
+		nameMap := make(map[string]bool)
+		var personNames []string
+		for _, pm := range personMatches {
+			name := pm[2]
+			if !nameMap[name] {
+				nameMap[name] = true
+				personNames = append(personNames, name)
+			}
+		}
+
+		// Determine logic (default AND, switch to OR if " OR " found)
+		logic := "AND"
+		if strings.Contains(strings.ToUpper(query), " OR ") {
+			logic = "OR"
+		}
+
+		// Pagination params
+		limit := 100 // default
+		if l := r.URL.Query().Get("limit"); l != "" {
+			fmt.Sscanf(l, "%d", &limit)
+		}
+		offset := 0
+		if o := r.URL.Query().Get("offset"); o != "" {
+			fmt.Sscanf(o, "%d", &offset)
+		}
+		// Context params
+		scope := r.URL.Query().Get("scope")
+		source := r.URL.Query().Get("source")
+		pathPrefix := ""
+
+		if scope != "" || source != "" {
+			scopePath, realSource, err := ResolveScopePath(d.user, source, scope)
+			if err == nil {
+				idx := indexing.GetIndex(realSource)
+				if idx != nil {
+					diskPath, _, err := idx.GetRealPath("/", scopePath)
+					if err == nil {
+						pathPrefix = diskPath
+					}
+				}
+			}
+		}
+
+		var matches []people.PersonMatch
+		var err error
+		if len(personNames) > 1 || logic == "OR" {
+			matches, err = people.SearchImagesByPeople(personNames, logic, pathPrefix, limit, offset)
+		} else {
+			matches, err = people.SearchImagesByPerson(personNames[0], pathPrefix, limit, offset)
+		}
+
 		if err != nil {
 			return http.StatusInternalServerError, err
 		}
 
-		var response []indexing.SearchResult
-		for _, p := range paths {
-			// Convert absolute OS path back to a relative virtual path if possible,
-			// or simply return the absolute path. FileBrowser frontend expects virtual paths.
-			// For simplicity in this global search, we return the absolute path mapped to the Root scope
-			response = append(response, indexing.SearchResult{
-				Path: p,
-				Type: "image",
-			})
+		for _, m := range matches {
+			virtualPath, matchedSource := indexing.GetSourcePath(m.ImagePath)
+			if matchedSource != "" {
+				idx := indexing.GetIndex(matchedSource)
+				if idx != nil {
+					boxParam := ""
+					if m.Box != "" {
+						boxParam = "&box=" + url.QueryEscape(m.Box)
+					}
+					// URL encoding for Path and Source, preserving slashes
+					encodedPath := (&url.URL{Path: virtualPath}).String()
+					encodedSource := url.QueryEscape(matchedSource)
+					thumbUrl := fmt.Sprintf("/api/preview%s?source=%s%s&size=thumb", encodedPath, encodedSource, boxParam)
+
+					if !seenPaths[m.ImagePath] {
+						combinedResults = append(combinedResults, indexing.SearchResult{
+							Path:         virtualPath,
+							Type:         "image",
+							Size:         0,
+							ThumbnailUrl: thumbUrl,
+							Box:          m.Box,
+						})
+						seenPaths[m.ImagePath] = true
+					}
+				}
+			}
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		return renderJSON(w, r, response)
+		return renderJSON(w, r, combinedResults)
 	}
 
 	source := r.URL.Query().Get("source")
@@ -104,27 +174,54 @@ func searchHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 	searchScope := strings.TrimPrefix(unencodedScope, ".")
 	// Retrieve the User-Agent and X-Auth headers from the request
 	sessionId := r.Header.Get("SessionId")
-	index := indexing.GetIndex(source)
-	if index == nil {
-		return http.StatusBadRequest, fmt.Errorf("index not found for source %s", source)
-	}
-	var realSource string
-	userscope, realSource, err := settings.GetScopeFromSourceName(d.user.Scopes, source)
-	if err != nil {
-		return http.StatusForbidden, err
-	}
-	source = realSource
-	combinedPath := index.MakeIndexPath(filepath.Join(userscope, searchScope))
-	// Perform the search using the provided query and user scope
-	response := index.Search(query, combinedPath, sessionId)
-	for i := range response {
-		// Remove the user scope from the path
-		response[i].Path = strings.TrimPrefix(response[i].Path, userscope)
-		if response[i].Path == "" {
-			response[i].Path = "/"
+	var response []indexing.SearchResult
+
+	sourcesToSearch := []string{source}
+	if settings.IsVirtualSource(source) {
+		sourcesToSearch = []string{}
+		for _, src := range settings.Config.Server.Sources {
+			sourcesToSearch = append(sourcesToSearch, src.Name)
 		}
 	}
-	// trim user scope from each result path
+
+	for _, src := range sourcesToSearch {
+		index := indexing.GetIndex(src)
+		if index == nil {
+			if !settings.IsVirtualSource(source) {
+				return http.StatusBadRequest, fmt.Errorf("index not found for source %s", src)
+			}
+			continue
+		}
+		userscope, realSource, err := settings.GetScopeFromSourceName(d.user.Scopes, src)
+		if err != nil {
+			if !settings.IsVirtualSource(source) {
+				return http.StatusForbidden, err
+			}
+			continue
+		}
+
+		combinedPath := index.MakeIndexPath(filepath.Join(userscope, searchScope))
+		srcResponse := index.Search(query, combinedPath, sessionId)
+
+		for i := range srcResponse {
+			srcResponse[i].Path = strings.TrimPrefix(srcResponse[i].Path, userscope)
+			if srcResponse[i].Path == "" {
+				srcResponse[i].Path = "/"
+			}
+
+			// Map to virtual path under ALL_SOURCES
+			if settings.IsVirtualSource(source) {
+				srcPath := strings.TrimPrefix(srcResponse[i].Path, "/")
+				if srcPath == "" {
+					srcResponse[i].Path = "/" + realSource
+				} else {
+					srcResponse[i].Path = "/" + realSource + "/" + srcPath
+				}
+			}
+		}
+		response = append(response, srcResponse...)
+	}
+
 	// Set the Content-Type header to application/json
 	w.Header().Set("Content-Type", "application/json")
 	return renderJSON(w, r, response)

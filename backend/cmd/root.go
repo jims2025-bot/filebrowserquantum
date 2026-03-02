@@ -11,6 +11,7 @@ import (
 	"github.com/gtsteffaniak/go-logger/logger"
 	"github.com/jims2025-bot/filebrowserquantum/backend/adapters/fs/fileutils"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
+	"github.com/jims2025-bot/filebrowserquantum/backend/database/people"
 	"github.com/jims2025-bot/filebrowserquantum/backend/database/storage"
 	"github.com/jims2025-bot/filebrowserquantum/backend/facerec"
 	"github.com/jims2025-bot/filebrowserquantum/backend/heatmap"
@@ -80,6 +81,9 @@ func StartFilebrowser() {
 	logger.Infof("Auth Methods             : %v", settings.Config.Auth.AuthMethods)
 	logger.Info(database)
 	logger.Infof("Sources                  : %v", sourceList)
+
+	// Initialize facial recognition database
+	people.InitDB(settings.Config.Server.Database + "_people")
 
 	serverConfig := settings.Config.Server
 	swagInfo := docs.SwaggerInfo

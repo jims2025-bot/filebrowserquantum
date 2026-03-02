@@ -40,9 +40,9 @@ type Server struct {
 	MaxArchiveSizeGB             int64       `json:"maxArchiveSize"` // max pre-archive combined size of files/folder that are allowed to be archived (in GB)
 	// not exposed to config
 	VirtualSources []string          `json:"virtualSources"`
-	SourceMap      map[string]Source `json:"-" validate:"omitempty"` // uses realpath as key
-	NameToSource   map[string]Source `json:"-" validate:"omitempty"` // uses name as key
-	DefaultSource  Source            `json:"-" validate:"omitempty"`
+	SourceMap      map[string]Source `json:"-" yaml:"-" validate:"omitempty"` // uses realpath as key
+	NameToSource   map[string]Source `json:"-" yaml:"-" validate:"omitempty"` // uses name as key
+	DefaultSource  Source            `json:"-" yaml:"-" validate:"omitempty"`
 }
 
 type Integrations struct {

@@ -147,6 +147,10 @@ export default {
       mutations.setMobile();
     },
     resetPrompts() {
+      // If search is active, clicking the background shouldn't close it,
+      // as it's too easy to accidentally click outside during heavy interaction.
+      if (state.isSearchActive) return;
+
       mutations.closeSidebar();
       mutations.closeHovers();
       mutations.setSearch(false);

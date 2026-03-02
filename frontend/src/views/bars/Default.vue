@@ -4,7 +4,6 @@
       v-if="!isShare"
       icon="close_back"
       :label="$t('buttons.close')"
-      :disabled="isSearchActive"
       @action="multiAction"
     />
     <action
@@ -15,8 +14,7 @@
       @action="toggleFullscreen"
     />
     <div class="header-middle">
-        <search v-if="false" />
-        <title v-else-if="isSettings" class="topTitle">{{ $t("sidebar.settings") }}</title>
+        <title v-if="isSettings" class="topTitle">{{ $t("sidebar.settings") }}</title>
         <!-- Sticky breadcrumb: shown when page breadcrumb scrolls off screen -->
         <nav v-else-if="isListingView && !breadcrumbVisible" class="sticky-breadcrumb" aria-label="breadcrumb">
           <router-link to="/files/" class="sticky-crumb" :title="$t('files.home')">
@@ -107,6 +105,13 @@
       @action="toggleMetadata"
     />
     <action
+      v-if="showSearch"
+      icon="search"
+      :label="$t('search.search')"
+      @action="openSearch"
+    />
+
+    <action
       v-if="showFileIssueButton"
       icon="warning"
       label="View Issue"
@@ -135,7 +140,6 @@
 import router from "@/router";
 import { getters, state, mutations } from "@/store";
 import Action from "@/components/Action.vue";
-import Search from "@/components/Search.vue";
 import * as filesApi from "@/api/files";
 import { notify } from "@/notify";
 import { fixThumbnails } from "@/api/files";
@@ -144,7 +148,6 @@ export default {
   name: "UnifiedHeader",
   components: {
     Action,
-    Search,
   },
   data() {
     return {
@@ -529,6 +532,9 @@ export default {
       } catch (e) {
         notify.showError(`Error scanning folder: ${e.message}`);
       }
+    },
+    openSearch() {
+      mutations.toggleSearchSidebar();
     },
     async handleRegenerateHeatmap() {
         if (this.isRegenerating) return;

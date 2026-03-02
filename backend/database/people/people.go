@@ -32,13 +32,15 @@ func InitDB(basePath string) error {
 	schema := `
 	CREATE TABLE IF NOT EXISTS people (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		name TEXT UNIQUE NOT NULL
+		name TEXT UNIQUE NOT NULL COLLATE NOCASE
 	);
 
 	CREATE TABLE IF NOT EXISTS face_index (
 		person_id INTEGER,
 		image_path TEXT NOT NULL,
 		confidence REAL,
+		box TEXT,
+		is_avatar INTEGER DEFAULT 0,
 		FOREIGN KEY(person_id) REFERENCES people(id),
 		UNIQUE(person_id, image_path)
 	);
@@ -52,12 +54,18 @@ func InitDB(basePath string) error {
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_face_index_person ON face_index(person_id);
+	CREATE INDEX IF NOT EXISTS idx_face_index_path ON face_index(image_path);
 	CREATE INDEX IF NOT EXISTS idx_face_embeddings_person ON face_embeddings(person_id);
 	`
 	_, err = db.Exec(schema)
 	if err != nil {
 		return err
 	}
+
+	// Migration: Add box column if it doesn't exist
+	_, _ = db.Exec("ALTER TABLE face_index ADD COLUMN box TEXT")
+	// Migration: Add is_avatar column (default 0)
+	_, _ = db.Exec("ALTER TABLE face_index ADD COLUMN is_avatar INTEGER DEFAULT 0")
 
 	DB = db
 	log.Println("Initialized people.db for Facial Recognition Indexing")
@@ -87,7 +95,7 @@ func GetOrCreatePerson(name string) (int64, error) {
 }
 
 // MapFaceToIndex links a person to an image path.
-func MapFaceToIndex(name string, imagePath string, confidence float64) error {
+func MapFaceToIndex(name string, imagePath string, confidence float64, box string) error {
 	if DB == nil {
 		return nil // Graceful skip if DB failed to init
 	}
@@ -98,9 +106,9 @@ func MapFaceToIndex(name string, imagePath string, confidence float64) error {
 	}
 
 	_, err = DB.Exec(`
-		INSERT OR REPLACE INTO face_index (person_id, image_path, confidence) 
-		VALUES (?, ?, ?)
-	`, personID, imagePath, confidence)
+		INSERT OR REPLACE INTO face_index (person_id, image_path, confidence, box) 
+		VALUES (?, ?, ?, ?)
+	`, personID, imagePath, confidence, box)
 
 	return err
 }
@@ -119,37 +127,163 @@ func RemoveFaceFromIndex(name string, imagePath string) error {
 	return err
 }
 
+func SetPersonAvatar(name string, imagePath string, box string) error {
+	if DB == nil {
+		return nil
+	}
+	personID, err := GetOrCreatePerson(name)
+	if err != nil {
+		return err
+	}
+
+	// 1. Reset all avatars for this person
+	_, err = DB.Exec("UPDATE face_index SET is_avatar = 0 WHERE person_id = ?", personID)
+	if err != nil {
+		return err
+	}
+
+	// 2. Set the new avatar
+	_, err = DB.Exec(`
+		UPDATE face_index 
+		SET is_avatar = 1 
+		WHERE person_id = ? AND image_path = ? AND box = ?
+	`, personID, imagePath, box)
+	return err
+}
+
+type PersonMatch struct {
+	ImagePath string `json:"imagePath"`
+	Box       string `json:"box"`
+}
+
 // SearchImagesByPerson returns all absolute image paths tagged with a specific person name.
-func SearchImagesByPerson(nameQuery string) ([]string, error) {
+func SearchImagesByPerson(nameQuery string, pathPrefix string, limit int, offset int) ([]PersonMatch, error) {
 	if DB == nil {
 		return nil, fmt.Errorf("people.db not initialized")
 	}
 
-	// Basic wildcard search
-	searchTerm := "%" + strings.ToLower(nameQuery) + "%"
-
-	rows, err := DB.Query(`
-		SELECT fi.image_path 
+	queryStr := `
+		SELECT fi.image_path, fi.box 
 		FROM face_index fi
 		JOIN people p ON p.id = fi.person_id
-		WHERE LOWER(p.name) LIKE ?
-		ORDER BY fi.confidence DESC
-	`, searchTerm)
+		WHERE p.name = ?
+	`
+	args := []interface{}{nameQuery}
+
+	if pathPrefix != "" {
+		// Ensure pathPrefix ends with separator for subfolder matching
+		prefix := filepath.Clean(pathPrefix)
+		queryStr += " AND (fi.image_path = ? OR fi.image_path LIKE ?)"
+		args = append(args, prefix, prefix+string(filepath.Separator)+"%")
+	}
+
+	queryStr += `
+		ORDER BY fi.is_avatar DESC, fi.confidence DESC
+		LIMIT ? OFFSET ?
+	`
+	args = append(args, limit, offset)
+
+	rows, err := DB.Query(queryStr, args...)
 
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var paths []string
+	var results []PersonMatch
 	for rows.Next() {
-		var p string
-		if err := rows.Scan(&p); err == nil {
-			paths = append(paths, p)
+		var m PersonMatch
+		var box sql.NullString
+		if err := rows.Scan(&m.ImagePath, &box); err == nil {
+			if box.Valid {
+				m.Box = box.String
+			}
+			results = append(results, m)
 		}
 	}
 
-	return paths, nil
+	return results, nil
+}
+
+// SearchImagesByPeople returns images matching a set of people using AND/OR logic.
+func SearchImagesByPeople(names []string, logic string, pathPrefix string, limit int, offset int) ([]PersonMatch, error) {
+	if DB == nil {
+		return nil, fmt.Errorf("people.db not initialized")
+	}
+	if len(names) == 0 {
+		return []PersonMatch{}, nil
+	}
+
+	var queryStr string
+	var args []interface{}
+
+	placeholders := make([]string, len(names))
+	for i := range names {
+		placeholders[i] = "?"
+		args = append(args, names[i])
+	}
+	placeholderStr := strings.Join(placeholders, ",")
+
+	if strings.ToUpper(logic) == "AND" {
+		queryStr = fmt.Sprintf(`
+			SELECT fi.image_path, fi.box
+			FROM face_index fi
+			JOIN people p ON p.id = fi.person_id
+			WHERE fi.image_path IN (
+				SELECT fi2.image_path
+				FROM face_index fi2
+				JOIN people p2 ON p2.id = fi2.person_id
+				WHERE p2.name IN (%s)
+				GROUP BY fi2.image_path
+				HAVING COUNT(DISTINCT p2.id) = ?
+			)
+			AND p.name = ?
+		`, placeholderStr)
+		args = append(args, len(names), names[0]) // Get box for the first person
+	} else {
+		// OR logic
+		queryStr = fmt.Sprintf(`
+			SELECT fi.image_path, fi.box 
+			FROM face_index fi
+			JOIN people p ON p.id = fi.person_id
+			WHERE p.name IN (%s)
+		`, placeholderStr)
+	}
+
+	if pathPrefix != "" {
+		prefix := filepath.Clean(pathPrefix)
+		queryStr += " AND (fi.image_path = ? OR fi.image_path LIKE ?)"
+		args = append(args, prefix, prefix+string(filepath.Separator)+"%")
+	}
+
+	if strings.ToUpper(logic) != "AND" {
+		queryStr += " GROUP BY fi.image_path "
+	}
+
+	queryStr += `
+		ORDER BY fi.is_avatar DESC, fi.confidence DESC
+		LIMIT ? OFFSET ?
+	`
+	args = append(args, limit, offset)
+
+	rows, err := DB.Query(queryStr, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []PersonMatch
+	for rows.Next() {
+		var m PersonMatch
+		var box sql.NullString
+		if err := rows.Scan(&m.ImagePath, &box); err == nil {
+			if box.Valid {
+				m.Box = box.String
+			}
+			results = append(results, m)
+		}
+	}
+	return results, nil
 }
 
 // SaveFaceEmbedding stores a serialized embedding for a person/image combo.
@@ -207,6 +341,66 @@ func GetAllEmbeddings() ([]PersonEmbedding, error) {
 			if err := json.Unmarshal(b, &emb); err == nil {
 				results = append(results, PersonEmbedding{Name: name, Embedding: emb})
 			}
+		}
+	}
+	return results, nil
+}
+
+// PersonSummary represents a person with their associated face count and an avatar URL.
+type PersonSummary struct {
+	Name      string `json:"name"`
+	Count     int    `json:"count"`
+	AvatarUrl string `json:"avatarUrl"`
+}
+
+// GetPeopleSummary returns a list of unique people and the number of indexed faces for each.
+func GetPeopleSummary(pathPrefix string) ([]PersonSummary, error) {
+	if DB == nil {
+		return nil, fmt.Errorf("people.db not initialized")
+	}
+
+	prefixMatch := ""
+	if pathPrefix != "" {
+		prefix := filepath.Clean(pathPrefix)
+		prefixMatch = fmt.Sprintf("WHERE image_path = '%s' OR image_path LIKE '%s%c%%'", prefix, prefix, filepath.Separator)
+	}
+
+	rows, err := DB.Query(fmt.Sprintf(`
+		SELECT name, cnt, box, image_path
+		FROM (
+			SELECT p.name, counts.cnt, fi.box, fi.image_path,
+			       ROW_NUMBER() OVER (PARTITION BY p.id ORDER BY fi.is_avatar DESC, fi.confidence DESC) as rn
+			FROM people p
+			JOIN (
+				SELECT person_id, COUNT(*) as cnt
+				FROM face_index
+				%s
+				GROUP BY person_id
+			) counts ON p.id = counts.person_id
+			JOIN face_index fi ON fi.person_id = p.id
+			%s
+		) WHERE rn = 1
+		ORDER BY cnt DESC, name ASC
+	`, prefixMatch, prefixMatch))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []PersonSummary
+	for rows.Next() {
+		var s PersonSummary
+		var box, path sql.NullString
+		if err := rows.Scan(&s.Name, &s.Count, &box, &path); err == nil {
+			if path.Valid {
+				boxStr := ""
+				if box.Valid {
+					boxStr = box.String
+				}
+				// Always provide an AvatarUrl if we have a path
+				s.AvatarUrl = fmt.Sprintf("RAW:%s?box=%s", path.String, boxStr)
+			}
+			results = append(results, s)
 		}
 	}
 	return results, nil

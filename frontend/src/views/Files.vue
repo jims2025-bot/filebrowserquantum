@@ -15,6 +15,7 @@
     </div>
   </div>
   <PopupPreview v-if="popupEnabled" />
+  <SearchPrompt v-show="showSearchSidebar" />
 </template>
 
 <script>
@@ -32,6 +33,7 @@ import { notify } from "@/notify";
 import router from "@/router";
 import { baseURL } from "@/utils/constants";
 import PopupPreview from "@/components/files/PopupPreview.vue";
+import SearchPrompt from "@/components/prompts/SearchPrompt.vue";
 
 export default {
   name: "files",
@@ -44,6 +46,7 @@ export default {
     OnlyOfficeEditor,
     MarkdownViewer,
     PopupPreview,
+    SearchPrompt,
   },
   data() {
     return {
@@ -66,6 +69,9 @@ export default {
     },
     currentViewLoaded() {
       return getters.currentView() !== null;
+    },
+    showSearchSidebar() {
+      return getters.showSearchSidebar();
     },
     reload() {
       return state.reload;

@@ -179,7 +179,10 @@ func previewHelperFunc(w http.ResponseWriter, r *http.Request, d *requestContext
 			officeUrl = scheme + "://" + r.Host + pathUrl
 		}
 	}
-	previewImg, err := preview.GetPreviewForFile(d.fileInfo, previewSize, officeUrl, seekPercentage)
+
+	boxParam := r.URL.Query().Get("box")
+
+	previewImg, err := preview.GetPreviewForFile(d.fileInfo, previewSize, officeUrl, seekPercentage, boxParam)
 	if err != nil {
 		// Log as error (warning level not available in this logger)
 		logger.Error("Preview generation failed for " + d.fileInfo.RealPath + ": " + err.Error())

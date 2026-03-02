@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gtsteffaniak/go-cache/cache"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/utils"
 	"github.com/jims2025-bot/filebrowserquantum/backend/indexing/iteminfo"
-	"github.com/gtsteffaniak/go-cache/cache"
 )
 
 var SearchResultsCache = cache.NewCache(15 * time.Second)
@@ -20,9 +20,11 @@ var (
 )
 
 type SearchResult struct {
-	Path string `json:"path"`
-	Type string `json:"type"`
-	Size int64  `json:"size"`
+	Path         string `json:"path"`
+	Type         string `json:"type"`
+	Size         int64  `json:"size"`
+	ThumbnailUrl string `json:"thumbnailUrl,omitempty"`
+	Box          string `json:"box,omitempty"`
 }
 
 func (idx *Index) Search(search string, scope string, sourceSession string) []SearchResult {

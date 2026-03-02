@@ -115,6 +115,7 @@ func StartHttp(ctx context.Context, storage *storage.Storage, shutdownComplete c
 
 	// Settings routes
 	api.HandleFunc("GET /settings", withAdmin(settingsGetHandler))
+	api.HandleFunc("PUT /settings", withAdmin(settingsPutHandler))
 
 	// Events routes
 	api.HandleFunc("GET /events", withUser(func(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
@@ -161,9 +162,11 @@ func StartHttp(ctx context.Context, storage *storage.Storage, shutdownComplete c
 	api.HandleFunc("POST /admin/jobs/{jobname}/run", withAdmin(runJobHandler))
 
 	// Facial Recognition Routes
+	api.HandleFunc("GET /facerec/people", withUser(faceAutocompleteHandler))
 	api.HandleFunc("POST /facerec/scan/file", withUser(faceScanFileHandler))
 	api.HandleFunc("POST /facerec/scan/folder", withUser(faceScanFolderHandler))
 	api.HandleFunc("POST /facerec/update", withUser(faceUpdateHandler))
+	api.HandleFunc("PUT /facerec/avatar", withUser(faceUpdateAvatarHandler))
 	api.HandleFunc("POST /facerec/remove", withUser(faceRemoveHandler))
 
 	// XMP Instructions routes

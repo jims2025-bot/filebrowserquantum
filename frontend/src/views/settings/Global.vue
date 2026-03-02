@@ -1,6 +1,6 @@
 <template>
   <errors v-if="error" :errorCode="error.status" />
-  <form class="card" @submit.prevent="save">
+  <form class="card" :class="{ active: active }" @submit.prevent="save">
     <div class="card-title">
       <h2>{{ $t("settings.globalSettings") }}</h2>
     </div>
@@ -45,15 +45,14 @@ import { settingsApi } from "@/api";
 import Errors from "@/views/Errors.vue";
 
 export default {
-  name: "settings",
+  name: "GlobalSettings",
   components: {
     Errors,
   },
   data: function () {
     return {
       error: null,
-      originalSettings: null,
-      selectedSettings: state.settings,
+      selectedSettings: { integrations: { facerec: {} } },
     };
   },
   computed: {
@@ -66,13 +65,22 @@ export default {
     showDebugInfo: {
       get() { return state.showDebugInfo; },
       set(val) { /* mutations handle toggle */ }
-    }
+    },
+    active() {
+      return state.activeSettingsView === "global-main";
+    },
   },
   async created() {
-    mutations.setLoading("settings", true);
-    const original = await settingsApi.get();
-    mutations.setSettings(original);
-    mutations.setLoading("settings", false);
+    try {
+      mutations.setLoading("settings", true);
+      const original = await settingsApi.get();
+      mutations.setSettings(original);
+      this.selectedSettings = JSON.parse(JSON.stringify(original));
+    } catch (e) {
+      this.error = e;
+    } finally {
+      mutations.setLoading("settings", false);
+    }
   },
   methods: {
     updateRules(updatedRules) {
@@ -91,8 +99,8 @@ export default {
     },
     async save() {
       try {
+        await settingsApi.update(this.selectedSettings);
         mutations.setSettings(this.selectedSettings);
-        await settingsApi.update(state.settings);
         notify.showSuccess(this.$t("settings.settingsUpdated"));
       } catch (e) {
         notify.showError(e);

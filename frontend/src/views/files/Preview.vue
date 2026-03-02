@@ -185,36 +185,6 @@
             {{ tab.label }}
             </button>
         </div>
-        <div style="display: flex; gap: 0.5rem;">
-          <button 
-            v-if="hasAnyFaceData && activeTab === 'xmp'"
-            @click="showACDSeeFaces = !showACDSeeFaces" 
-            class="button button--flat" 
-            :style="showACDSeeFaces ? 'color: var(--accent-green); background: rgba(66, 185, 131, 0.1); border: 1px solid var(--accent-green);' : 'opacity: 0.5; border: 1px solid transparent;'"
-            style="padding: 0.2rem 0.5rem; min-height: unset; margin:0; display: flex; align-items: center; gap: 4px;" 
-            :title="showACDSeeFaces ? 'ACDSee Faces ON' : 'ACDSee Faces OFF'"
-          >
-            <i class="material-icons" style="font-size: 18px;">recent_actors</i>
-            <span style="font-size: 11px; font-weight: bold;">{{ acdseeFaceCount }}</span>
-          </button>
-          <button 
-            v-if="hasAnyFaceData && activeTab === 'xmp'"
-            @click="showMLFaces = !showMLFaces" 
-            class="button button--flat" 
-            :style="showMLFaces ? 'color: var(--accent-yellow); background: rgba(255, 235, 59, 0.1); border: 1px solid var(--accent-yellow);' : 'opacity: 0.5; border: 1px solid transparent;'"
-            style="padding: 0.2rem 0.5rem; min-height: unset; margin:0; display: flex; align-items: center; gap: 4px;" 
-            :title="showMLFaces ? 'ML Faces ON' : 'ML Faces OFF'"
-          >
-            <i class="material-icons" style="font-size: 18px;">psychology</i>
-            <span style="font-size: 11px; font-weight: bold;">{{ mlFaceCount }}</span>
-          </button>
-          <button v-if="canRunFaceScan && activeTab === 'xmp'" @click="scanFacesForThisImage" class="button button--flat" style="padding: 0.2rem 0.5rem; min-height: unset; margin:0;" title="Scan image for faces">
-            <i class="material-icons" style="font-size: 18px;">face</i>
-          </button>
-          <div v-if="isPreFetching" class="prefetching-indicator" title="Background metadata pre-fetching in progress...">
-            <i class="material-icons spin" style="font-size: 18px; color: var(--accent-green);">sync</i>
-          </div>
-        </div>
       </div>
       
       <div class="tabs-content">
@@ -303,6 +273,34 @@
         <div v-if="activeTab === 'xmp'" class="tab-pane">
           <h3>FACE</h3>
           
+          <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
+            <button 
+              v-if="hasAnyFaceData"
+              @click="showACDSeeFaces = !showACDSeeFaces" 
+              class="button button--flat" 
+              :style="showACDSeeFaces ? 'color: var(--accent-green); background: rgba(66, 185, 131, 0.1); border: 1px solid var(--accent-green);' : 'opacity: 0.5; border: 1px solid transparent;'"
+              style="padding: 0.2rem 0.5rem; min-height: unset; margin:0; display: flex; align-items: center; gap: 4px;" 
+              :title="showACDSeeFaces ? 'ACDSee Faces ON' : 'ACDSee Faces OFF'"
+            >
+              <i class="material-icons" style="font-size: 18px;">recent_actors</i>
+              <span style="font-size: 11px; font-weight: bold;">{{ acdseeFaceCount }}</span>
+            </button>
+            <button 
+              v-if="hasAnyFaceData"
+              @click="showMLFaces = !showMLFaces" 
+              class="button button--flat" 
+              :style="showMLFaces ? 'color: var(--accent-yellow); background: rgba(255, 235, 59, 0.1); border: 1px solid var(--accent-yellow);' : 'opacity: 0.5; border: 1px solid transparent;'"
+              style="padding: 0.2rem 0.5rem; min-height: unset; margin:0; display: flex; align-items: center; gap: 4px;" 
+              :title="showMLFaces ? 'ML Faces ON' : 'ML Faces OFF'"
+            >
+              <i class="material-icons" style="font-size: 18px;">psychology</i>
+              <span style="font-size: 11px; font-weight: bold;">{{ mlFaceCount }}</span>
+            </button>
+            <button v-if="canRunFaceScan" @click="scanFacesForThisImage" class="button button--flat" style="padding: 0.2rem 0.5rem; min-height: unset; margin:0;" title="Scan image for faces">
+              <i class="material-icons" style="font-size: 18px;">face</i>
+            </button>
+          </div>
+
           <!-- Font Size Control for Face Boxes -->
           <div v-if="faceRegions.length > 0" style="margin-bottom: 1rem; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 4px;">
              <label for="fontSizeRange" style="display: block; margin-bottom: 5px;">Face Label Size: {{ faceFontSize }}px</label>
@@ -316,13 +314,6 @@
                style="width: 100%; cursor: pointer;"
              >
           </div>
-
-
-
-
-
-
-
           <div v-if="metadata && metadata.xmp && Object.keys(metadata.xmp).length > 0" class="metadata-table">
             <table v-if="faceRegions.length > 0">
               <thead>
@@ -2580,7 +2571,9 @@ findInstructionDeep(obj) {
           this.$refs.player.src = ""; // Detach source
           this.$refs.player.load();   // Force cleanup
       }
-      if (!this.listing) {
+      if (state.showSearchSidebar && state.searchResults.length > 0) {
+        this.listing = state.searchResults;
+      } else if (!this.listing) {
         const path = url.removeLastDir(getters.routePath());
         const res = await filesApi.fetchFiles(path);
         this.listing = res.items;

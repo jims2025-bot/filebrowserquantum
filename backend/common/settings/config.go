@@ -18,12 +18,14 @@ import (
 )
 
 var Config Settings
+var ConfigPath string
 
 const (
 	generatorPath = "/relative/or/absolute/path"
 )
 
 func Initialize(configFile string) {
+	ConfigPath = configFile
 	err := loadConfigWithDefaults(configFile)
 	if err != nil {
 		logger.Fatal(err.Error())
@@ -43,6 +45,48 @@ func Initialize(configFile string) {
 	setupSources(false)
 	setupUrls()
 	setupFrontend()
+}
+
+func Update(s *Settings) error {
+	// Preserve critical fields that are not usually sent by the frontend
+	if s.Auth.Key == "" {
+		s.Auth.Key = Config.Auth.Key
+	}
+	if s.Auth.TotpSecret == "" {
+		s.Auth.TotpSecret = Config.Auth.TotpSecret
+	}
+	if s.Auth.AdminPassword == "" {
+		s.Auth.AdminPassword = Config.Auth.AdminPassword
+	}
+	if len(s.Server.VirtualSources) == 0 {
+		s.Server.VirtualSources = Config.Server.VirtualSources
+	}
+
+	Config = *s
+	setupLogging()
+	setupAuth()
+	setupSources(false)
+	setupUrls()
+	setupFrontend()
+
+	// If ConfigPath is not set, we cannot save to disk (e.g. during tests)
+	if ConfigPath == "" {
+		return nil
+	}
+
+	// Save to disk
+	yamlBytes, err := yaml.Marshal(Config)
+	if err != nil {
+		logger.Errorf("error marshaling config for save: %v", err)
+		return err
+	}
+
+	if err := os.WriteFile(ConfigPath, yamlBytes, 0644); err != nil {
+		logger.Errorf("error saving config to %v: %v", ConfigPath, err)
+		return err
+	}
+
+	return nil
 }
 
 func setupFrontend() {
@@ -75,6 +119,13 @@ func setupSources(generate bool) {
 	if len(Config.Server.Sources) == 0 {
 		logger.Fatal("There are no `server.sources` configured. If you have `server.root` configured, please update the config and add at least one `server.sources` with a `path` configured.")
 	} else {
+		if Config.Server.SourceMap == nil {
+			Config.Server.SourceMap = make(map[string]Source)
+		}
+		if Config.Server.NameToSource == nil {
+			Config.Server.NameToSource = make(map[string]Source)
+		}
+
 		for k, source := range Config.Server.Sources {
 			realPath := getRealPath(source.Path)
 			name := filepath.Base(realPath)
@@ -215,7 +266,7 @@ func setupLogging() {
 			Json:      logConfig.Json,
 		}
 		err := logger.SetupLogger(logConfig)
-		if err != nil {
+		if err != nil && !strings.Contains(err.Error(), "already exists") {
 			log.Println("[ERROR] Failed to set up logger:", err)
 		}
 	}

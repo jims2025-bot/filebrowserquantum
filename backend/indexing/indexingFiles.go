@@ -75,6 +75,21 @@ func GetIndexes() map[string]*Index {
 	return copyMap
 }
 
+func GetSourcePath(diskPath string) (string, string) {
+	indexesMutex.RLock()
+	defer indexesMutex.RUnlock()
+	for _, idx := range indexes {
+		if strings.HasPrefix(diskPath, idx.Source.Path) {
+			virtualPath := filepath.ToSlash(strings.TrimPrefix(diskPath, idx.Source.Path))
+			if !strings.HasPrefix(virtualPath, "/") {
+				virtualPath = "/" + virtualPath
+			}
+			return virtualPath, idx.Source.Name
+		}
+	}
+	return "", ""
+}
+
 func Initialize(source settings.Source, mock bool) {
 	indexesMutex.Lock()
 	newIndex := Index{

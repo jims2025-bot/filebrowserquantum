@@ -31,9 +31,18 @@ export default {
   },
   methods: {
     shouldShow(setting) {
-      const perm = setting?.permissions || {};
-      // Check if all keys in setting.perm exist in state.user.perm and have truthy values
-      return Object.keys(perm).every((key) => state.user.permissions[key]);
+      if (!state.user) return false;
+      const permObj = state.user.permissions || state.user.perm || {};
+      const requiredPerms = setting?.permissions || {};
+      if (Object.keys(requiredPerms).length === 0) return true;
+      
+      return Object.keys(requiredPerms).every((key) => {
+        const lowerKey = key.toLowerCase();
+        // Check exact match, lowercase match, and capitalized match
+        return permObj[key] === true || 
+               permObj[lowerKey] === true || 
+               permObj[key.charAt(0).toUpperCase() + key.slice(1)] === true;
+      });
     },
     active: (view) => state.activeSettingsView === view,
     setView(view) {

@@ -7,10 +7,19 @@
       >animation</i
     >
     <img
+      v-if="!forcePreview"
       @mouseenter="handleMouseEnter($event)"
       @mouseleave="handleMouseLeave($event)"
       v-lazy="thumbnailUrl"
       :src="currentThumbnail"
+      class="icon"
+      ref="thumbnail"
+    />
+    <img
+      v-else
+      @mouseenter="handleMouseEnter($event)"
+      @mouseleave="handleMouseLeave($event)"
+      :src="thumbnailUrl"
       class="icon"
       ref="thumbnail"
     />
@@ -104,6 +113,11 @@ export default {
         return true;
       }
       return false;
+    },
+  },
+  watch: {
+    thumbnailUrl(newList) {
+      this.currentThumbnail = newList;
     },
   },
   methods: {

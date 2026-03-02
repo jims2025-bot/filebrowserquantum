@@ -215,6 +215,31 @@ export const mutations = {
     }
     emitStateChanged();
   },
+  toggleSearchSidebar() {
+    state.showSearchSidebar = !state.showSearchSidebar;
+    state.isSearchActive = state.showSearchSidebar;
+    emitStateChanged();
+  },
+  closeSearchSidebar() {
+    if (state.showSearchSidebar) {
+      state.showSearchSidebar = false;
+      state.isSearchActive = false;
+      state.searchSidebarWidth = '100%';
+      emitStateChanged();
+    }
+  },
+  setSearchSidebarWidth(width) {
+    state.searchSidebarWidth = width;
+    emitStateChanged();
+  },
+  setSearchResults(results) {
+    state.searchResults = results;
+    emitStateChanged();
+  },
+  setCurrentSearchResultIndex(index) {
+    state.currentSearchResultIndex = index;
+    emitStateChanged();
+  },
   closeSidebar() {
     if (state.showSidebar) {
       state.showSidebar = false;

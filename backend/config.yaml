@@ -1,23 +1,134 @@
 server:
+  numImageProcessors: 4
+  socket: ""
+  tlsKey: ""
+  tlsCert: ""
+  disablePreviews: false
+  disablePreviewResize: false
+  disableTypeDetectionByHeader: false
   port: 8080
-  baseURL: "/"
+  baseURL: /
   logging:
-    - levels: "info|warning|error"
+  - levels: info|warning|error
+    apiLevels: ""
+    output: ""
+    noColors: false
+    json: false
+    utc: false
+  debugMedia: false
+  database: database.db
   sources:
-    # Change this line
-    - path: "E:/PERSONAL/PHOTOS"
+  - path: "E:\\PERSONAL\\PHOTOS"
+    name: PHOTOS
+    config:
+      indexingInterval: 0
+      disabled: false
+      maxWatchers: 0
+      neverWatchPaths: []
+      ignoreHidden: false
+      ignoreZeroSizeFolders: false
+      exclude:
+        files: []
+        folders: []
+        fileEndsWith: []
+      include:
+        files: []
+        folders: []
+        fileEndsWith: []
+      defaultUserScope: /
+      defaultEnabled: true
+      createUserDir: false
+  externalUrl: ""
+  internalUrl: ""
+  cacheDir: tmp
+  maxArchiveSize: 50
+  virtualSources: []
+auth:
+  tokenExpirationHours: 2
+  methods:
+    proxy:
+      enabled: false
+      createUser: false
+      header: ""
+    noauth: false
+    password:
+      enabled: true
+      minLength: 5
+      signup: false
+      recaptcha:
+        host: ""
+        key: ""
+        secret: ""
+      enforcedOtp: false
+    oidc:
+      enabled: false
+      clientId: ""
+      clientSecret: ""
+      issuerUrl: ""
+      scopes: ""
+      userIdentifier: ""
+      disableVerifyTLS: false
+      logoutRedirectUrl: ""
+  key: ""
+  adminUsername: admin
+  adminPassword: admin
+  resetAdminOnStart: false
+  totpSecret: ""
+frontend:
+  name: FileBrowser Quantum
+  disableDefaultLinks: false
+  disableUsedPercentage: false
+  externalLinks:
+  - text: (untracked)
+    title: untracked
+    url: https://github.com/jims2025-bot/filebrowserquantum/releases/
+  - text: Help
+    title: ""
+    url: https://github.com/jims2025-bot/filebrowserquantum/wiki
+  - text: (untracked)
+    title: untracked
+    url: https://github.com/jims2025-bot/filebrowserquantum/releases/
+  - text: Help
+    title: ""
+    url: https://github.com/jims2025-bot/filebrowserquantum/wiki
 userDefaults:
-  preview:
-    image: true
-    popup: true
-    video: false
-    office: false
-    highQuality: false
+  stickySidebar: true
   darkMode: true
-  disableSettings: false
+  locale: en
+  viewMode: normal
   singleClick: false
+  showHidden: false
+  dateFormat: false
+  gallerySize: 3
+  themeColor: var(--blue)
+  quickDownload: false
+  disableOnlyOfficeExt: .txt .csv .html .pdf
+  lockPassword: false
+  preview:
+    highQuality: false
+    image: true
+    video: false
+    motionVideoPreview: false
+    office: false
+    popup: true
   permissions:
+    api: false
     admin: false
     modify: false
     share: false
-    api: false
+    realtime: false
+    updateMap: false
+    manageServiceShares: false
+    manageFaces: false
+    runFaceScan: false
+  loginMethod: password
+integrations:
+  office:
+    url: ""
+    internalUrl: ""
+    secret: ""
+  media:
+    ffmpegPath: ""
+  facerec:
+    enabled: true
+    serverAddress: http://localhost:8000
