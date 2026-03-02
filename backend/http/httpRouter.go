@@ -92,7 +92,9 @@ func StartHttp(ctx context.Context, storage *storage.Storage, shutdownComplete c
 	api.HandleFunc("PUT /resources", withUser(resourcePutHandler))
 	api.HandleFunc("PATCH /resources", withUser(resourcePatchHandler))
 	api.HandleFunc("GET /raw", withUser(rawHandler))
+	api.HandleFunc("GET /raw/{path...}", withUser(rawHandler))
 	api.HandleFunc("GET /preview", withUser(previewHandler))
+	api.HandleFunc("GET /preview/{path...}", withUser(previewHandler))
 	if version.Version == "testing" || version.Version == "untracked" {
 		api.HandleFunc("GET /inspectIndex", inspectIndex)
 		api.HandleFunc("GET /mockData", mockData)
@@ -150,6 +152,19 @@ func StartHttp(ctx context.Context, storage *storage.Storage, shutdownComplete c
 	api.HandleFunc("PUT /folderdetails", withUser(putFolderDetailsHandler))
 	api.HandleFunc("GET /peoplelist", withUser(getPeopleListHandler))
 	api.HandleFunc("PUT /peoplelist", withUser(putPeopleListHandler))
+
+	// IPTC Index routes
+	api.HandleFunc("GET /iptcindex", withUser(getIPTCIndexHandler))
+
+	// Admin Jobs routes
+	api.HandleFunc("GET /admin/jobs", withAdmin(getJobsStatusHandler))
+	api.HandleFunc("POST /admin/jobs/{jobname}/run", withAdmin(runJobHandler))
+
+	// Facial Recognition Routes
+	api.HandleFunc("POST /facerec/scan/file", withUser(faceScanFileHandler))
+	api.HandleFunc("POST /facerec/scan/folder", withUser(faceScanFolderHandler))
+	api.HandleFunc("POST /facerec/update", withUser(faceUpdateHandler))
+	api.HandleFunc("POST /facerec/remove", withUser(faceRemoveHandler))
 
 	// XMP Instructions routes
 	api.HandleFunc("GET /resources/instructions", withUser(resourceGetInstructionsHandler))

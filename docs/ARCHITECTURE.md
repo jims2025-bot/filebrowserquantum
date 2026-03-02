@@ -19,6 +19,11 @@
 11. [Share Link System](#12-share-link-system)
 12. [Mobile Interaction](#13-mobile-interaction)
 13. [Background Scans & Jobs](#14-background-scans--jobs)
+    - [Job Summary Table](#job-summary)
+
+14. [Sticky Header Breadcrumb](#15-sticky-header-breadcrumb)
+15. [Heatmap Inspection Panel Navigation](#16-heatmap-inspection-panel-navigation)
+16. [Face Recognition Architecture](#16-face-recognition-architecture)
 
 ---
 
@@ -1806,31 +1811,141 @@ The application includes several advanced features restricted to users with **Ad
 
 The system runs several background jobs to maintain data integrity and update visualizations.
 
+### Job Summary
+
+| # | Job | Schedule | Runs on Startup | Manually Triggerable |
+|---|-----|----------|:-:|:-:|
+| 1 | Heatmap Generation Scan | **Monday 3:01 AM** (weekly) | ❌ | ✅ via Admin Jobs panel |
+| 2 | GeoJSON Overlay Scan | Every **12 hours** | ✅ | ❌ |
+| 3 | Integrity Scan | **Tuesday 3:01 AM** (weekly) | ❌ | ✅ via Admin Jobs panel |
+| 4 | IPTC Index Scan | **Wednesday 3:01 AM** (weekly) | ❌ | ✅ via Admin Jobs panel |
+| 5 | User Expiration Job | Every **24 hours** | ✅ | ❌ |
+| 6 | Facial Recognition Scan | **Thursday 3:01 AM** (weekly) | ❌ | ✅ via UI (Folder "Scan" icon) |
+
+> [!NOTE]
+> Jobs 3, 4, and 6 are **chained** — they fire automatically in sequence after Job 1 (Heatmap) completes each cycle.
+> The IPTC index also receives **immediate per-folder updates** whenever a user saves notes/instructions on a file.
+
+---
+
 ### 1. Heatmap Generation Scan
-- **Name**: Heatmap Generation Scan
-- **Trigger**: Server Startup (1-minute delay)
-- **Interval**: Every 7 Days
+
+- **Source**: `backend/heatmap/manager.go` → `StartJob()`
+- **Trigger**: Server startup (1-minute delay), then every 7 days
+- **Runs on startup**: ✅ Yes
+- **Manually triggerable**: ✅ Yes — "Regenerate Heatmap" button (`sync` icon) in the header (requires `updateMap` permission)
 - **Description**:
   - Iterates through all user scopes (excluding Admins to prevent root scanning).
   - Scans for images, extracts GPS data, and generates `heatmap.json` files recursively.
   - Aggregates clusters up the folder hierarchy.
+  - On completion, triggers the Integrity Scan and IPTC Index Scan (chained callbacks).
+
+---
 
 ### 2. GeoJSON Overlay Scan
-- **Name**: GeoJSON Overlay Scan
-- **Trigger**: Server Startup (1-minute delay)
-- **Interval**: Every 12 Hours
+
+- **Source**: `backend/heatmap/manager.go` → `StartOverlayJob()`
+- **Trigger**: Server startup (1-minute delay), then every 12 hours
+- **Runs on startup**: ✅ Yes
+- **Manually triggerable**: ❌ No
 - **Description**:
   - Scans all scopes for `.geojson` files.
   - Extracts metadata (name, description) and aggregates them into `mapoverlays.json`.
   - Percolates overlay data up the folder tree so parents know about child overlays.
 
+---
+
 ### 3. Integrity Scan
-- **Name**: Integrity Scan
-- **Trigger**: Completion of Heatmap Generation Scan (Chained)
-- **Interval**: Every 7 Days (following Heatmap Scan)
+
+- **Source**: `backend/integrity/` → `RunScan()`
+- **Trigger**: Chained — fires automatically when Heatmap Generation Scan completes
+- **Interval**: Every 7 days (same cycle as Heatmap Scan)
+- **Runs on startup**: ✅ Yes (after heatmap finishes, ~1 min + heatmap duration)
+- **Manually triggerable**: ✅ Yes — "Integrity Scan" button in admin header (admin only)
 - **Description**:
   - Checks image files for corruption (e.g., truncated data, missing EOI markers) using ExifTool validation.
   - Identifies files with size < 20KB or critical format errors.
   - Generates `ProbFolders.json` and `exif_issues.json` in affected folders.
 
+---
+
+### 4. IPTC Index Scan
+
+- **Source**: `backend/iptcindex/iptcindex.go` → `ScanRecursive()`
+- **Trigger**: Chained — fires automatically after Integrity Scan completes (runs in background goroutine)
+- **Interval**: Every 7 days (same cycle as Heatmap Scan)
+- **Runs on startup**: ✅ Yes (after integrity scan, ~1 min + heatmap + integrity duration)
+- **Manually triggerable**: ✅ Partial — saving notes/instructions on any file via the Preview panel immediately triggers `ScanFolder` for that specific folder (not the full tree)
+- **Output**: Per-folder `iptcindex.json` — maps every image filename to `{ hasNotes, dateTaken }`
+- **Fields checked**:
+  - `hasNotes`: `XMP:Instructions`, `Photoshop:Instructions`, `IPTC:Caption-Abstract`, `IPTC:Description`, `IPTC:By-line`
+  - `dateTaken`: `EXIF:DateTimeOriginal`
+- **Description**:
+  - Scans all image files per folder using the background ExifTool bridge (`GetMetadataBulk`).
+  - All image files are included in the index (even those with no IPTC data), so the `dateTaken` field is always available.
+  - Frontend reads `iptcindex.json` on folder load and shows an amber `edit_note` icon next to files that have notes.
+
+---
+
+### 5. User Expiration Job
+
+- **Source**: `backend/database/storage/` → `StartExpirationJob()`
+- **Trigger**: Server startup, then every 24 hours
+- **Runs on startup**: ✅ Yes
+- **Manually triggerable**: ❌ No
+- **Description**:
+  - Checks all user accounts for expired API keys or account expiration dates.
+  - Removes expired keys and deactivates expired accounts.
+
+
+---
+
+### 6. Facial Recognition Scan
+
+- **Source**: `backend/facerec/job.go` → `ScanAllSources()`
+- **Trigger**: Chained — fires automatically after IPTC Index Scan completes (if enabled in global Settings)
+- **Interval**: Every 7 days (same cycle as Heatmap Scan)
+- **Runs on startup**: ❌ No
+- **Manually triggerable**: ✅ Yes — via the "Scan for faces" UI button on any folder or image, or the Admin Jobs panel.
+- **Output**: Per-folder `faces.json` — maps every image filename to an array of Face boxes.
+- **Description**:
+  - Automatically skips development folders like `node_modules` and `venv` to save processing time.
+  - First queries ExifTool for any existing manual face tags (`XMP-mwg-rs`) drawn via ACDSee.
+  - Sends ACDSee face crops to the Python ML microservice (`server.py`) to generate a unique 128-float face signature using the SFace model, "learning" the face and storing the signature in `people.db`.
+  - Runs the YuNet neural network across the full image to detect "Unknown" faces.
+  - If an Unknown face's signature has a >82% Cosine Similarity match to a face in `people.db`, it is automatically labeled with that person's name.
+
+---
+
+## 16. Face Recognition Architecture
+
+[↑ Back to Top](#table-of-contents)
+
+The facial recognition system provides high-accuracy automated face detection and a "learning" mechanism to identify known individuals using user-provided ACDSee manual tags.
+
+### Core Components
+
+#### 1. Python ML Server (YuNet & SFace)
+**Location:** `backend/facerec/server.py`
+- **YuNet (Face Detection):** A lightweight, high-performance ONNX model used to detect faces in an image with high accuracy, eliminating Haar Cascade false positives.
+- **SFace (Face Recognition):** Extracts a 128-float "digital signature" (embedding) from an aligned face crop. 
+- **Endpoints:**
+  - `POST /analyze`: Accepts an image and returns all detected faces, bounding boxes, and their confidence scores.
+  - `POST /learn`: Accepts an image and a specific bounding box (from a manual ACDSee tag), returning the 128-float embedding for that specific face.
+
+#### 2. Go Backend Orchestration
+**Location:** `backend/facerec/job.go`
+- **ACDSee Baseline:** The system first uses ExifTool to extract manually tagged regions (`mwg-rs`) embedded by ACDSee. These are treated as ground truth.
+- **Learning Process:** For every manually tagged face from ACDSee, the Go backend calls the Python `/learn` endpoint to generate a face embedding and saves it to the database (`people.db`).
+- **ML Overlay & Recognition:** When the Python server detects "Unknown" faces via `/analyze`, the Go backend compares the new face's embedding against all known embeddings in the database using **Cosine Similarity**. If the similarity exceeds the threshold (e.g., 0.82), the face is automatically labeled with the known person's name.
+
+#### 3. Database (`people.db`)
+**Location:** `backend/database/people/people.go`
+- **people:** Stores unique person names.
+- **face_index:** Maps people to specific image paths and confidence scores.
+- **face_embeddings:** Stores the binary representation of the 128-float embeddings for fast retrieval during similarity search.
+
+### Integration
+- **Background Job:** `ScanAllSources` triggers face indexing during background jobs if the feature is enabled in system settings.
+- **On-Demand:** Users can manually trigger face scans per folder or file via the UI.
 

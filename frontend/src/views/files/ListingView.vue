@@ -137,6 +137,7 @@
             v-bind:issueData="integrityIssues[item.name] || null"
             v-bind:gpsData="filesWithGPS[item.name] || null"
             v-bind:companionImage="filesWithCompanion[item.name] || null"
+            v-bind:iptcData="filesWithIPTC[item.name] || null"
           />
         </div>
 
@@ -169,6 +170,7 @@ import throttle from "@/utils/throttle";
 import { state, mutations, getters } from "@/store";
 import { url } from "@/utils";
 import * as files from "@/api/files";
+import { getIPTCIndex } from "@/api/files";
 
 import Item from "@/components/files/ListingItem.vue";
 export default {
@@ -188,6 +190,7 @@ export default {
       integrityIssues: {}, // Map of filename -> issue details
       filesWithGPS: {}, // Map of filename -> GPS coordinates
       filesWithCompanion: {}, // Map of filename -> Companion Image Filename
+      filesWithIPTC: {}, // Map of filename -> IPTCEntry {hasNotes, dateTaken}
     };
   },
   watch: {
@@ -198,6 +201,7 @@ export default {
         this.loadIntegrityIssues();
         this.loadFilesWithGPS();
         this.detectCompanionFiles();
+        this.loadFilesWithIPTC();
       },
       deep: true
     },
@@ -364,6 +368,7 @@ export default {
     this.loadIntegrityIssues();
     this.loadFilesWithGPS();
     this.detectCompanionFiles();
+    this.loadFilesWithIPTC();
     // Check the columns size for the first time.
     this.colunmsResize();
     // Add the needed event listeners to the window and document.
@@ -447,6 +452,14 @@ export default {
       console.log('[Integrity] Received issues:', issues);
       this.integrityIssues = issues || {};
       console.log('[Integrity] Set integrityIssues to:', this.integrityIssues);
+    },
+    async loadFilesWithIPTC() {
+      if (!state.req || !state.req.source || !state.req.path) {
+        this.filesWithIPTC = {};
+        return;
+      }
+      const data = await getIPTCIndex(state.req.source, state.req.path);
+      this.filesWithIPTC = data?.files || {};
     },
     async loadFilesWithGPS() {
       if (!state.req || !state.req.source || !state.req.path) {

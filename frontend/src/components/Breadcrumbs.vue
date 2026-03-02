@@ -46,11 +46,35 @@ export default {
       gallerySize: state.user.gallerySize,
       base: "/files/",
       path: "",
+      observer: null,
     };
   },
   props: ["noLink"],
   mounted() {
     this.updatePaths();
+    // Watch when we scroll off screen so the header can show a compact breadcrumb
+    this.$nextTick(() => {
+      const el = this.$el;
+      if (el && "IntersectionObserver" in window) {
+        this.observer = new IntersectionObserver(
+          ([entry]) => {
+            window.dispatchEvent(
+              new CustomEvent("breadcrumb-visibility", {
+                detail: { visible: entry.isIntersecting },
+              })
+            );
+          },
+          { threshold: 0 }
+        );
+        this.observer.observe(el);
+      }
+    });
+  },
+  beforeDestroy() {
+    if (this.observer) {
+      this.observer.disconnect();
+      this.observer = null;
+    }
   },
   watch: {
     $route() {

@@ -35,12 +35,18 @@ func ResolveScopePath(user *users.User, source string, path string) (string, str
 	}
 	// ...
 
-	// Handle "ALL" pseudo-source for global aggregation
-	if source == "ALL" {
-		// For the virtual "ALL" source, we use the path as-is (scoped by middleware)
-		// and return "ALL" as the real source name.
-		// NOTE: "ALL" is NOT a physical index, so handlers calling this MUST handle aggregation.
-		return path, "ALL", nil
+	// Handle "ALL" or "ALL_SOURCES" pseudo-source for global aggregation
+	if settings.IsVirtualSource(source) {
+		// If we are looking for a specific path but using a virtual source,
+		// we should try to resolve the actual physical source from the path segments.
+		if realSrc, relPath, found := settings.GetSourceFromPath(path); found {
+			source = realSrc
+			path = relPath
+			// Continue to standard resolution with the physical source to apply user scopes
+		} else if source == "ALL" {
+			// Only return the "ALL" pseudo-source if explicitly requested.
+			return path, "ALL", nil
+		}
 	}
 
 	// 1. Determine Initial Scope (Default Behavior)

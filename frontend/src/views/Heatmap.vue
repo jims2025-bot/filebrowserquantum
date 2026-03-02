@@ -131,9 +131,15 @@
           <!-- Map Overlays Section -->
           <!-- Tab Navigation -->
           <div class="panel-tabs" style="display:flex; justify-content:space-around; background:#2c3e50; padding:5px 0 0 0; margin-bottom:0;">
-              <div @click="activeTab = 'inspection'" title="Inspection"
-                   :style="{ borderBottom: activeTab === 'inspection' ? '3px solid #fbc02d' : '3px solid transparent', opacity: activeTab === 'inspection' ? 1 : 0.6, flex: 1, textAlign:'center', padding:'8px', cursor:'pointer', color:'white' }">
-                   <i class="material-icons" style="font-size: 24px; color: #fbc02d;">folder</i>
+              <div @click="currentInspectionFolder ? backToFolders() : activeTab = 'inspection'"
+                   :title="currentInspectionFolder ? 'Back to Folder List' : 'Inspection'"
+                   :style="{ borderBottom: activeTab === 'inspection' ? '3px solid #fbc02d' : '3px solid transparent', opacity: activeTab === 'inspection' ? 1 : 0.6, flex: 1, textAlign:'center', padding:'8px', cursor:'pointer', color:'white', position:'relative' }">
+                   <!-- When a folder is selected: overlay a back arrow on the folder icon -->
+                   <span v-if="currentInspectionFolder" style="position:relative; display:inline-flex; align-items:center; justify-content:center;">
+                     <i class="material-icons" style="font-size: 24px; color: #fbc02d;">folder</i>
+                     <i class="material-icons" style="font-size: 14px; color: white; position:absolute; bottom:-2px; right:-4px; background:#fbc02d; border-radius:50%; padding:1px;">arrow_back</i>
+                   </span>
+                   <i v-else class="material-icons" style="font-size: 24px; color: #fbc02d;">folder</i>
               </div>
               <div @click="activeTab = 'overlays'" title="Overlays"
                    :style="{ borderBottom: activeTab === 'overlays' ? '3px solid #4f83cc' : '3px solid transparent', opacity: activeTab === 'overlays' ? 1 : 0.6, flex: 1, textAlign:'center', padding:'8px', cursor:'pointer', color:'white', display:'flex', alignItems:'center', justifyContent:'center' }">

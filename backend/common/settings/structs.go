@@ -46,8 +46,14 @@ type Server struct {
 }
 
 type Integrations struct {
-	OnlyOffice OnlyOffice `json:"office" validate:"omitempty"`
-	Media      Media      `json:"media" validate:"omitempty"`
+	OnlyOffice        OnlyOffice        `json:"office" validate:"omitempty"`
+	Media             Media             `json:"media" validate:"omitempty"`
+	FacialRecognition FacialRecognition `json:"facerec" validate:"omitempty"`
+}
+
+type FacialRecognition struct {
+	Enabled       bool   `json:"enabled"`
+	ServerAddress string `json:"serverAddress"` // Default: "http://localhost:8000"
 }
 
 // onlyoffice secret is stored in the local.json file

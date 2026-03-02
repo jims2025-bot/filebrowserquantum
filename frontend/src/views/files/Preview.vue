@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div 
     id="previewer" 
     @mousemove="toggleNavigation" 
@@ -23,17 +23,22 @@
                     style="display: block; max-width: 100%; max-height: 100%;"
                   >
                   <div
-                    v-if="activeTab === 'xmp' && faceRegions.length > 0 && isMetadataVisible"
+                    v-if="faceRegions.length > 0"
                     class="face-overlay"
-                    style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10;"
+                    style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 100;"
                   >
                     <div
                       v-for="(region, index) in faceRegions"
                       :key="index"
                       class="face-box"
                       :style="getFaceBoxStyle(region)"
+                      @contextmenu.prevent="showFaceContextMenu($event, region)"
+                      @click.stop="showFaceContextMenu($event, region)"
                     >
-                      <span class="face-label" :style="{ fontSize: faceFontSize + 'px', top: -faceFontSize * 1.5 + 'px' }">{{ region.Name || 'Unnamed' }}</span>
+                      <span class="face-label" :style="{ fontSize: faceFontSize + 'px', fontWeight: 'bold', top: -faceFontSize * 1.5 + 'px', left: '-4px', padding: '2px 8px', borderRadius: '4px 4px 0 0', backgroundColor: getFaceBoxColor(region, 0.95), color: '#000', whiteSpace: 'nowrap' }">
+                        {{ region.Name || 'Unknown' }}
+                        <span v-if="region.Source === 'ml'" style="font-size: 0.7em;"> ({{ (region.Confidence * 100).toFixed(1) }}%)</span>
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -67,6 +72,16 @@
           </video>
 
           <object v-else-if="previewType == 'pdf'" class="pdf" :data="raw"></object>
+
+          <div v-else-if="previewType == 'text' && isJsonFile" class="json-preview">
+            <div class="json-toolbar">
+              <span class="json-label"><i class="material-icons">data_object</i> JSON</span>
+              <button class="json-copy-btn" @click="copyJson" :title="jsonCopied ? 'Copied!' : 'Copy raw JSON'">
+                <i class="material-icons">{{ jsonCopied ? 'check' : 'content_copy' }}</i>
+              </button>
+            </div>
+            <pre class="json-body"><code v-html="prettyJsonContent"></code></pre>
+          </div>
 
           <div v-else-if="previewType == 'text'" class="text-preview">
             <pre><code>{{ textContent }}</code></pre>
@@ -127,6 +142,28 @@
           </div>
        </div>
 
+       <!-- Face Context Menu (Floating) -->
+       <div 
+         v-if="faceContextMenu.show" 
+         class="face-context-menu"
+         :style="{ top: faceContextMenu.top + 'px', left: faceContextMenu.left + 'px', position: 'absolute', zIndex: 1000 }"
+       >
+          <div class="face-menu-header">
+             <b>{{ faceContextMenu.region.Name || 'Unknown' }}</b>
+             <button @click="closeFaceContextMenu" class="close-icon"><i class="material-icons">close</i></button>
+          </div>
+          <div class="face-menu-body" v-if="canManageFaces">
+             <input type="text" v-model="faceContextMenu.editName" placeholder="Rename person..." @keyup.enter="renameFace" class="input input--block" />
+             <div class="button-row">
+               <button @click="renameFace" class="button button--flat">Rename</button>
+               <button @click="removeFace" class="button button--flat" style="color:red">Remove</button>
+             </div>
+          </div>
+          <div class="face-menu-body" v-else>
+             <p class="small" style="color:#999; margin: 0;">You do not have permission to manage faces.</p>
+          </div>
+       </div>
+
     </div>
 	
     <!-- Metadata Section -->
@@ -148,8 +185,35 @@
             {{ tab.label }}
             </button>
         </div>
-        <div v-if="isPreFetching" class="prefetching-indicator" title="Background metadata pre-fetching in progress...">
-          <i class="material-icons spin" style="font-size: 18px; color: var(--accent-green);">sync</i>
+        <div style="display: flex; gap: 0.5rem;">
+          <button 
+            v-if="hasAnyFaceData && activeTab === 'xmp'"
+            @click="showACDSeeFaces = !showACDSeeFaces" 
+            class="button button--flat" 
+            :style="showACDSeeFaces ? 'color: var(--accent-green); background: rgba(66, 185, 131, 0.1); border: 1px solid var(--accent-green);' : 'opacity: 0.5; border: 1px solid transparent;'"
+            style="padding: 0.2rem 0.5rem; min-height: unset; margin:0; display: flex; align-items: center; gap: 4px;" 
+            :title="showACDSeeFaces ? 'ACDSee Faces ON' : 'ACDSee Faces OFF'"
+          >
+            <i class="material-icons" style="font-size: 18px;">recent_actors</i>
+            <span style="font-size: 11px; font-weight: bold;">{{ acdseeFaceCount }}</span>
+          </button>
+          <button 
+            v-if="hasAnyFaceData && activeTab === 'xmp'"
+            @click="showMLFaces = !showMLFaces" 
+            class="button button--flat" 
+            :style="showMLFaces ? 'color: var(--accent-yellow); background: rgba(255, 235, 59, 0.1); border: 1px solid var(--accent-yellow);' : 'opacity: 0.5; border: 1px solid transparent;'"
+            style="padding: 0.2rem 0.5rem; min-height: unset; margin:0; display: flex; align-items: center; gap: 4px;" 
+            :title="showMLFaces ? 'ML Faces ON' : 'ML Faces OFF'"
+          >
+            <i class="material-icons" style="font-size: 18px;">psychology</i>
+            <span style="font-size: 11px; font-weight: bold;">{{ mlFaceCount }}</span>
+          </button>
+          <button v-if="canRunFaceScan && activeTab === 'xmp'" @click="scanFacesForThisImage" class="button button--flat" style="padding: 0.2rem 0.5rem; min-height: unset; margin:0;" title="Scan image for faces">
+            <i class="material-icons" style="font-size: 18px;">face</i>
+          </button>
+          <div v-if="isPreFetching" class="prefetching-indicator" title="Background metadata pre-fetching in progress...">
+            <i class="material-icons spin" style="font-size: 18px; color: var(--accent-green);">sync</i>
+          </div>
         </div>
       </div>
       
@@ -596,44 +660,116 @@ export default {
       faceFontSize: 24, // Default font size
       metadataCache: {}, // Cache for pre-fetched metadata
       textContent: '', // For text/JSON file preview
+      jsonCopied: false, // copy-button flash state
       isPreFetching: false, // background scan status
+      facesData: [], // Store JSON parsed faces
+      showACDSeeFaces: true, // Toggle ACDSee faces
+      showMLFaces: true,     // Toggle ML faces
+      faceContextMenu: {
+        show: false,
+        top: 0,
+        left: 0,
+        region: null,
+        editName: ''
+      }
     };
   },
   computed: {
     isMobile() {
         return state.isMobile;
     },
+    hasAnyFaceData() {
+      if (this.facesData && this.facesData.length > 0) return true;
+      if (this.metadata && this.metadata.xmp) {
+        if (this.metadata.xmp.Regions || this.metadata.xmp.RegionInfo || this.metadata.xmp.RegionInfoACDSee) return true;
+      }
+      return false;
+    },
     faceRegions() {
-      if (!this.metadata || !this.metadata.xmp) {
-        return [];
-      }
-      
-      // Check for various XMP region container keys
-      // 1. Regions (Microsoft/Live Photo Gallery)
-      // 2. RegionInfo (MWG Standard)
-      // 3. RegionInfoACDSee (ACDSee)
-      const container = this.metadata.xmp.Regions || 
-                        this.metadata.xmp.RegionInfo || 
-                        this.metadata.xmp.RegionInfoACDSee;
+      let combinedFaces = [];
 
-      if (!container) return [];
-      
-      // If the container IS the array (Legacy flattened format)
-      if (Array.isArray(container)) {
-        return container;
-      }
-      
-      // If the container is an object with RegionList
-      if (container.RegionList) {
-          if (Array.isArray(container.RegionList)) {
-            return container.RegionList;
+      // Prioritize facesData (from faces.json + ML)
+      if (this.facesData && this.facesData.length > 0) {
+        let mapped = this.facesData.map(f => {
+          let Area = f.Area || null;
+          if (!Area && f.box && f.box.length === 4 && this.imageDimensions.naturalWidth > 0) {
+            const y1 = f.box[0];
+            const x2 = f.box[1];
+            const y2 = f.box[2];
+            const x1 = f.box[3];
+            
+            const w = x2 - x1;
+            const h = y2 - y1;
+            const cx = x1 + (w / 2);
+            const cy = y1 + (h / 2);
+
+            Area = {
+              X: cx / this.imageDimensions.naturalWidth,
+              Y: cy / this.imageDimensions.naturalHeight,
+              W: w / this.imageDimensions.naturalWidth,
+              H: h / this.imageDimensions.naturalHeight
+            };
           }
-          if (typeof container.RegionList === 'object') {
-             return [container.RegionList];
+
+          return {
+            Name: f.name,
+            Confidence: f.confidence,
+            Source: f.source,
+            Area: Area,
+            _rawBox: f.box // Keep the raw coords for update/delete API calls
           }
+        });
+
+        // Filter based on toggles
+        if (!this.showACDSeeFaces) {
+            mapped = mapped.filter(f => f.Source !== "acdsee" && f.Confidence < 1.0);
+        }
+        if (!this.showMLFaces) {
+            mapped = mapped.filter(f => f.Source === "acdsee" || f.Confidence >= 1.0);
+        }
+        combinedFaces.push(...mapped);
       }
 
-      return [];
+      // If no facesData exists yet, fallback to reading XMP natively (only if ACDSee faces are toggled ON)
+      if (combinedFaces.length === 0 && this.showACDSeeFaces && this.metadata && this.metadata.xmp) {
+        const container = this.metadata.xmp.Regions || 
+                          this.metadata.xmp.RegionInfo || 
+                          this.metadata.xmp.RegionInfoACDSee;
+
+        let rawItems = [];
+        if (container) {
+          if (Array.isArray(container)) rawItems.push(...container);
+          else if (container.RegionList && Array.isArray(container.RegionList)) rawItems.push(...container.RegionList);
+          else if (container.RegionList && typeof container.RegionList === 'object') rawItems.push(container.RegionList);
+        }
+
+        combinedFaces = rawItems.map(item => {
+           // Handle MWG RegionInfo structure (standard for ACDSee/others)
+           let area = item.Area || item.area || item.ALGArea || item.DLYArea || item;
+           return {
+             Name: item.Name || item.name || 'Unknown',
+             Source: 'acdsee',
+             Confidence: 1.0,
+             Area: {
+               X: area.X ?? area.x ?? area['stArea:x'],
+               Y: area.Y ?? area.y ?? area['stArea:y'],
+               W: area.W ?? area.w ?? area['stArea:w'],
+               H: area.H ?? area.h ?? area['stArea:h']
+             }
+           }
+        });
+      }
+
+      return combinedFaces;
+    },
+    canRunFaceScan() {
+      return state.user?.permissions?.runFaceScan === true && this.previewType === 'image';
+    },
+    acdseeFaceCount() {
+       return this.faceRegions.filter(f => f.Source === 'acdsee' || f.Confidence === 1.0).length;
+    },
+    mlFaceCount() {
+       return this.faceRegions.filter(f => f.Source === 'ml' && f.Confidence < 1.0).length;
     },
     canShare() {
       // Check if basic sharing is supported. Strict file sharing check happens at runtime or we assume support if navigator.share exists.
@@ -666,6 +802,9 @@ export default {
         return Math.abs(this.editLat - this.gpsCoordinates.lat) > 0.000001 || 
                Math.abs(this.editLon - this.gpsCoordinates.lon) > 0.000001;
     },
+    canManageFaces() {
+        return state.user?.permissions?.manageFaces === true;
+    },
 
     sidebarShowing() {
       return getters.isSidebarVisible();
@@ -677,6 +816,46 @@ export default {
     },
     currentUserSavedLocations() {
       return state.user ? state.user.savedLocations : null;
+    },
+    isJsonFile() {
+      const name = (state.req && state.req.name) ? state.req.name.toLowerCase() : '';
+      return name.endsWith('.json');
+    },
+    prettyJsonContent() {
+      if (!this.textContent) return '';
+      let textToColor = this.textContent;
+      try {
+        // Clean leading BOMs and trim
+        const cleanText = this.textContent.replace(/^\uFEFF/, '').trim();
+        const parsed = JSON.parse(cleanText);
+        textToColor = JSON.stringify(parsed, null, 2);
+      } catch (e) {
+        // Not valid strict JSON (e.g. contains comments).
+        // Fall back to original raw text to at least show the content.
+        console.warn('JSON parsing failed, falling back to raw text for syntax highlighting');
+      }
+
+      // Escape HTML entities to prevent injection
+      textToColor = textToColor.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+      // Syntax highlight via a single pass regex
+      return textToColor.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+        let cls = 'json-num';
+        if (/^"/.test(match)) {
+          if (/:$/.test(match)) {
+            cls = 'json-key';
+            const colonIndex = match.lastIndexOf(':');
+            return '<span class="' + cls + '">' + match.substring(0, colonIndex).trim() + '</span>:';
+          } else {
+            cls = 'json-str';
+          }
+        } else if (/true|false/.test(match)) {
+          cls = 'json-bool';
+        } else if (/null/.test(match)) {
+          cls = 'json-null';
+        }
+        return '<span class="' + cls + '">' + match + '</span>';
+      });
     },
     pinnedLocation() {
       return state.user ? state.user.pinnedLocation : null;
@@ -1209,6 +1388,98 @@ export default {
       }
     },
 
+    async fetchFacesData() {
+      this.facesData = [];
+      if (this.previewType !== 'image') return;
+      
+      try {
+        const { getApiPath, encodePath } = await import('@/utils/url.js');
+        const { fetchURL } = await import('@/api/utils');
+        
+        const dirPath = encodePath(this.req.path.substring(0, this.req.path.lastIndexOf('/')));
+        const url = getApiPath(`/api/raw${dirPath}/faces.json`, { source: this.req.source, _t: Date.now() });
+        
+        const res = await fetchURL(url);
+        const json = await res.json();
+        if (json && json[this.req.name]) {
+           this.facesData = json[this.req.name];
+        }
+      } catch (e) {
+        // file might not exist or auth failed, silently ignore
+      }
+    },
+    async scanFacesForThisImage() {
+      try {
+        notify.showSuccess(`Scanning ${this.req.name} for faces...`);
+        const { scanFacesFile } = await import('@/api/files');
+        await scanFacesFile(this.req.url);
+        notify.showSuccess(`Finished scanning ${this.req.name}`);
+        this.fetchFacesData(); // reload
+      } catch (e) {
+        notify.showError(`Error scanning faces: ${e.message}`);
+      }
+    },
+    showFaceContextMenu(event, region) {
+       event.preventDefault(); // Stop default right-click
+       this.faceContextMenu.region = region;
+       this.faceContextMenu.editName = region.Name && region.Name !== 'Unknown' ? region.Name : '';
+       
+       // Handle desktop vs mobile / click vs contextmenu positioning
+       const rect = event.currentTarget.getBoundingClientRect();
+       
+       // Position menu near the click/tap
+       let top = event.clientY - 60;
+       let left = event.clientX;
+       
+       // If it's too high up, move it down
+       if (top < 100) top = 100;
+       
+       this.faceContextMenu.top = top;
+       this.faceContextMenu.left = left;
+       this.faceContextMenu.show = true;
+    },
+    closeFaceContextMenu() {
+       this.faceContextMenu.show = false;
+       this.faceContextMenu.region = null;
+    },
+    async renameFace() {
+       const newName = this.faceContextMenu.editName.trim();
+       if (!newName) return;
+       
+       const oldName = this.faceContextMenu.region.Name;
+       const box = this.faceContextMenu.region._rawBox;
+       if (!box) {
+         notify.showError("Missing raw box data for update.");
+         return;
+       }
+
+       try {
+         const { updateFaceBox } = await import('@/api/files');
+         await updateFaceBox(this.req.url, oldName, newName, box);
+         notify.showSuccess(`Renamed ${oldName || 'Unknown'} to ${newName}`);
+         this.closeFaceContextMenu();
+         this.fetchFacesData(); // Refresh UI
+       } catch (err) {
+         notify.showError(`Error updating face: ${err.message}`);
+       }
+    },
+    async removeFace() {
+       const oldName = this.faceContextMenu.region.Name;
+       const box = this.faceContextMenu.region._rawBox;
+       if (!box) return;
+
+       if (!confirm("Are you sure you want to remove this face box?")) return;
+
+       try {
+         const { removeFaceBox } = await import('@/api/files');
+         await removeFaceBox(this.req.url, oldName, box);
+         notify.showSuccess(`Removed face box for ${oldName || 'Unknown'}`);
+         this.closeFaceContextMenu();
+         this.fetchFacesData(); // Refresh UI
+       } catch (err) {
+         notify.showError(`Error removing face: ${err.message}`);
+       }
+    },
     handlePreviewClick(event) {
         // Desktop & Mobile Click Navigation (Edge Tapping)
         
@@ -1711,6 +1982,7 @@ export default {
         this.metadata.xmp = {};
       }
       this.parsePhotoshopInstructions();
+      this.fetchFacesData();
     },
     async updateImageDimensions() {
       if (this.previewType !== "image" || !this.$refs.image) {
@@ -1751,15 +2023,25 @@ export default {
     },
     setupImage(imgElement) {
         const rect = imgElement.getBoundingClientRect();
-        const width = rect.width;
-        const height = rect.height;
-        this.imageDimensions = { width, height };
+        this.imageDimensions = { 
+            width: rect.width, 
+            height: rect.height,
+            naturalWidth: imgElement.naturalWidth,
+            naturalHeight: imgElement.naturalHeight
+        };
         this.imageOffset = { top: rect.top, left: rect.left };
         
         // Initialize panzoom here once image is laid out
         this.initPanzoom();
     },
 	
+    copyJson() {
+      if (!this.textContent) return;
+      navigator.clipboard.writeText(this.textContent).then(() => {
+        this.jsonCopied = true;
+        setTimeout(() => { this.jsonCopied = false; }, 2000);
+      });
+    },
     copyCoordinates() {
         if (!this.gpsCoordinates) return;
         const text = `${this.gpsCoordinates.lat.toFixed(6)}, ${this.gpsCoordinates.lon.toFixed(6)}`;
@@ -1792,70 +2074,68 @@ export default {
       this.$root.$emit('show-header-temporarily');
     },
     
-    getFaceBoxStyle(region) {
-      // Support Area (Std), ALGArea (Legacy), DLYArea (ACDSee)
-      const area = region.Area || region.ALGArea || region.DLYArea;
+    getFaceBoxColor(region, opacity = 0.2) {
+      // 1. Green = ACDSee baseline or manual approval (confidence 1.0)
+      // 2. Yellow = ML High Confidence (confidence > 0.90)
+      // 3. Red = Other / Unknown / Low Confidence
+      
+      if (region.Source === 'acdsee' || region.Confidence === 1.0) {
+         return `rgba(66, 185, 131, ${opacity})`; // Green
+      }
+      
+      if (region.Source === 'ml' && region.Confidence > 0.90) {
+         return `rgba(255, 255, 0, ${opacity})`; // Yellow
+      }
+      
+      // Fallback to Red
+      return `rgba(255, 0, 0, ${opacity})`;
+    },
 
-      // Check if we have valid Area data
+    getFaceBoxStyle(region) {
+      const area = region.Area || region.area || region.ALGArea || region.DLYArea || region;
       if (!area || 
-          area.X === undefined || 
-          area.Y === undefined || 
-          area.W === undefined || 
-          area.H === undefined) {
-        return {
-          left: "10px",
-          top: "10px",
-          width: "100px",
-          height: "100px",
-          border: "2px solid var(--accent-red)", // Red for error/fallback
-          background: "rgba(255, 0, 0, 0.2)",
-          position: "absolute"
-        };
+          (area.X === undefined && area.x === undefined && area['stArea:x'] === undefined) || 
+          (area.Y === undefined && area.y === undefined && area['stArea:y'] === undefined)) {
+        return { display: "none" };
       }
 
-      // Extract coordinates (Area or ALGArea)
-      // Note: X, Y, W, H might be strings or numbers. Ensure float.
-      const X = parseFloat(area.X);
-      const Y = parseFloat(area.Y);
-      const W = parseFloat(area.W);
-      const H = parseFloat(area.H);
+      let X = parseFloat(area.X ?? area.x ?? area['stArea:x'] ?? 0);
+      let Y = parseFloat(area.Y ?? area.y ?? area['stArea:y'] ?? 0);
+      let W = parseFloat(area.W ?? area.w ?? area['stArea:w'] ?? 0);
+      let H = parseFloat(area.H ?? area.h ?? area['stArea:h'] ?? 0);
       
-      // Calculate percentages based on center X/Y
-      // Left = (CenterX - Width/2) * 100%
-      // Top = (CenterY - Height/2) * 100%
-      // Width = W * 100%
-      // Height = H * 100%
+      if (W === 0 || H === 0) return { display: "none" };
       
+      // AUTO-NORMALIZE: If values are > 1, they are likely in pixels, not 0-1 range
+      if ((X > 1 || Y > 1) && this.imageDimensions.naturalWidth > 0) {
+          X = X / this.imageDimensions.naturalWidth;
+          Y = Y / this.imageDimensions.naturalHeight;
+          W = W / this.imageDimensions.naturalWidth;
+          H = H / this.imageDimensions.naturalHeight;
+      }
+
       const left = (X - W / 2) * 100;
       const top = (Y - H / 2) * 100;
       const width = W * 100;
       const height = H * 100;
 
-      // Handle NameAssignType - even if it's empty or null
-      let borderColor, backgroundColor;
-      const nameAssignType = region.NameAssignType || '';
-      
-      if (nameAssignType === 'auto') {
-        borderColor = 'var(--accent-yellow)';
-        backgroundColor = 'rgba(255, 255, 0, 0.2)';
-      } else if (nameAssignType === 'manual') {
-        borderColor = 'var(--accent-green)';
-        backgroundColor = 'rgba(66, 185, 131, 0.2)';
-      } else {
-        borderColor = 'var(--accent-blue)';
-        backgroundColor = 'rgba(0, 0, 255, 0.2)';
-      }
+      const backgroundColor = this.getFaceBoxColor(region, 0.4); // slightly more opaque
+      const borderColor = this.getFaceBoxColor(region, 1.0);
 
       return {
           left: `${left}%`,
           top: `${top}%`,
           width: `${width}%`,
           height: `${height}%`,
-          border: `2px solid ${borderColor}`,
+          border: `3px solid ${borderColor}`,
+          outline: `2px solid #000`, // High-contrast border outline
+          boxSizing: "border-box",
           background: backgroundColor,
-          boxShadow: "0 0 4px rgba(0,0,0,0.5)",
+          boxShadow: "0 0 6px rgba(0,0,0,0.8)",
           position: "absolute",
-          pointerEvents: "auto" // Allow clicking the box itself if needed later
+          zIndex: 999, // Way above image
+          pointerEvents: "auto",
+          cursor: "context-menu"
       };
     },
     
@@ -2459,6 +2739,30 @@ toggleNavigation: throttle(function () {
       color: #000;
     }
   }
+
+  .face-context-menu {
+    background: var(--surfacePrimary, #fff);
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    padding: 1rem;
+    min-width: 250px;
+    position: fixed; /* Make it float */
+    z-index: 2000; /* Ensure it's on top */
+    
+    .face-menu-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.5rem;
+      border-bottom: 1px solid var(--divider, #eee);
+      padding-bottom: 0.5rem;
+    }
+
+    .face-menu-body {
+      input { margin-bottom: 0.5rem; }
+      .button-row { display: flex; gap: 0.5rem; justify-content: flex-end; }
+    }
+  }
 }
 
 .instructions-split-pane textarea {
@@ -2895,4 +3199,66 @@ toggleNavigation: throttle(function () {
   justify-content: center;
   margin-left: 10px;
 }
+
+/* -- JSON Pretty Viewer ----------------------------------------- */
+.json-preview {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #1a1b2e;
+  color: #cdd6f4;
+  font-family: 'Fira Code', 'Cascadia Code', monospace;
+}
+.json-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 14px;
+  background: rgba(255,255,255,0.05);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  flex-shrink: 0;
+}
+.json-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #7c8cf8;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.json-label .material-icons { font-size: 16px; }
+.json-copy-btn {
+  background: none;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 6px;
+  color: #aaa;
+  cursor: pointer;
+  padding: 3px 8px;
+  display: flex;
+  align-items: center;
+  transition: background 0.15s, color 0.15s;
+}
+.json-copy-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
+.json-copy-btn .material-icons { font-size: 16px; }
+.json-body {
+  margin: 0;
+  padding: 16px 20px;
+  overflow: auto;
+  flex: 1;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  white-space: pre-wrap !important;
+  word-wrap: break-word;
+}
+.json-body code {
+  white-space: pre-wrap !important;
+  font-family: inherit;
+}
+.json-key  { color: #89dceb; }
+.json-str  { color: #a6e3a1; }
+.json-num  { color: #fab387; }
+.json-bool { color: #cba6f7; }
+.json-null { color: #6c7086; }
 </style>

@@ -26,6 +26,7 @@ rice-box.go
 
 .DS_Store
 node_modules
+venv/
 
 # local env files
 .env.local

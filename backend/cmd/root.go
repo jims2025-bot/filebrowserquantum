@@ -6,15 +6,19 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/gtsteffaniak/go-logger/logger"
 	"github.com/jims2025-bot/filebrowserquantum/backend/adapters/fs/fileutils"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
 	"github.com/jims2025-bot/filebrowserquantum/backend/database/storage"
+	"github.com/jims2025-bot/filebrowserquantum/backend/facerec"
 	"github.com/jims2025-bot/filebrowserquantum/backend/heatmap"
 	fbhttp "github.com/jims2025-bot/filebrowserquantum/backend/http"
 	"github.com/jims2025-bot/filebrowserquantum/backend/indexing"
 	"github.com/jims2025-bot/filebrowserquantum/backend/integrity"
+	"github.com/jims2025-bot/filebrowserquantum/backend/iptcindex"
+	"github.com/jims2025-bot/filebrowserquantum/backend/jobs"
 	"github.com/jims2025-bot/filebrowserquantum/backend/preview"
 	"github.com/jims2025-bot/filebrowserquantum/backend/swagger/docs"
 	"github.com/swaggo/swag"
@@ -91,12 +95,38 @@ func StartFilebrowser() {
 	validateUserInfo()
 	validateOfficeIntegration()
 
-	// Start heatmap job (and chain integrity scan after)
-	heatmap.StartJob(store, func() {
-		integrity.RunScan(store)
-	})
+	// Register weekly scheduled jobs — no startup execution, no chaining.
+	// Heatmap: Monday 3:01 AM
+	jobs.Register(
+		"heatmap",
+		"GPS heatmap generation — scans images for coordinates and builds cluster data",
+		time.Monday, 3, 1,
+		func() { heatmap.ScanAllSources(store) },
+	)
+	// Integrity Scan: Tuesday 3:01 AM
+	jobs.Register(
+		"integrity",
+		"File integrity scan — checks images for corruption, truncation, and format errors",
+		time.Tuesday, 3, 1,
+		func() { integrity.RunScan(store) },
+	)
+	// IPTC Index: Wednesday 3:01 AM
+	jobs.Register(
+		"iptcindex",
+		"IPTC metadata index — catalogues notes, captions, and photo dates for every image",
+		time.Wednesday, 3, 1,
+		func() { iptcindex.ScanAllSources(store) },
+	)
+	// Facial Recognition: Thursday 3:01 AM
+	jobs.Register(
+		"facescan",
+		"Facial Recognition scanner — analyzes images with ML and integrates ACDSee face regions",
+		time.Thursday, 3, 1,
+		func() { facerec.ScanAllSources(&settings.Config, store) },
+	)
+	jobs.StartAll()
 
-	// Start Map Overlay Job
+	// Start Map Overlay Job (keeps its own frequency-based schedule)
 	heatmap.StartOverlayJob(store)
 
 	// Start User Expiration Job

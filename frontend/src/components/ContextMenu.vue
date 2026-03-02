@@ -68,6 +68,12 @@
       @action="showHover({ name: 'share', props: { initialShareType: 'service' } })"
     />
     <action
+      v-if="selectedCount == 1 && selectedItem && selectedItem.isDir && user.permissions.runFaceScan"
+      icon="face"
+      label="Scan Folder for Faces"
+      @action="scanFaces"
+    />
+    <action
       v-if="selectedCount <= 1 && showShare"
       icon="share"
       :label="$t('buttons.share')"
@@ -123,6 +129,7 @@ import { onlyOfficeUrl } from "@/utils/constants.js";
 import buttons from "@/utils/buttons";
 import { notify } from "@/notify";
 import { eventBus } from "@/store/eventBus";
+import { scanFacesFolder } from "@/api/files";
 
 export default {
   name: "ContextMenu",
@@ -200,6 +207,15 @@ export default {
     isDarkMode() {
       return getters.isDarkMode();
     },
+    req() {
+      return state.req;
+    },
+    selectedItem() {
+      if (this.selectedCount > 0 && state.selected.length > 0) {
+        return state.req.items[state.selected[0]];
+      }
+      return null;
+    },
     selectedCount() {
       return getters.selectedCount();
     },
@@ -253,6 +269,17 @@ export default {
     },
     startDownload() {
       downloadFiles();
+    },
+    async scanFaces() {
+      try {
+        mutations.closeHovers();
+        const selectedItem = state.req.items[state.selected[0]];
+        notify.showSuccess(`Started facial recognition scan for ${selectedItem.name}...`);
+        await scanFacesFolder(selectedItem.url);
+        notify.showSuccess(`Facial recognition scan complete for ${selectedItem.name}`);
+      } catch (err) {
+        notify.showError(`Error scanning faces: ${err.message}`);
+      }
     },
     async edit() {
       window.location.hash = "#edit";

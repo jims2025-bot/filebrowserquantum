@@ -15,6 +15,7 @@ import (
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
 	"github.com/jims2025-bot/filebrowserquantum/backend/database/users"
 	"github.com/jims2025-bot/filebrowserquantum/backend/indexing"
+	"github.com/jims2025-bot/filebrowserquantum/backend/iptcindex"
 )
 
 // createApiKeyHandler creates an API key for the user.
@@ -178,7 +179,6 @@ func listApiKeysHandler(w http.ResponseWriter, r *http.Request, d *requestContex
 // @Failure 500 {object} map[string]string "Internal server error"
 // @Router /api/metadata [get]
 func getMetadataHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
-	log.SetPrefix("[getMetadataHandler] ")
 
 	source := r.URL.Query().Get("source")
 	path := r.URL.Query().Get("path")
@@ -336,6 +336,14 @@ func resourceInstructionsHandler(w http.ResponseWriter, r *http.Request, d *requ
 		log.Printf("Failed to write instructions to %s: %v", realPath, err)
 		return http.StatusInternalServerError, fmt.Errorf("could not write XMP/IPTC Instructions: %w", err)
 	}
+
+	// Trigger immediate IPTC index update for this folder (runs in background)
+	folderScopePath := filepath.Dir(scopePath)
+	go func() {
+		if scanErr := iptcindex.ScanFolder(source, folderScopePath); scanErr != nil {
+			log.Printf("IPTCIndex: background scan after write failed for '%s': %v", folderScopePath, scanErr)
+		}
+	}()
 
 	// Optional: Read back the instructions to verify
 	readBack, err := files.GetXMPInstructions(realPath)

@@ -478,6 +478,24 @@ export async function getHeatmapForFolder(source, folderPath) {
   }
 }
 
+export async function getIPTCIndex(source, path) {
+  try {
+    const apiPath = getApiPath('api/iptcindex', {
+      source: source,
+      path: encodeURIComponent(path)
+    });
+    const res = await fetchURL(apiPath, {
+      headers: { 'X-Auth': state.jwt }
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (err) {
+    console.error('Error fetching iptcindex:', err);
+    return null;
+  }
+}
+
+
 export async function fixThumbnails(source, path) {
   try {
     const apiPath = getApiPath('api/resources/thumbnails/fix', {
@@ -579,4 +597,83 @@ export async function savePeopleList(source, people) {
     notify.showError(err.message || 'Error saving people list');
     throw err;
   }
+}
+
+// ── Admin Jobs ────────────────────────────────────────────────────────────────
+
+export async function getJobsStatus() {
+  try {
+    const apiPath = getApiPath('api/admin/jobs');
+    const res = await fetchURL(apiPath, { headers: { 'X-Auth': state.jwt } });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (err) {
+    console.error('Error fetching jobs status:', err);
+    return null;
+  }
+}
+
+export async function runJobNow(jobname) {
+  try {
+    const apiPath = getApiPath(`api/admin/jobs/${jobname}/run`);
+    const res = await fetchURL(apiPath, {
+      method: 'POST',
+      headers: { 'X-Auth': state.jwt }
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || `HTTP ${res.status}`);
+    }
+    return await res.json();
+  } catch (err) {
+    notify.showError(err.message || `Error starting job '${jobname}'`);
+    throw err;
+  }
+}
+
+// ── Facial Recognition ────────────────────────────────────────────────────────
+export async function scanFacesFile(url) {
+  const result = extractSourceFromPath(url)
+  const apiPath = getApiPath('api/facerec/scan/file', {
+    path: encodeURIComponent(result.path),
+    source: result.source
+  })
+  const res = await fetchURL(apiPath, { method: 'POST', headers: { 'X-Auth': state.jwt } })
+  if (res.status !== 200) throw new Error(await res.text())
+  return res.json()
+}
+
+export async function scanFacesFolder(url) {
+  const result = extractSourceFromPath(url)
+  const apiPath = getApiPath('api/facerec/scan/folder', {
+    path: encodeURIComponent(result.path),
+    source: result.source
+  })
+  const res = await fetchURL(apiPath, { method: 'POST', headers: { 'X-Auth': state.jwt } })
+  if (res.status !== 200) throw new Error(await res.text())
+  return res.json()
+}
+
+export async function updateFaceBox(url, oldName, newName, box) {
+  const result = extractSourceFromPath(url)
+  const apiPath = getApiPath('api/facerec/update', {
+    path: encodeURIComponent(result.path),
+    source: result.source
+  })
+  const body = JSON.stringify({ imagePath: result.path, oldName, newName, box })
+  const res = await fetchURL(apiPath, { method: 'POST', body, headers: { 'X-Auth': state.jwt } })
+  if (res.status !== 200) throw new Error(await res.text())
+  return res.json()
+}
+
+export async function removeFaceBox(url, oldName, box) {
+  const result = extractSourceFromPath(url)
+  const apiPath = getApiPath('api/facerec/remove', {
+    path: encodeURIComponent(result.path),
+    source: result.source
+  })
+  const body = JSON.stringify({ imagePath: result.path, oldName, box })
+  const res = await fetchURL(apiPath, { method: 'POST', body, headers: { 'X-Auth': state.jwt } })
+  if (res.status !== 200) throw new Error(await res.text())
+  return res.json()
 }

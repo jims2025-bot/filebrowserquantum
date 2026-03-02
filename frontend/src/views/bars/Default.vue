@@ -17,8 +17,18 @@
     <div class="header-middle">
         <search v-if="false" />
         <title v-else-if="isSettings" class="topTitle">{{ $t("sidebar.settings") }}</title>
+        <!-- Sticky breadcrumb: shown when page breadcrumb scrolls off screen -->
+        <nav v-else-if="isListingView && !breadcrumbVisible" class="sticky-breadcrumb" aria-label="breadcrumb">
+          <router-link to="/files/" class="sticky-crumb" :title="$t('files.home')">
+            <i class="material-icons">home</i>
+          </router-link>
+          <template v-for="(crumb, i) in stickyBreadcrumbs" :key="i">
+            <span class="sticky-sep">›</span>
+            <router-link :to="crumb.url" class="sticky-crumb" :title="crumb.name">{{ crumb.name }}</router-link>
+          </template>
+        </nav>
         <title v-else class="topTitle">{{ req.name }}</title>
-        
+
         <!-- Map Overlays Dropdown REMOVED -->
     </div>
     
@@ -35,6 +45,12 @@
       @action="openFolderDetails"
     />
     <action
+      v-if="isListingView && canRunFaceScan"
+      icon="face"
+      label="Scan Folder for Faces"
+      @action="scanFolderFaces"
+    />
+    <action
       v-if="isListingView && canRegenerate"
       icon="sync"
       :label="regenerationLabel"
@@ -47,6 +63,13 @@
       label="Integrity Check"
       @action="handleIntegrityCheck"
     />
+    <action
+      v-if="isAdmin"
+      icon="schedule"
+      label="Jobs"
+      @action="openAdminJobs"
+    />
+
      <action
       v-if="showThumbnailFix"
       icon="build"
@@ -135,6 +158,7 @@ export default {
       isFullscreen: false,
       selectedMapOverlay: "",
       isFlashing: false,
+      breadcrumbVisible: true,
     };
   },
   computed: {
@@ -146,6 +170,9 @@ export default {
     },
     canRegenerate() {
       return state.user.permissions.updateMap;
+    },
+    canRunFaceScan() {
+      return state.user && state.user.permissions && state.user.permissions.runFaceScan;
     },
     isOnlyOffice() {
       return getters.currentView() === "onlyOfficeEditor";
@@ -235,6 +262,9 @@ export default {
     showThumbnailFix() {
        return getters.currentView() === 'listingView' && state.user.permissions.admin;
     },
+    isAdmin() {
+      return !!state.user.permissions.admin;
+    },
     showFileIssueButton() {
       // Show for admins only in preview mode if current file has integrity issues
       return this.isPreviewView && this.currentFileIssue !== null && state.user.permissions.admin;
@@ -249,6 +279,28 @@ export default {
             }));
         console.log('[Default] Available maps:', maps);
         return maps;
+    },
+    stickyBreadcrumbs() {
+      const req = state.req;
+      if (!req || !req.path) return [];
+      let path = req.path.replace(/#/g, "%23");
+      let parts = path.split("/").filter((p) => p !== "");
+      let base = "/files/";
+      if (state.serverHasMultipleSources && req.source) {
+        base = `/files/${req.source}/`;
+      }
+      let crumbs = [];
+      let buildRef = base;
+      parts.forEach((part) => {
+        buildRef = buildRef + encodeURIComponent(part) + "/";
+        crumbs.push({ name: part, url: buildRef });
+      });
+      // Keep last 3 segments max to fit in header
+      if (crumbs.length > 3) {
+        crumbs = crumbs.slice(-3);
+        crumbs[0].name = "...";
+      }
+      return crumbs;
     },
   },
 
@@ -280,10 +332,16 @@ export default {
     this.updateFullscreenState();
     // Listen for changes
     document.addEventListener("fullscreenchange", this.updateFullscreenState);
+    // Listen for breadcrumb scroll-off-screen events from Breadcrumbs.vue
+    this._onBreadcrumbVisibility = (e) => {
+      this.breadcrumbVisible = e.detail.visible;
+    };
+    window.addEventListener("breadcrumb-visibility", this._onBreadcrumbVisibility);
   },
   beforeDestroy() {
     if (this.regenInterval) clearInterval(this.regenInterval);
     document.removeEventListener("fullscreenchange", this.updateFullscreenState);
+    window.removeEventListener("breadcrumb-visibility", this._onBreadcrumbVisibility);
   },
   methods: {
     viewMapOverlay(source) {
@@ -328,6 +386,9 @@ export default {
         } catch (e) {
             notify.showError(e.message);
         }
+    },
+    openAdminJobs() {
+      mutations.showHover({ name: 'AdminJobs', props: {} });
     },
     confirmThumbnailFix() {
        if (confirm("Are you sure you want to run this action on all files in this folder and subfolders?\n\nThis will repair IPTCDigest issues and fix Thumbnail Tags in the EXIF.")) {
@@ -459,6 +520,16 @@ export default {
     openFolderDetails() {
       mutations.showHover({ name: "FolderDetails" });
     },
+    async scanFolderFaces() {
+      try {
+        notify.showSuccess(`Scanning folder for faces...`);
+        const { scanFacesFolder } = await import('@/api/files');
+        await scanFacesFolder(this.req.url);
+        notify.showSuccess(`Finished scanning folder`);
+      } catch (e) {
+        notify.showError(`Error scanning folder: ${e.message}`);
+      }
+    },
     async handleRegenerateHeatmap() {
         if (this.isRegenerating) return;
         this.isRegenerating = true;
@@ -568,6 +639,53 @@ header {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* Sticky breadcrumb in header */
+.sticky-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 0.25em;
+    overflow: hidden;
+    white-space: nowrap;
+    max-width: 100%;
+    animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.sticky-crumb {
+    color: var(--textPrimary);
+    text-decoration: none;
+    font-size: 0.9em;
+    padding: 0.2em 0.4em;
+    border-radius: 4px;
+    max-width: 14ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    transition: background 0.15s;
+}
+
+.sticky-crumb:hover {
+    background: var(--alt-background);
+    color: var(--primaryColor);
+}
+
+.sticky-crumb .material-icons {
+    font-size: 1.1em;
+}
+
+.sticky-sep {
+    color: var(--textSecondary, #888);
+    font-size: 1em;
+    flex-shrink: 0;
+    user-select: none;
 }
 
 /* Map Overlays Dropdown */

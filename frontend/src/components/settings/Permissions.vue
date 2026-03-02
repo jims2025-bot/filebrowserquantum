@@ -25,6 +25,16 @@
       v-model="permissions.manageServiceShares"
       name="Create Service Shares (Full App View)"
     />
+    <ToggleSwitch
+      class="item"
+      v-model="permissions.manageFaces"
+      name="Manage Facial Recognition (Rename/Delete)"
+    />
+    <ToggleSwitch
+      class="item"
+      v-model="permissions.runFaceScan"
+      name="Run Manual Face Scans"
+    />
   </div>
 </template>
 

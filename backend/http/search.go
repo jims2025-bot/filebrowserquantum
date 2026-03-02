@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
+	"github.com/jims2025-bot/filebrowserquantum/backend/database/people"
 	"github.com/jims2025-bot/filebrowserquantum/backend/indexing"
 )
 
@@ -57,6 +58,33 @@ import (
 // @Router /api/search [get]
 func searchHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
 	query := r.URL.Query().Get("query")
+
+	// Intercept Facial Recognition searches
+	if strings.HasPrefix(strings.ToLower(query), "person:") {
+		nameQuery := strings.TrimSpace(query[7:]) // trim "person:"
+		// remove surrounding quotes if present (e.g., person:"George Outlaw")
+		nameQuery = strings.Trim(nameQuery, `"'`)
+
+		paths, err := people.SearchImagesByPerson(nameQuery)
+		if err != nil {
+			return http.StatusInternalServerError, err
+		}
+
+		var response []indexing.SearchResult
+		for _, p := range paths {
+			// Convert absolute OS path back to a relative virtual path if possible,
+			// or simply return the absolute path. FileBrowser frontend expects virtual paths.
+			// For simplicity in this global search, we return the absolute path mapped to the Root scope
+			response = append(response, indexing.SearchResult{
+				Path: p,
+				Type: "image",
+			})
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		return renderJSON(w, r, response)
+	}
+
 	source := r.URL.Query().Get("source")
 	if source == "" {
 		source = config.Server.DefaultSource.Name

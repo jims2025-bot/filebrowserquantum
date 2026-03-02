@@ -41,6 +41,7 @@ type FileCache interface {
 // @Failure 501 {object} map[string]string "Preview generation not implemented"
 // @Router /api/preview [get]
 func previewHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
+	logger.Debug(fmt.Sprintf("[previewHandler] ENTRY: Method=%s, Path=%s, Remote=%s", r.Method, r.URL.Path, r.RemoteAddr))
 	if config.Server.DisablePreviews {
 		return http.StatusNotImplemented, fmt.Errorf("preview is disabled")
 	}
@@ -48,6 +49,22 @@ func previewHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (
 	path, err := url.QueryUnescape(encodedPath)
 	if err != nil {
 		return http.StatusBadRequest, fmt.Errorf("invalid path encoding: %v", err)
+	}
+
+	// NEW: Check for REST-style path in URL wildcard {path...} or manual extraction
+	restPath := r.PathValue("path")
+	if restPath == "" {
+		// Fallback for standard prefix matching /preview/
+		if strings.HasPrefix(r.URL.Path, "/preview/") {
+			restPath = strings.TrimPrefix(r.URL.Path, "/preview/")
+		}
+	}
+
+	if restPath != "" && path == "" {
+		if !strings.HasPrefix(restPath, "/") {
+			restPath = "/" + restPath
+		}
+		path = restPath
 	}
 	source := r.URL.Query().Get("source")
 	if source == "" {

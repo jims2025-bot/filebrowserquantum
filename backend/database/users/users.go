@@ -28,13 +28,15 @@ type AuthToken struct {
 }
 
 type Permissions struct {
-	Api       bool `json:"api"`
-	Admin     bool `json:"admin"`
-	Modify    bool `json:"modify"`
-	Share     bool `json:"share"`
-	Realtime           bool `json:"realtime"`
-	UpdateMap          bool `json:"updateMap"`
+	Api                 bool `json:"api"`
+	Admin               bool `json:"admin"`
+	Modify              bool `json:"modify"`
+	Share               bool `json:"share"`
+	Realtime            bool `json:"realtime"`
+	UpdateMap           bool `json:"updateMap"`
 	ManageServiceShares bool `json:"manageServiceShares"`
+	ManageFaces         bool `json:"manageFaces"`
+	RunFaceScan         bool `json:"runFaceScan"`
 }
 
 // SortingSettings represents the sorting settings.

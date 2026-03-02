@@ -50,6 +50,9 @@
            :title="`Location: ${gpsData.lat.toFixed(4)}, ${gpsData.lon.toFixed(4)}`">
           public
         </i>
+        <i v-if="iptcData && iptcData.hasNotes"
+           class="material-icons file-iptc-icon"
+           :title="iptcTitle">edit_note</i>
         <i v-if="issueData && issueData.Severity === 'minor' && isAdmin" 
            class="material-icons file-issue-icon file-issue-minor" 
            title="Minor metadata issues detected">warning</i>
@@ -122,6 +125,7 @@ export default {
     "companionImage",
     "isNew",
     "containsNew",
+    "iptcData",
   ],
   computed: {
     galleryView() {
@@ -144,6 +148,10 @@ export default {
     },
     isAdmin() {
       return state.user.permissions.admin;
+    },
+    iptcTitle() {
+      if (!this.iptcData || !this.iptcData.hasNotes) return '';
+      return 'Has IPTC notes (instructions / caption / byline)';
     },
     selected() {
       return state.selected;
@@ -505,6 +513,13 @@ export default {
   vertical-align: middle;
   margin-left: 0.5em;
   color: #4CAF50; /* Green globe */
+}
+
+.file-iptc-icon {
+  font-size: 1.1em !important;
+  vertical-align: middle;
+  margin-left: 0.5em;
+  color: #FF9800; /* Amber — editorial/notes */
 }
 
 .file-new-icon {

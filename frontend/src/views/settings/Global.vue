@@ -10,6 +10,26 @@
         <input type="checkbox" v-model="showDebugInfo" @change="toggleDebugInfo" />
         {{ $t('settings.showDebugInfo') }}
       </p>
+
+      <h3 style="margin-top: 2rem;">Facial Recognition Storage & API</h3>
+      <p class="small">Configure the connection to the standalone Python facial recognition microservice.</p>
+      
+      <p v-if="selectedSettings && selectedSettings.integrations">
+        <input type="checkbox" id="facerec-enabled" v-model="selectedSettings.integrations.facerec.enabled" />
+        <label for="facerec-enabled">Enable System-Wide Facial Recognition Scans</label>
+      </p>
+
+      <p v-if="selectedSettings && selectedSettings.integrations">
+        <label for="facerec-server">Python Microservice URL:</label>
+        <input
+          class="input input--block"
+          type="text"
+          id="facerec-server"
+          v-model="selectedSettings.integrations.facerec.serverAddress"
+          placeholder="http://localhost:8000"
+        />
+      </p>
+
     </div>
 
     <div class="card-action">

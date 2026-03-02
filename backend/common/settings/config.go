@@ -324,6 +324,12 @@ func setDefaults() Settings {
 				Api:    false,
 			},
 		},
+		Integrations: Integrations{
+			FacialRecognition: FacialRecognition{
+				Enabled:       false,
+				ServerAddress: "http://localhost:8000",
+			},
+		},
 	}
 }
 
@@ -564,7 +570,7 @@ func GetSources(u *users.User) []string {
 
 // IsVirtualSource returns true if the source name matches a configured aggregator (like ALL or ALL_SOURCES).
 func IsVirtualSource(name string) bool {
-	if strings.EqualFold(name, "ALL") {
+	if strings.EqualFold(name, "ALL") || strings.EqualFold(name, "ALL_SOURCES") {
 		return true
 	}
 	for _, vs := range Config.Server.VirtualSources {

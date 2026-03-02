@@ -198,6 +198,8 @@ export const getters = {
           listingView = "onlyOfficeEditor";
         } else if ("content" in state.req && state.req.type == "text/markdown" && window.location.hash != "#edit") {
           listingView = "markdownViewer";
+        } else if ("content" in state.req && state.req.type == "application/json" && window.location.hash != "#edit") {
+          listingView = "preview";
         } else if ("content" in state.req) {
           listingView = "editor";
         } else {

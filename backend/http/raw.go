@@ -44,12 +44,39 @@ func setContentDisposition(w http.ResponseWriter, r *http.Request, fileName stri
 // @Failure 500 {object} map[string]string "Internal server error"
 // @Router /api/raw [get]
 func rawHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
+	logger.Debug(fmt.Sprintf("[rawHandler] ENTRY: Method=%s, Path=%s, Remote=%s", r.Method, r.URL.Path, r.RemoteAddr))
 	encodedFiles := r.URL.Query().Get("files")
-	// Decode the URL-encoded path
+	// Decode the URL-encoded files list (for standard requests)
 	files, err := url.QueryUnescape(encodedFiles)
 	if err != nil {
-		return http.StatusBadRequest, fmt.Errorf("invalid path encoding: %v", err)
+		return http.StatusBadRequest, fmt.Errorf("invalid files encoding: %v", err)
 	}
+
+	// NEW: Check for REST-style path in URL wildcard {path...} or manual extraction
+	restPath := r.PathValue("path")
+	if restPath == "" {
+		// Fallback for standard prefix matching /raw/
+		if strings.HasPrefix(r.URL.Path, "/raw/") {
+			restPath = strings.TrimPrefix(r.URL.Path, "/raw/")
+		}
+	}
+
+	if restPath != "" && files == "" {
+		source := r.URL.Query().Get("source")
+		if source == "" {
+			source = config.Server.DefaultSource.Name
+		}
+		// Convert to virtual file list format: "source::/path"
+		if !strings.HasPrefix(restPath, "/") {
+			restPath = "/" + restPath
+		}
+		files = source + "::" + restPath
+	}
+
+	if files == "" {
+		return http.StatusBadRequest, fmt.Errorf("no files or path provided")
+	}
+
 	fileList := strings.Split(files, "||")
 	return rawFilesHandler(w, r, d, fileList)
 }
