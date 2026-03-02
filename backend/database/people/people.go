@@ -17,6 +17,9 @@ var DB *sql.DB
 // InitDB initializes the SQLite database for facial recognition.
 func InitDB(basePath string) error {
 	dbPath := filepath.Join(basePath, "people.db")
+	if envPath := os.Getenv("FILEBROWSER_PEOPLE_DB_PATH"); envPath != "" {
+		dbPath = envPath
+	}
 
 	// Ensure the directory exists
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {

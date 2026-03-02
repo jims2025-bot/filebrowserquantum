@@ -1921,31 +1921,84 @@ The system runs several background jobs to maintain data integrity and update vi
 
 [↑ Back to Top](#table-of-contents)
 
-The facial recognition system provides high-accuracy automated face detection and a "learning" mechanism to identify known individuals using user-provided ACDSee manual tags.
+The facial recognition system provides high-accuracy automated face detection and a robust sub-system for indexing, searching, and managing known individuals across the file system.
 
 ### Core Components
 
-#### 1. Python ML Server (YuNet & SFace)
-**Location:** `backend/facerec/server.py`
-- **YuNet (Face Detection):** A lightweight, high-performance ONNX model used to detect faces in an image with high accuracy, eliminating Haar Cascade false positives.
-- **SFace (Face Recognition):** Extracts a 128-float "digital signature" (embedding) from an aligned face crop. 
-- **Endpoints:**
-  - `POST /analyze`: Accepts an image and returns all detected faces, bounding boxes, and their confidence scores.
-  - `POST /learn`: Accepts an image and a specific bounding box (from a manual ACDSee tag), returning the 128-float embedding for that specific face.
+#### 1. Python ML Engine (`face_recognition` & `dlib`)
+**Location:** `backend/http/facerec.py`
+- **Architecture:** The application now uses a dedicated standalone Python script (`facerec.py`) executed by the Go backend via `os/exec`. This eliminates the need for a separate long-running Python Flask/FastAPI microservice.
+- **Underlying Technology:** Built on Davis King's `dlib` library and Adam Geitgey's `face_recognition` package. It utilizes robust ResNet-based models (`dlib_face_recognition_resnet_model_v1.dat`) for embedding extraction and HOG (Histogram of Oriented Gradients) with linear SVM for face detection.
+- **Capabilities:**
+  - Extracts 128-float face embeddings (signatures) from images.
+  - Identifies "Unknown" faces.
+  - Returns coordinates (bounding boxes) of faces for front-end rendering.
 
-#### 2. Go Backend Orchestration
-**Location:** `backend/facerec/job.go`
+#### 2. Go Backend Orchestration (`facerec` & `people`)
+**Location:** `backend/http/facerec/`, `backend/database/people/`
 - **ACDSee Baseline:** The system first uses ExifTool to extract manually tagged regions (`mwg-rs`) embedded by ACDSee. These are treated as ground truth.
-- **Learning Process:** For every manually tagged face from ACDSee, the Go backend calls the Python `/learn` endpoint to generate a face embedding and saves it to the database (`people.db`).
-- **ML Overlay & Recognition:** When the Python server detects "Unknown" faces via `/analyze`, the Go backend compares the new face's embedding against all known embeddings in the database using **Cosine Similarity**. If the similarity exceeds the threshold (e.g., 0.82), the face is automatically labeled with the known person's name.
+- **Execution:** The Go backend spawns `python facerec.py "<path>"` and reads the JSON stdout containing face bounding boxes and 128-float embeddings.
+- **Learning Process:** For every manually tagged face from ACDSee, the Go backend registers the embedding in the SQLite database (`people.db`).
+- **ML Overlay & Recognition:** For "Unknown" faces detected by Python, the Go backend compares the new face's embedding against all known embeddings in `people.db` using **Euclidean Distance** (Distance <= 0.6 indicates a match). If a match is found, the face is automatically categorized under the known person's name.
 
 #### 3. Database (`people.db`)
 **Location:** `backend/database/people/people.go`
+- SQLite database used for lighting-fast cross-referencing.
 - **people:** Stores unique person names.
-- **face_index:** Maps people to specific image paths and confidence scores.
-- **face_embeddings:** Stores the binary representation of the 128-float embeddings for fast retrieval during similarity search.
+- **face_index:** Maps people to specific absolute image paths, bounding boxes, and confidence/avatar flags.
+- **face_embeddings:** Stores the binary representation of the 128-float embeddings for fast retrieval.
 
-### Integration
-- **Background Job:** `ScanAllSources` triggers face indexing during background jobs if the feature is enabled in system settings.
-- **On-Demand:** Users can manually trigger face scans per folder or file via the UI.
+**Configuration & Location:**
+- By default, `people.db` is created in the same base path as the primary `filebrowser.db`.
+- To change the location of `people.db`, you can provide the **`FILEBROWSER_PEOPLE_DB_PATH`** environment variable. If this variable is set to an absolute path (e.g., `/app/data/people.db`), the system will use it instead of the default location.
+- Alternatively, if the environment variable is not set, changing the global database base path configuration when starting the server will move both databases together.
+
+**Sample Portainer (Docker Compose) Setup:**
+```yaml
+version: '3'
+services:
+  filebrowser:
+    image: jims2025/filebrowserquantum:latest
+    container_name: filebrowser
+    ports:
+      - "8080:80"
+    volumes:
+      - /path/to/your/photos:/photos
+      - /path/to/app/data:/app/data
+    environment:
+      # Optional: explicitly separate people.db onto faster storage (like an NVMe drive)
+      - FILEBROWSER_PEOPLE_DB_PATH=/app/data/people.db
+    restart: unless-stopped
+```
+
+**Size Estimation for Large Libraries (e.g., 2,000,000 photos):**
+- Scaling to 2 million photos requires understanding the primary space consumer: the 128-float face embeddings.
+- Each detected face generates one embedding. The binary BLOB requires `128 * 8 bytes (float64) = 1,024 bytes` natively (plus SQLite row overhead).
+- **If 2,000,000 photos average 1.5 detected faces each (3,000,000 total faces):**
+  - **Embeddings Table:** ~3 GB
+  - **Index Table & Bounding Boxes:** ~1.5 GB
+  - **Total estimated `people.db` size:** ~4.5 GB to 6 GB.
+- *Performance note:* Because SQLite is incredibly efficient with indexed BLOB reading, Euclidean distance math on a 6GB database remains highly performant, especially when executing inside localized directory subsets during image scans.
+
+#### 4. Boolean Multi-Person Search
+**Location:** `backend/http/search.go`
+- **Multi-Tag Parsing:** The search bar supports advanced `person:"Name"` tagging, allowing users to search for multiple people at once.
+- **AND/OR Logic:** Users can connect face chips/tags using " AND " or " OR " logical operators. 
+- **SQL Implementation:** Handled via `SearchImagesByPeople` in `people.go`, converting AND/OR logic into complex `IN` clauses with `HAVING COUNT(DISTINCT)` intersection constraints.
+- **Exact Matching:** Employs precise string matching (`p.name = ?`) to prevent false-positive substring matches (e.g., searching "Lex" incorrectly matching "Alex").
+
+#### 5. Search UI & Face Chips
+**Location:** `frontend/src/components/prompts/SearchPrompt.vue`
+- **Tabbed Interface:** Search inputs/filters and image results are cleanly separated into dedicated "Search" and "Results" tabs.
+- **Dynamic Face Chips:**
+  - Clicking a face chip appends a `person:"Name"` tag to the query.
+  - Chips act as boolean toggles, supporting instantaneous addition/removal of multiple people from the filter list.
+  - Chips dynamically truncate text (`text-overflow: ellipsis`) on narrow displays to prevent horizontal overflow while maximizing readability.
+- **Autocomplete Integration:** The search input features an animated dropdown auto-suggesting known names from `people.db` as the user types.
+
+#### 6. Docker Deployment Integration
+**Location:** `_docker/Dockerfile`
+- **Base Image:** Transitioned the final Stage 3 image from Alpine Linux to `python:3.11-slim` (Debian-based) to ensure broad compatibility with pre-compiled Python C++ extensions.
+- **Dependencies:** The Docker build dynamically installs `cmake`, `build-essential`, and related compilers to locally compile `dlib` during the image build process. `pip` installs `face_recognition` alongside it.
+- **Packaging:** The `.dat` model files and `facerec.py` script are copied squarely alongside the main `filebrowser` executable for atomic portability across deployments.
 
