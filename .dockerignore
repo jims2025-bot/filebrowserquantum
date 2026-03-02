@@ -1,5 +1,6 @@
 backend/**.db
 backend/tmp
 backend/vendor/**
+backend/facerec/venv/**
 frontend/dist/**
 frontend/node_modules/**

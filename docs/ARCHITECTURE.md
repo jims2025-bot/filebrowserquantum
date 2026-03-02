@@ -1925,21 +1925,19 @@ The facial recognition system provides high-accuracy automated face detection an
 
 ### Core Components
 
-#### 1. Python ML Engine (`face_recognition` & `dlib`)
-**Location:** `backend/http/facerec.py`
-- **Architecture:** The application now uses a dedicated standalone Python script (`facerec.py`) executed by the Go backend via `os/exec`. This eliminates the need for a separate long-running Python Flask/FastAPI microservice.
-- **Underlying Technology:** Built on Davis King's `dlib` library and Adam Geitgey's `face_recognition` package. It utilizes robust ResNet-based models (`dlib_face_recognition_resnet_model_v1.dat`) for embedding extraction and HOG (Histogram of Oriented Gradients) with linear SVM for face detection.
-- **Capabilities:**
-  - Extracts 128-float face embeddings (signatures) from images.
-  - Identifies "Unknown" faces.
-  - Returns coordinates (bounding boxes) of faces for front-end rendering.
+#### 1. Python ML Server (YuNet & SFace)
+**Location:** `backend/facerec/server.py`
+- **YuNet (Face Detection):** A lightweight, high-performance ONNX model used to detect faces in an image with high accuracy, eliminating Haar Cascade false positives.
+- **SFace (Face Recognition):** Extracts a 128-float "digital signature" (embedding) from an aligned face crop. 
+- **Endpoints:**
+  - `POST /analyze`: Accepts an image and returns all detected faces, bounding boxes, and their confidence scores.
+  - `POST /learn`: Accepts an image and a specific bounding box (from a manual ACDSee tag), returning the 128-float embedding for that specific face.
 
-#### 2. Go Backend Orchestration (`facerec` & `people`)
-**Location:** `backend/http/facerec/`, `backend/database/people/`
+#### 2. Go Backend Orchestration
+**Location:** `backend/facerec/job.go`
 - **ACDSee Baseline:** The system first uses ExifTool to extract manually tagged regions (`mwg-rs`) embedded by ACDSee. These are treated as ground truth.
-- **Execution:** The Go backend spawns `python facerec.py "<path>"` and reads the JSON stdout containing face bounding boxes and 128-float embeddings.
-- **Learning Process:** For every manually tagged face from ACDSee, the Go backend registers the embedding in the SQLite database (`people.db`).
-- **ML Overlay & Recognition:** For "Unknown" faces detected by Python, the Go backend compares the new face's embedding against all known embeddings in `people.db` using **Euclidean Distance** (Distance <= 0.6 indicates a match). If a match is found, the face is automatically categorized under the known person's name.
+- **Learning Process:** For every manually tagged face from ACDSee, the Go backend calls the Python `/learn` endpoint to generate a face embedding and saves it to the database (`people.db`).
+- **ML Overlay & Recognition:** When the Python server detects "Unknown" faces via `/analyze`, the Go backend compares the new face's embedding against all known embeddings in the database using **Cosine Similarity**. If the similarity exceeds the threshold (e.g., 0.82), the face is automatically labeled with the known person's name.
 
 #### 3. Database (`people.db`)
 **Location:** `backend/database/people/people.go`
