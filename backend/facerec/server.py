@@ -141,9 +141,9 @@ async def learn_face(file: UploadFile = File(...), box: str = Form(...)):
             # If no face found in crop via YuNet, just resize and get embedding as fallback
             # (Warning: this is less accurate but better than nothing)
             resized = cv2.resize(crop, (112, 112))
-            # SFace expects a specific alignment. Passing raw crop is risky.
-            # We'll just return error for now to encourage better boxes.
-            return JSONResponse(content={"embedding": [], "success": False, "error": "No face detected in specified region"}, status_code=400)
+            embedding = recognizer.feature(resized)
+            emb_list = embedding.flatten().tolist()
+            return JSONResponse(content={"embedding": emb_list, "success": True, "warning": "Fallback raw crop used"})
 
     except Exception as e:
         print(f"Error in learn_face: {e}")
