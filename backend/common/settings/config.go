@@ -328,6 +328,12 @@ func loadEnvConfig() {
 		Config.Integrations.Media.FfmpegPath = ffmpegPath
 	}
 
+	mlServer, ok := os.LookupEnv("FILEBROWSER_INTEGRATIONS_FACIALRECOGNITION_SERVERADDRESS")
+	if ok {
+		logger.Info("Using ML Server Address from environment variable: " + mlServer)
+		Config.Integrations.FacialRecognition.ServerAddress = mlServer
+	}
+
 }
 
 func setDefaults() Settings {
