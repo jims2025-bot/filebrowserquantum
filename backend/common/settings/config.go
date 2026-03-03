@@ -334,6 +334,12 @@ func loadEnvConfig() {
 		Config.Integrations.FacialRecognition.ServerAddress = mlServer
 	}
 
+	dbPath, ok := os.LookupEnv("FILEBROWSER_DATABASE")
+	if ok {
+		logger.Info("Using Database Address from environment variable: " + dbPath)
+		Config.Server.Database = dbPath
+	}
+
 }
 
 func setDefaults() Settings {

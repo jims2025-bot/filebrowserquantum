@@ -21,7 +21,14 @@ func InitDB(basePath string) error {
 		dbPath = envPath
 	}
 
-	// Ensure the directory exists
+	// Rescue Docker volume mount quirk: If the user mapped a non-existent file path
+	// (e.g. - /host/people.db:/people.db), Docker creates /people.db as a directory.
+	// We must remove this empty directory so SQLite can create the actual DB file here.
+	if info, err := os.Stat(dbPath); err == nil && info.IsDir() {
+		os.Remove(dbPath)
+	}
+
+	// Ensure the parent directory exists
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
 		return err
 	}

@@ -83,7 +83,9 @@ func StartFilebrowser() {
 	logger.Infof("Sources                  : %v", sourceList)
 
 	// Initialize facial recognition database
-	people.InitDB(settings.Config.Server.Database + "_people")
+	if err := people.InitDB(settings.Config.Server.Database + "_people"); err != nil {
+		logger.Errorf("CRITICAL: Failed to initialize people.db: %v", err)
+	}
 
 	serverConfig := settings.Config.Server
 	swagInfo := docs.SwaggerInfo
