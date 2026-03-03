@@ -52,12 +52,17 @@ func faceScanFileHandler(w http.ResponseWriter, r *http.Request, d *requestConte
 		return http.StatusInternalServerError, fmt.Errorf("could not resolve absolute path: %v", err)
 	}
 	logger.Debug(fmt.Sprintf("[FacialRec] Resolved disk path: %s", diskPath))
-	err = facerec.ScanFile(diskPath, settings.Config.Integrations.FacialRecognition, store, true) // Manual scan is forced
-	if err != nil {
-		return http.StatusInternalServerError, err
-	}
 
-	return renderJSON(w, r, map[string]string{"status": "scanned"})
+	// Run the heavy file scan asynchronously to prevent 504 Gateway Timeouts
+	// from Nginx/OpenResty reverse proxies while waiting for the ML server.
+	go func() {
+		err := facerec.ScanFile(diskPath, settings.Config.Integrations.FacialRecognition, store, true) // Manual scan is forced
+		if err != nil {
+			logger.Errorf("[FacialRec] Async ScanFile failed for %s: %v", diskPath, err)
+		}
+	}()
+
+	return renderJSON(w, r, map[string]string{"status": "scanning started in background"})
 }
 
 func faceScanFolderHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
@@ -83,12 +88,16 @@ func faceScanFolderHandler(w http.ResponseWriter, r *http.Request, d *requestCon
 	if err != nil {
 		return http.StatusInternalServerError, fmt.Errorf("could not resolve absolute path: %v", err)
 	}
-	err = facerec.ScanFolder(diskPath, settings.Config.Integrations.FacialRecognition, store, true) // Manual scan is forced
-	if err != nil {
-		return http.StatusInternalServerError, err
-	}
+	// Run the heavy folder scan asynchronously to prevent 504 Gateway Timeouts
+	// from Nginx/OpenResty reverse proxies while waiting for the ML server.
+	go func() {
+		err := facerec.ScanFolder(diskPath, settings.Config.Integrations.FacialRecognition, store, true) // Manual scan is forced
+		if err != nil {
+			logger.Errorf("[FacialRec] Async ScanFolder failed for %s: %v", diskPath, err)
+		}
+	}()
 
-	return renderJSON(w, r, map[string]string{"status": "scanned"})
+	return renderJSON(w, r, map[string]string{"status": "scanning started in background"})
 }
 
 func faceUpdateHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
