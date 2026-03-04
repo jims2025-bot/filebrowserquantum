@@ -567,10 +567,11 @@ export async function saveFolderDetails(source, path, details) {
 
 export async function getPeopleList(source) {
   try {
-    const apiPath = getApiPath('api/peoplelist', { source: source });
+    const apiPath = getApiPath('api/facerec/people', { source: source });
     const res = await fetchURL(apiPath, { headers: { 'X-Auth': state.jwt } });
     if (!res.ok) return { people: [] };
-    return await res.json();
+    const data = await res.json();
+    return { people: data.map(p => p.name) };
   } catch (err) {
     console.error('Error fetching people list:', err);
     return { people: [] };
@@ -578,25 +579,9 @@ export async function getPeopleList(source) {
 }
 
 export async function savePeopleList(source, people) {
-  try {
-    const apiPath = getApiPath('api/peoplelist', { source: source });
-    const res = await fetchURL(apiPath, {
-      method: 'PUT',
-      body: JSON.stringify({ people }),
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Auth': state.jwt
-      }
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(text || `HTTP ${res.status}`);
-    }
-    return res;
-  } catch (err) {
-    notify.showError(err.message || 'Error saving people list');
-    throw err;
-  }
+  // Deprecated: people are now tracked strictly via people.db and 
+  // learned automatically from verified faces. No-op to preserve interface.
+  return;
 }
 
 // ── Admin Jobs ────────────────────────────────────────────────────────────────
@@ -650,6 +635,13 @@ export async function scanFacesFolder(url) {
     source: result.source
   })
   const res = await fetchURL(apiPath, { method: 'POST', headers: { 'X-Auth': state.jwt } })
+  if (res.status !== 200) throw new Error(await res.text())
+  return res.json()
+}
+
+export async function getFaceScanStatus() {
+  const apiPath = getApiPath('api/facerec/status')
+  const res = await fetchURL(apiPath, { headers: { 'X-Auth': state.jwt } })
   if (res.status !== 200) throw new Error(await res.text())
   return res.json()
 }

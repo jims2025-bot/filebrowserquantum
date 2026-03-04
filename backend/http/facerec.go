@@ -53,8 +53,7 @@ func faceScanFileHandler(w http.ResponseWriter, r *http.Request, d *requestConte
 	}
 	logger.Debug(fmt.Sprintf("[FacialRec] Resolved disk path: %s", diskPath))
 
-	// Run the heavy file scan asynchronously to prevent 504 Gateway Timeouts
-	// from Nginx/OpenResty reverse proxies while waiting for the ML server.
+	// Run the heavy file scan asynchronously so the frontend can poll it
 	go func() {
 		err := facerec.ScanFile(diskPath, settings.Config.Integrations.FacialRecognition, store, true) // Manual scan is forced
 		if err != nil {
@@ -88,8 +87,7 @@ func faceScanFolderHandler(w http.ResponseWriter, r *http.Request, d *requestCon
 	if err != nil {
 		return http.StatusInternalServerError, fmt.Errorf("could not resolve absolute path: %v", err)
 	}
-	// Run the heavy folder scan asynchronously to prevent 504 Gateway Timeouts
-	// from Nginx/OpenResty reverse proxies while waiting for the ML server.
+	// Run the heavy folder scan asynchronously so the frontend can poll it
 	go func() {
 		err := facerec.ScanFolder(diskPath, settings.Config.Integrations.FacialRecognition, store, true) // Manual scan is forced
 		if err != nil {
@@ -98,6 +96,11 @@ func faceScanFolderHandler(w http.ResponseWriter, r *http.Request, d *requestCon
 	}()
 
 	return renderJSON(w, r, map[string]string{"status": "scanning started in background"})
+}
+
+func faceScanStatusHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
+	status := facerec.GetScanStatus()
+	return renderJSON(w, r, status)
 }
 
 func faceUpdateHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
@@ -183,6 +186,27 @@ func faceUpdateHandler(w http.ResponseWriter, r *http.Request, d *requestContext
 		}
 		people.RemoveFaceFromIndex(req.OldName, diskPath)
 		people.MapFaceToIndex(req.NewName, diskPath, 1.0, boxStr)
+
+		// Auto-append manually verified face to folderdetails.json
+		folderDetailsPath := filepath.Join(dir, folderDetailsFilename)
+		var fd FolderDetails
+		if fdBytes, err := os.ReadFile(folderDetailsPath); err == nil {
+			json.Unmarshal(fdBytes, &fd)
+		} else {
+			fd = FolderDetails{People: []string{}}
+		}
+		nameFound := false
+		for _, p := range fd.People {
+			if strings.EqualFold(p, req.NewName) {
+				nameFound = true
+				break
+			}
+		}
+		if !nameFound && req.NewName != "Unknown" {
+			fd.People = append(fd.People, req.NewName)
+			fdOut, _ := json.MarshalIndent(fd, "", "  ")
+			os.WriteFile(folderDetailsPath, fdOut, 0644)
+		}
 
 		// Train the ML model using this manual approval!
 		if len(existingEmb) > 0 {

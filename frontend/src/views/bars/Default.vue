@@ -45,7 +45,9 @@
     <action
       v-if="isListingView && canRunFaceScan"
       icon="face"
-      label="Scan Folder for Faces"
+      :label="isScanningFaces ? 'Scanning Faces...' : 'Scan Folder for Faces'"
+      :disabled="isScanningFaces"
+      :class="{ 'spin-action': isScanningFaces }"
       @action="scanFolderFaces"
     />
     <action
@@ -155,6 +157,8 @@ export default {
       showHeader: true,
       headerTimeout: null,
       isRegenerating: false,
+      isScanningFaces: false,
+      scanInterval: null,
       regenerationLabel: "Regenerate Heatmap",
       regenInterval: null,
       currentFileIssue: null,
@@ -328,6 +332,7 @@ export default {
   },
   mounted() {
     this.checkRegenerationStatus();
+    this.checkScanStatus();
     this.checkFileIntegrity();
     this.showHeader = true;
     
@@ -343,10 +348,36 @@ export default {
   },
   beforeDestroy() {
     if (this.regenInterval) clearInterval(this.regenInterval);
+    if (this.scanInterval) clearInterval(this.scanInterval);
     document.removeEventListener("fullscreenchange", this.updateFullscreenState);
     window.removeEventListener("breadcrumb-visibility", this._onBreadcrumbVisibility);
   },
   methods: {
+    async checkScanStatus() {
+        try {
+            const { getFaceScanStatus } = await import('@/api/files');
+            const status = await getFaceScanStatus();
+            this.isScanningFaces = status.isScanning;
+            
+            if (this.isScanningFaces && !this.scanInterval) {
+                this.scanInterval = setInterval(async () => {
+                    const s = await getFaceScanStatus();
+                    this.isScanningFaces = s.isScanning;
+                    if (!this.isScanningFaces) {
+                        clearInterval(this.scanInterval);
+                        this.scanInterval = null;
+                        notify.showSuccess(`Finished scanning faces`);
+                    }
+                }, 1000);
+            }
+        } catch (e) {
+            this.isScanningFaces = false;
+            if (this.scanInterval) {
+                clearInterval(this.scanInterval);
+                this.scanInterval = null;
+            }
+        }
+    },
     viewMapOverlay(source) {
         if (!this.selectedMapOverlay) return;
 
@@ -524,13 +555,17 @@ export default {
       mutations.showHover({ name: "FolderDetails" });
     },
     async scanFolderFaces() {
+      if (this.isScanningFaces) return;
+      this.isScanningFaces = true;
       try {
         notify.showSuccess(`Scanning folder for faces...`);
         const { scanFacesFolder } = await import('@/api/files');
         await scanFacesFolder(this.req.url);
-        notify.showSuccess(`Finished scanning folder`);
+        // Start polling the global status
+        this.checkScanStatus();
       } catch (e) {
         notify.showError(`Error scanning folder: ${e.message}`);
+        this.isScanningFaces = false;
       }
     },
     openSearch() {
@@ -722,6 +757,10 @@ header {
 .map-overlays-select option {
     background-color: white;
     color: black;
+}
+
+.spin-action :deep(i), .spin-action i {
+    animation: 2s rotate linear infinite;
 }
 
 @keyframes flash-highlight {

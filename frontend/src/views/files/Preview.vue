@@ -339,8 +339,8 @@
               <i class="material-icons" style="font-size: 18px;">psychology</i>
               <span style="font-size: 11px; font-weight: bold;">{{ mlFaceCount }}</span>
             </button>
-            <button v-if="canRunFaceScan" @click="scanFacesForThisImage" class="button button--flat" style="padding: 0.2rem 0.5rem; min-height: unset; margin:0;" title="Scan image for faces">
-              <i class="material-icons" style="font-size: 18px;">face</i>
+            <button v-if="canRunFaceScan" @click="scanFacesForThisImage" :disabled="isScanningFaces" class="button button--flat" style="padding: 0.2rem 0.5rem; min-height: unset; margin:0;" :title="isScanningFaces ? 'Scanning...' : 'Scan image for faces'">
+              <i class="material-icons" :class="{ 'spin': isScanningFaces }" style="font-size: 18px;">face</i>
             </button>
           </div>
 
@@ -706,7 +706,9 @@ export default {
         region: null,
         editName: ''
       },
-      peopleList: []
+      peopleList: [],
+      isScanningFaces: false,
+      scanInterval: null
     };
   },
   computed: {
@@ -1336,6 +1338,7 @@ export default {
         });
         return;
     }
+    this.checkScanStatus();
     window.addEventListener("keydown", this.key);
     this.subtitlesList = await this.subtitles();
     
@@ -1389,8 +1392,38 @@ export default {
         this.mapInstance.remove();
         this.mapInstance = null;
     }
+    if (this.scanInterval) {
+        clearInterval(this.scanInterval);
+        this.scanInterval = null;
+    }
   },
   methods: {
+    async checkScanStatus() {
+        try {
+            const { getFaceScanStatus } = await import('@/api/files');
+            const status = await getFaceScanStatus();
+            this.isScanningFaces = status.isScanning;
+            
+            if (this.isScanningFaces && !this.scanInterval) {
+                this.scanInterval = setInterval(async () => {
+                    const s = await getFaceScanStatus();
+                    this.isScanningFaces = s.isScanning;
+                    if (!this.isScanningFaces) {
+                        clearInterval(this.scanInterval);
+                        this.scanInterval = null;
+                        notify.showSuccess(`Finished scanning faces`);
+                        this.fetchFacesData(); // reload
+                    }
+                }, 1000); // 1 second polling
+            }
+        } catch (e) {
+            this.isScanningFaces = false;
+            if (this.scanInterval) {
+                clearInterval(this.scanInterval);
+                this.scanInterval = null;
+            }
+        }
+    },
     async fetchTextContent() {
       // console.log('fetchTextContent called, previewType:', this.previewType, 'req.type:', state.req.type);
       
@@ -1446,15 +1479,32 @@ export default {
         // file might not exist or auth failed, silently ignore
       }
     },
+    hasMatchingMLFace(acdseeRegion) {
+      if (!this.faceRegions || !acdseeRegion._rawBox) return false;
+      const b1 = acdseeRegion._rawBox;
+      
+      return this.faceRegions.some(r => {
+        if (r.Source !== 'ml') return false;
+        const b2 = r._rawBox;
+        if (!b2) return false;
+        // Check if raw bounding boxes match exactly
+        return b1.length === 4 && b2.length === 4 && 
+               b1[0] === b2[0] && b1[1] === b2[1] &&
+               b1[2] === b2[2] && b1[3] === b2[3];
+      });
+    },
     async scanFacesForThisImage() {
+      if (this.isScanningFaces) return;
+      this.isScanningFaces = true;
       try {
         notify.showSuccess(`Scanning ${this.req.name} for faces...`);
         const { scanFacesFile } = await import('@/api/files');
         await scanFacesFile(this.req.url);
-        notify.showSuccess(`Finished scanning ${this.req.name}`);
-        this.fetchFacesData(); // reload
+        // Start polling the global status
+        this.checkScanStatus();
       } catch (e) {
         notify.showError(`Error scanning faces: ${e.message}`);
+        this.isScanningFaces = false;
       }
     },
     showFaceContextMenu(event, region) {

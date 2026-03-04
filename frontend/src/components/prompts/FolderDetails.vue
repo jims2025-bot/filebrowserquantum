@@ -69,6 +69,18 @@
         <div class="fd-section">
           <label class="fd-section-label">People</label>
 
+          <!-- Restriction Toggle -->
+          <div class="fd-toggle-row" v-if="canEdit" style="margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+            <label class="switch">
+              <input type="checkbox" v-model="editRestrictFaces" />
+              <span class="slider round"></span>
+            </label>
+            <span style="font-size: 0.9em; color: var(--textSecondary, #666);">Restrict Machine Learning to only find these faces</span>
+          </div>
+          <div v-else-if="details.restrictFaces" style="margin-bottom: 12px; font-size: 0.9em; color: var(--textSecondary, #666);">
+            <i class="material-icons" style="font-size: 14px; vertical-align: middle;">lock</i> <em>Restricted to the following people</em>
+          </div>
+
           <!-- People chips -->
           <div class="fd-chips">
             <span
@@ -160,6 +172,7 @@ export default {
       },
       // Editable copies
       editNotes: "",
+      editRestrictFaces: false,
       editPeople: [],
       editOldestDate: "",      // YYYY-MM-DD
       editMostRecentDate: "",  // YYYY-MM-DD
@@ -202,6 +215,7 @@ export default {
         if (det) {
           this.details = det;
           this.editNotes = det.folderNotes || "";
+          this.editRestrictFaces = det.restrictFaces || false;
           this.editPeople = det.people ? [...det.people] : [];
           // date inputs expect YYYY-MM-DD; trim any time portion just in case
           this.editOldestDate = (det.oldestDate || "").substring(0, 10);
@@ -231,6 +245,7 @@ export default {
         const payload = {
           ...this.details,
           folderNotes: this.editNotes,
+          restrictFaces: this.editRestrictFaces,
           people: this.editPeople,
           oldestDate: this.editOldestDate,         // YYYY-MM-DD
           mostRecentDate: this.editMostRecentDate, // YYYY-MM-DD
@@ -446,7 +461,7 @@ export default {
   font-size: 0.95em;
   font-family: inherit;
   background: var(--surfaceSecondary, #fafafa);
-  color: inherit;
+  color: var(--textPrimary, #333);
 }
 .fd-person-input:focus {
   outline: none;
@@ -458,7 +473,7 @@ export default {
   left: 0;
   right: 0;
   z-index: 200;
-  background: var(--surface, #fff);
+  background: var(--surfacePrimary, #fff);
   border: 1px solid var(--divider, #ccc);
   border-top: none;
   border-radius: 0 0 4px 4px;
@@ -473,6 +488,7 @@ export default {
   padding: 7px 12px;
   cursor: pointer;
   font-size: 0.92em;
+  color: var(--textPrimary, #333);
 }
 .fd-suggestion-item:hover {
   background: var(--blue, #2196f3);
@@ -511,5 +527,50 @@ export default {
 .fd-date-input:focus {
   outline: none;
   border-color: var(--blue, #2196f3);
+}
+
+/* Switch styling */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+}
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  transition: .4s;
+}
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 14px;
+  width: 14px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: .4s;
+}
+input:checked + .slider {
+  background-color: #2196F3;
+}
+input:checked + .slider:before {
+  transform: translateX(16px);
+}
+.slider.round {
+  border-radius: 20px;
+}
+.slider.round:before {
+  border-radius: 50%;
 }
 </style>

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jims2025-bot/filebrowserquantum/backend/facerec"
 	"github.com/jims2025-bot/filebrowserquantum/backend/indexing"
 )
 
@@ -21,6 +22,7 @@ type FolderDetails struct {
 	CreateDate      string   `json:"createDate"`
 	FolderAddedDate string   `json:"folderAddedDate"` // date folder was discovered/added
 	FolderNotes     string   `json:"folderNotes"`
+	RestrictFaces   bool     `json:"restrictFaces"`
 	People          []string `json:"people"`
 	OldestDate      string   `json:"oldestDate"`
 	MostRecentDate  string   `json:"mostRecentDate"`
@@ -73,22 +75,34 @@ func getFolderDetailsHandler(w http.ResponseWriter, r *http.Request, d *requestC
 
 	detailsFile := filepath.Join(folderPath, folderDetailsFilename)
 	data, err := os.ReadFile(detailsFile)
-	if err != nil {
-		if os.IsNotExist(err) {
-			// Return empty default — don't create the file on a read
-			empty := FolderDetails{
-				People:    []string{},
-				FileNotes: []string{},
-			}
-			w.Header().Set("Content-Type", "application/json")
-			return http.StatusOK, json.NewEncoder(w).Encode(empty)
-		}
-		return http.StatusInternalServerError, err
+	var details FolderDetails
+	if err == nil {
+		json.Unmarshal(data, &details)
+	} else {
+		details = FolderDetails{People: []string{}, FileNotes: []string{}}
 	}
 
-	var details FolderDetails
-	if err := json.Unmarshal(data, &details); err != nil {
-		return http.StatusInternalServerError, err
+	// Pre-populate with 100% confidence faces from faces.json
+	facesPath := filepath.Join(folderPath, "faces.json")
+	if facesBytes, err := os.ReadFile(facesPath); err == nil {
+		var facesData facerec.FacesFile
+		if json.Unmarshal(facesBytes, &facesData) == nil {
+			peopleMap := make(map[string]bool)
+			for _, p := range details.People {
+				peopleMap[strings.ToLower(strings.TrimSpace(p))] = true
+			}
+			for _, entries := range facesData {
+				for _, f := range entries {
+					if f.Confidence >= 0.99 && f.Name != "" && f.Name != "Unknown" {
+						key := strings.ToLower(strings.TrimSpace(f.Name))
+						if !peopleMap[key] {
+							details.People = append(details.People, f.Name)
+							peopleMap[key] = true
+						}
+					}
+				}
+			}
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

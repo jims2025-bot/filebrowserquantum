@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jims2025-bot/filebrowserquantum/backend/adapters/fs/files"
@@ -20,6 +21,38 @@ import (
 	"github.com/jims2025-bot/filebrowserquantum/backend/database/people"
 	"github.com/jims2025-bot/filebrowserquantum/backend/database/storage"
 )
+
+type ScanMonitor struct {
+	mu          sync.Mutex
+	activeScans map[string]bool
+}
+
+var monitor = &ScanMonitor{
+	activeScans: make(map[string]bool),
+}
+
+func GetScanStatus() map[string]interface{} {
+	monitor.mu.Lock()
+	defer monitor.mu.Unlock()
+
+	active := len(monitor.activeScans) > 0
+	return map[string]interface{}{
+		"isScanning":  active,
+		"activeCount": len(monitor.activeScans),
+	}
+}
+
+func addScan(diskPath string) {
+	monitor.mu.Lock()
+	defer monitor.mu.Unlock()
+	monitor.activeScans[diskPath] = true
+}
+
+func removeScan(diskPath string) {
+	monitor.mu.Lock()
+	defer monitor.mu.Unlock()
+	delete(monitor.activeScans, diskPath)
+}
 
 // FaceBox represents bounding box coordinates [y1, x2, y2, x1]
 type FaceBox []int
@@ -362,6 +395,8 @@ func ExtractACDSeeRegions(imagePath string) ([]FaceEntry, error) {
 
 func ScanFolder(dirPath string, cfg settings.FacialRecognition, store *storage.Storage, force bool) error {
 	dirPath = filepath.Clean(dirPath)
+	addScan(dirPath)
+	defer removeScan(dirPath)
 
 	// Open or create `faces.json`
 	facesFilePath := filepath.Join(dirPath, "faces.json")
@@ -422,6 +457,8 @@ func ScanFolder(dirPath string, cfg settings.FacialRecognition, store *storage.S
 // ScanFile triggers scanning for a single file ONLY
 func ScanFile(filePath string, cfg settings.FacialRecognition, store *storage.Storage, force bool) error {
 	filePath = filepath.Clean(filePath)
+	addScan(filePath)
+	defer removeScan(filePath)
 	dirPath := filepath.Dir(filePath)
 	fileName := filepath.Base(filePath)
 
@@ -448,6 +485,18 @@ func ScanFile(filePath string, cfg settings.FacialRecognition, store *storage.St
 		log.Printf("[FacialRec] processSingleFile returned false for %s", fileName)
 	}
 	return nil
+}
+
+func getFolderLimits(dirPath string) (bool, []string) {
+	p := filepath.Join(dirPath, "folderdetails.json")
+	var fl struct {
+		RestrictFaces bool     `json:"restrictFaces"`
+		People        []string `json:"people"`
+	}
+	if b, err := os.ReadFile(p); err == nil {
+		json.Unmarshal(b, &fl)
+	}
+	return fl.RestrictFaces, fl.People
 }
 
 func processSingleFile(dirPath string, name string, facesData FacesFile, cfg settings.FacialRecognition, force bool) bool {
@@ -518,11 +567,28 @@ func processSingleFile(dirPath string, name string, facesData FacesFile, cfg set
 		log.Printf("[FacialRec] Error analyzing %s via Python server: %v", name, err)
 	} else {
 		// Identify ML faces from known embeddings
-		knowns, err := people.GetAllEmbeddings()
+		allKnowns, err := people.GetAllEmbeddings()
+		restricted, allowedPeople := getFolderLimits(dirPath)
+		var knowns []people.PersonEmbedding
+
 		if err != nil {
 			log.Printf("[FacialRec] ERROR getting known embeddings from DB: %v", err)
 		} else {
-			log.Printf("[FacialRec] Loaded %d known embeddings from DB for matching.", len(knowns))
+			if restricted && len(allowedPeople) > 0 {
+				allowedMap := make(map[string]bool)
+				for _, p := range allowedPeople {
+					allowedMap[strings.ToLower(strings.TrimSpace(p))] = true
+				}
+				for _, k := range allKnowns {
+					if allowedMap[strings.ToLower(k.Name)] {
+						knowns = append(knowns, k)
+					}
+				}
+				log.Printf("[FacialRec] Loaded %d known embeddings (restricted to %d allowed people).", len(knowns), len(allowedPeople))
+			} else {
+				knowns = allKnowns
+				log.Printf("[FacialRec] Loaded %d known embeddings from DB for matching.", len(knowns))
+			}
 		}
 
 		for i, mlf := range mlFaces {

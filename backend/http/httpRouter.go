@@ -162,6 +162,7 @@ func StartHttp(ctx context.Context, storage *storage.Storage, shutdownComplete c
 	api.HandleFunc("POST /admin/jobs/{jobname}/run", withAdmin(runJobHandler))
 
 	// Facial Recognition Routes
+	api.HandleFunc("GET /facerec/status", withUser(faceScanStatusHandler))
 	api.HandleFunc("GET /facerec/people", withUser(faceAutocompleteHandler))
 	api.HandleFunc("POST /facerec/scan/file", withUser(faceScanFileHandler))
 	api.HandleFunc("POST /facerec/scan/folder", withUser(faceScanFolderHandler))
