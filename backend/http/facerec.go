@@ -137,15 +137,38 @@ func faceUpdateHandler(w http.ResponseWriter, r *http.Request, d *requestContext
 
 	// Update the specific face
 	updated := false
+	var existingEmb []float64
+
 	if entries, ok := facesData[filename]; ok {
+		var mlFound bool
+		var acdseeFound bool
+		var acdseeTemplate facerec.FaceEntry
+
 		for i, e := range entries {
 			// Basic box matching
 			if len(e.Box) == 4 && len(req.Box) == 4 && e.Box[0] == req.Box[0] && e.Box[1] == req.Box[1] {
-				facesData[filename][i].Name = req.NewName
-				facesData[filename][i].Confidence = 1.0 // Manual approval!
-				updated = true
-				break
+				if e.Source == "ml" {
+					facesData[filename][i].Name = req.NewName
+					facesData[filename][i].Confidence = 1.0 // Manual approval!
+					existingEmb = e.Embedding
+					updated = true
+					mlFound = true
+				} else if e.Source == "acdsee" {
+					acdseeFound = true
+					acdseeTemplate = e
+				}
 			}
+		}
+
+		// If no ML face was found but an ACDSee face was, duplicate it to an ML face
+		if !mlFound && acdseeFound {
+			newFace := acdseeTemplate
+			newFace.Source = "ml"
+			newFace.Name = req.NewName
+			newFace.Confidence = 1.0
+			existingEmb = newFace.Embedding
+			facesData[filename] = append(facesData[filename], newFace)
+			updated = true
 		}
 	}
 
@@ -153,13 +176,47 @@ func faceUpdateHandler(w http.ResponseWriter, r *http.Request, d *requestContext
 		b, _ := json.MarshalIndent(facesData, "", "  ")
 		os.WriteFile(facesFilePath, b, 0666)
 
-		// Update people.db
+		// Update people.db index mapping
 		boxStr := ""
 		if len(req.Box) == 4 {
 			boxStr = fmt.Sprintf("%d,%d,%d,%d", req.Box[0], req.Box[1], req.Box[2], req.Box[3])
 		}
 		people.RemoveFaceFromIndex(req.OldName, diskPath)
 		people.MapFaceToIndex(req.NewName, diskPath, 1.0, boxStr)
+
+		// Train the ML model using this manual approval!
+		if len(existingEmb) > 0 {
+			// Embedding already acquired previously, just save it to DB
+			people.SaveFaceEmbedding(req.NewName, diskPath, existingEmb)
+		} else {
+			// No embedding (e.g. native ACDSee face being renamed for the first time). Learn it!
+			go func() {
+				emb, err := facerec.LearnFace(settings.Config.Integrations.FacialRecognition.ServerAddress, diskPath, req.Box)
+				if err == nil && len(emb) > 0 {
+					people.SaveFaceEmbedding(req.NewName, diskPath, emb)
+
+					// Update faces.json to ensure the embedding is cached permanently
+					if jsonBytes, err := os.ReadFile(facesFilePath); err == nil {
+						var asyncData facerec.FacesFile
+						if err := json.Unmarshal(jsonBytes, &asyncData); err == nil {
+							if entries, ok := asyncData[filename]; ok {
+								for i, e := range entries {
+									if len(e.Box) == 4 && len(req.Box) == 4 && e.Box[0] == req.Box[0] && e.Box[1] == req.Box[1] {
+										asyncData[filename][i].Embedding = emb
+										bAsync, _ := json.MarshalIndent(asyncData, "", "  ")
+										os.WriteFile(facesFilePath, bAsync, 0666)
+										break
+									}
+								}
+							}
+						}
+					}
+					logger.Debug(fmt.Sprintf("[FacialRec] Successfully learned and saved embedding for renamed face: %s", req.NewName))
+				} else {
+					logger.Error(fmt.Sprintf("[FacialRec] Failed to learn face during rename for %s: %v", req.NewName, err))
+				}
+			}()
+		}
 	}
 
 	return renderJSON(w, r, facesData[filename])

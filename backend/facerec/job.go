@@ -488,7 +488,8 @@ func processSingleFile(dirPath string, name string, facesData FacesFile, cfg set
 				if len(f.Box) == 4 {
 					boxStr = fmt.Sprintf("%d,%d,%d,%d", f.Box[0], f.Box[1], f.Box[2], f.Box[3])
 				}
-				people.MapFaceToIndex(f.Name, fullPath, 1.0, boxStr)
+
+				people.MapFaceToIndex(f.Name, fullPath, f.Confidence, boxStr)
 
 				// "LEARN": Get embedding for the ACDSee box if it's manual
 				if f.Source == "acdsee" && f.Confidence >= 0.99 && (f.Box != nil && len(f.Box) == 4 && f.Box[1] > 0) {

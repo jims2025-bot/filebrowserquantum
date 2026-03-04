@@ -160,9 +160,13 @@ export const getters = {
     if (currentView == null && !getters.isLoading() && getters.isShare()) {
       sticky = true
     }
-    if (getters.isMobile()) {
+
+    // Disable sticky behavior on all mobile devices and tablets, even large iPads
+    const isTabletOrMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (getters.isMobile() || isTabletOrMobile || window.innerWidth <= 1024) {
       sticky = false
     }
+
     return sticky
   },
   showOverlay: () => {

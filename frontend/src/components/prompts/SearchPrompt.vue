@@ -102,8 +102,8 @@
               :key="k"
               :class="['grid-item', { active: isCurrent(s) }]"
               @click.stop="openQuickView(s)"
-              @contextmenu.prevent="showInfo(s)"
-              @touchstart="handleTouchStart(s)"
+              @contextmenu.prevent="showContextMenu($event, s)"
+              @touchstart="handleTouchStart($event, s)"
               @touchend="handleTouchEnd"
               :title="baseName(s.path) + ' (' + humanSize(s.size) + ')'"
             >
@@ -149,6 +149,21 @@
       </div>
     </div>
 
+    <!-- Face Thumbnail Context Menu -->
+    <div v-if="faceContextMenu.show" class="face-context-menu" :style="{ top: faceContextMenu.top + 'px', left: faceContextMenu.left + 'px', position: 'absolute', zIndex: 1000, background: 'var(--surfacePrimary)', border: '1px solid var(--borderDivider)', padding: '10px', borderRadius: '4px', boxShadow: '0 2px 10px rgba(0,0,0,0.2)' }" @click.stop>
+      <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--borderDivider); padding-bottom: 5px; margin-bottom: 5px;">
+         <b style="color: var(--textPrimary)">Options</b>
+         <button @click="closeContextMenu" class="close-icon" style="background: none; border: none; cursor: pointer; color: var(--textSecondary)"><i class="material-icons">close</i></button>
+      </div>
+      <div v-if="isPersonSearch && getSearchPersonName" style="margin-bottom: 10px;">
+         <button @click="setAvatar(faceContextMenu.file, getSearchPersonName); closeContextMenu()" class="button button--flat" style="width: 100%; text-align: left; background: var(--surfaceSecondary); color: var(--textPrimary); border: none; padding: 8px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 8px;"><i class="material-icons" style="font-size: 18px">person</i> Set as Avatar</button>
+      </div>
+      <div style="font-size: 0.85em; color: var(--textSecondary); display: flex; flex-direction: column; gap: 4px;">
+         <div><b>File:</b> {{ baseName(faceContextMenu.file.path) }}</div>
+         <div><b>Size:</b> {{ humanSize(faceContextMenu.file.size) }}</div>
+      </div>
+    </div>
+
   </div>
 </template>
 
@@ -181,6 +196,12 @@ export default {
       quickViewFile: null,
       metadataCache: new Map(),
       activeTab: "search",
+      faceContextMenu: {
+        show: false,
+        top: 0,
+        left: 0,
+        file: null,
+      },
     };
   },
   watch: {
@@ -253,15 +274,19 @@ export default {
     window.removeEventListener("keydown", this.keyEvent);
   },
   methods: {
-    showInfo(s) {
-       const name = this.getSearchPersonName;
-       if (this.isPersonSearch && name) {
-          if (confirm(`Set this image as the avatar for ${name}?`)) {
-             this.setAvatar(s, name);
-             return;
-          }
-       }
-       alert(`File: ${this.baseName(s.path)}\nPath: ${this.basePath(s.path, s.type == 'directory')}\nSize: ${this.humanSize(s.size)}`);
+    showContextMenu(event, s) {
+       this.faceContextMenu.file = s;
+       let top = event.clientY;
+       let left = event.clientX;
+       if (top < 100) top = 100;
+       
+       this.faceContextMenu.top = top;
+       this.faceContextMenu.left = left;
+       this.faceContextMenu.show = true;
+    },
+    closeContextMenu() {
+       this.faceContextMenu.show = false;
+       this.faceContextMenu.file = null;
     },
     async setAvatar(file, name) {
       try {
@@ -283,9 +308,9 @@ export default {
         console.error("Avatar update error:", e);
       }
     },
-    handleTouchStart(s) {
+    handleTouchStart(event, s) {
       this.touchTimeout = setTimeout(() => {
-        this.showInfo(s);
+        this.showContextMenu(event, s);
       }, 600); // 600ms for long press
     },
     handleTouchEnd() {

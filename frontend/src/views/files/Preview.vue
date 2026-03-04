@@ -23,7 +23,7 @@
                     style="display: block; max-width: 100%; max-height: 100%;"
                   >
                   <div
-                    v-if="faceRegions.length > 0"
+                    v-if="faceRegions.length > 0 && activeTab === 'xmp'"
                     class="face-overlay"
                     style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 100;"
                   >
@@ -37,8 +37,48 @@
                     >
                       <span class="face-label" :style="{ fontSize: faceFontSize + 'px', fontWeight: 'bold', top: -faceFontSize * 1.5 + 'px', left: '-4px', padding: '2px 8px', borderRadius: '4px 4px 0 0', backgroundColor: getFaceBoxColor(region, 0.95), color: '#000', whiteSpace: 'nowrap' }">
                         {{ region.Name || 'Unknown' }}
-                        <span v-if="region.Source === 'ml'" style="font-size: 0.7em;"> ({{ (region.Confidence * 100).toFixed(1) }}%)</span>
+                        <span v-if="region.Source === 'ml'" style="font-size: 0.7em; margin-left: 4px;"> ({{ (region.Confidence * 100).toFixed(1) }}%)</span>
                       </span>
+
+                      <!-- Quick Verify Button overlay inside the box for ACDSee -->
+                      <div
+                        v-if="region.Source === 'acdsee' && region.Confidence < 1.0 && !hasMatchingMLFace(region) && !isMobile"
+                        @click.stop="quickVerifyFace(region)"
+                        @mousedown.stop
+                        @touchstart.stop
+                        title="Verify and Add to ML Learning Database"
+                        style="position: absolute; bottom: 5px; right: 5px; background: rgba(255,255,255,0.95); border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.5); z-index: 10;"
+                      >
+                        <i class="material-icons" style="color: #4CAF50; font-size: 20px;">check_circle</i>
+                      </div>
+
+                      <!-- Quick Action Buttons for Unverified ML Faces -->
+                      <div
+                        v-if="region.Source === 'ml' && region.Confidence < 1.0 && !isMobile"
+                        style="position: absolute; bottom: 5px; right: 5px; display: flex; gap: 12px; z-index: 10;"
+                      >
+                        <!-- Verify (Approve) -->
+                         <div
+                          v-if="region.Name && region.Name !== 'Unknown'"
+                          @click.stop="quickVerifyFace(region)"
+                          @mousedown.stop
+                          @touchstart.stop
+                          title="Confirm this person"
+                          style="background: rgba(255,255,255,0.95); border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.5);"
+                        >
+                          <i class="material-icons" style="color: #4CAF50; font-size: 20px;">check_circle</i>
+                        </div>
+                        <!-- Deny (Remove) -->
+                         <div
+                          @click.stop="quickRemoveFace(region)"
+                          @mousedown.stop
+                          @touchstart.stop
+                          title="Not this person (Remove)"
+                          style="background: rgba(255,255,255,0.95); border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.5);"
+                        >
+                          <i class="material-icons" style="color: #F44336; font-size: 20px;">cancel</i>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -153,10 +193,13 @@
              <button @click="closeFaceContextMenu" class="close-icon"><i class="material-icons">close</i></button>
           </div>
           <div class="face-menu-body" v-if="canManageFaces">
-             <input type="text" v-model="faceContextMenu.editName" placeholder="Rename person..." @keyup.enter="renameFace" class="input input--block" />
+             <input type="text" list="rename-people-list" v-model="faceContextMenu.editName" placeholder="Rename person..." @keyup.enter="renameFace" class="input input--block" />
+             <datalist id="rename-people-list" v-if="peopleList && peopleList.length">
+               <option v-for="person in peopleList" :value="person.name" :key="person.name"></option>
+             </datalist>
              <div class="button-row">
-               <button @click="renameFace" class="button button--flat">Rename</button>
-               <button @click="removeFace" class="button button--flat" style="color:red">Remove</button>
+               <button @click="renameFace" class="button button--flat" style="background: rgba(255, 255, 255, 0.85); color: #333; font-weight: 500;">Rename</button>
+               <button @click="removeFace" class="button button--flat" style="background: rgba(255, 255, 255, 0.85); color: #d32f2f; font-weight: 500;">Remove</button>
              </div>
           </div>
           <div class="face-menu-body" v-else>
@@ -325,7 +368,7 @@
               <tbody>
                 <tr v-for="(region, index) in faceRegions" :key="index">
                   <td>{{ region.Name || 'Unnamed' }}</td>
-                  <td>{{ JSON.stringify(region) }}</td>
+                  <td style="word-break: break-all; white-space: pre-wrap;">{{ JSON.stringify(region) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -339,7 +382,7 @@
               <tbody>
                 <tr v-for="(value, key) in metadata.xmp" :key="key">
                   <td>{{ key }}</td>
-                  <td>{{ JSON.stringify(value) }}</td>
+                  <td style="word-break: break-all; white-space: pre-wrap;">{{ JSON.stringify(value) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -662,7 +705,8 @@ export default {
         left: 0,
         region: null,
         editName: ''
-      }
+      },
+      peopleList: []
     };
   },
   computed: {
@@ -712,11 +756,14 @@ export default {
         });
 
         // Filter based on toggles
-        if (!this.showACDSeeFaces) {
-            mapped = mapped.filter(f => f.Source !== "acdsee" && f.Confidence < 1.0);
-        }
-        if (!this.showMLFaces) {
-            mapped = mapped.filter(f => f.Source === "acdsee" || f.Confidence >= 1.0);
+        if (!this.showACDSeeFaces && !this.showMLFaces) {
+            mapped = [];
+        } else if (!this.showACDSeeFaces) {
+            // Show ML faces, PLUS verified ACDSee faces since they are pulled into ML data
+            mapped = mapped.filter(f => f.Source === "ml" || (f.Source === "acdsee" && f.Confidence === 1.0));
+        } else if (!this.showMLFaces) {
+            // Show ONLY ACDSee faces
+            mapped = mapped.filter(f => f.Source === "acdsee");
         }
         combinedFaces.push(...mapped);
       }
@@ -757,10 +804,10 @@ export default {
       return state.user?.permissions?.runFaceScan === true && this.previewType === 'image';
     },
     acdseeFaceCount() {
-       return this.faceRegions.filter(f => f.Source === 'acdsee' || f.Confidence === 1.0).length;
+       return this.faceRegions.filter(f => f.Source === 'acdsee').length;
     },
     mlFaceCount() {
-       return this.faceRegions.filter(f => f.Source === 'ml' && f.Confidence < 1.0).length;
+       return this.faceRegions.filter(f => f.Source === 'ml' || (f.Source === 'acdsee' && f.Confidence === 1.0)).length;
     },
     canShare() {
       // Check if basic sharing is supported. Strict file sharing check happens at runtime or we assume support if navigator.share exists.
@@ -1412,6 +1459,7 @@ export default {
     },
     showFaceContextMenu(event, region) {
        event.preventDefault(); // Stop default right-click
+       this.fetchPeopleList();
        this.faceContextMenu.region = region;
        this.faceContextMenu.editName = region.Name && region.Name !== 'Unknown' ? region.Name : '';
        
@@ -1428,6 +1476,20 @@ export default {
        this.faceContextMenu.top = top;
        this.faceContextMenu.left = left;
        this.faceContextMenu.show = true;
+    },
+    async fetchPeopleList() {
+      if (this.peopleList.length > 0) return; // already fetched
+      try {
+        const { fetchURL } = await import('@/api/utils');
+        const source = this.req.source || state.sources?.current || "";
+        const res = await fetchURL("/api/facerec/people?source=" + encodeURIComponent(source));
+        if (res.ok) {
+          const data = await res.json();
+          this.peopleList = data || [];
+        }
+      } catch (e) {
+        console.error("Error fetching people list:", e);
+      }
     },
     closeFaceContextMenu() {
        this.faceContextMenu.show = false;
@@ -1453,6 +1515,53 @@ export default {
        } catch (err) {
          notify.showError(`Error updating face: ${err.message}`);
        }
+    },
+    async quickRemoveFace(region) {
+       const oldName = region.Name;
+       const box = region._rawBox;
+       if (!box) return;
+
+       if (!confirm("Are you sure you want to remove this face box?")) return;
+
+       try {
+         const { removeFaceBox } = await import('@/api/files');
+         notify.showSuccess(`Removing face box for ${oldName || 'Unknown'}...`);
+         await removeFaceBox(this.req.url, oldName, box);
+         notify.showSuccess(`Removed face box for ${oldName || 'Unknown'}`);
+         this.fetchFacesData(); // Refresh UI
+       } catch (err) {
+         notify.showError(`Error removing face: ${err.message}`);
+       }
+    },
+    async quickVerifyFace(region) {
+       const name = region.Name;
+       if (!name || name === 'Unknown') return;
+       
+       const box = region._rawBox;
+       if (!box) {
+         notify.showError("Missing raw box data for update.");
+         return;
+       }
+
+       try {
+         const { updateFaceBox } = await import('@/api/files');
+         notify.showSuccess(`Verifying ${name}...`);
+         await updateFaceBox(this.req.url, name, name, box); // Same name acts as manual verification
+         notify.showSuccess(`Verified ${name} and saved to ML DB.`);
+         this.fetchFacesData(); // Refresh UI
+       } catch (err) {
+         notify.showError(`Error verifying face: ${err.message}`);
+       }
+    },
+    hasMatchingMLFace(region) {
+       if (!region._rawBox || region._rawBox.length < 4) return false;
+       return this.faceRegions.some(f => 
+          f.Source === 'ml' && 
+          f._rawBox && 
+          f._rawBox.length >= 4 &&
+          f._rawBox[0] === region._rawBox[0] && 
+          f._rawBox[1] === region._rawBox[1]
+       );
     },
     async removeFace() {
        const oldName = this.faceContextMenu.region.Name;
@@ -2066,19 +2175,25 @@ export default {
     },
     
     getFaceBoxColor(region, opacity = 0.2) {
-      // 1. Green = ACDSee baseline or manual approval (confidence 1.0)
-      // 2. Yellow = ML High Confidence (confidence > 0.90)
-      // 3. Red = Other / Unknown / Low Confidence
-      
-      if (region.Source === 'acdsee' || region.Confidence === 1.0) {
-         return `rgba(66, 185, 131, ${opacity})`; // Green
+      if (region.Source === 'acdsee') {
+         if (region.Confidence === 1.0) {
+            return `rgba(66, 185, 131, ${opacity})`; // Green for Verified ACDSee
+         } else {
+            return `rgba(156, 39, 176, ${opacity})`; // Purple for Unverified ACDSee
+         }
       }
       
-      if (region.Source === 'ml' && region.Confidence > 0.90) {
-         return `rgba(255, 255, 0, ${opacity})`; // Yellow
+      if (region.Source === 'ml') {
+         if (region.Confidence === 1.0) {
+            return `rgba(33, 150, 243, ${opacity})`; // Blue for Verified ML Face (Renamed)
+         } else if (region.Confidence > 0.90) {
+            return `rgba(255, 255, 0, ${opacity})`; // Yellow for High-Confidence ML
+         } else {
+            return `rgba(255, 152, 0, ${opacity})`; // Orange for Med/Low Confidence ML
+         }
       }
       
-      // Fallback to Red
+      // Fallback
       return `rgba(255, 0, 0, ${opacity})`;
     },
 
