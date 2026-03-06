@@ -182,6 +182,18 @@ export default {
         return "";
       }
       
+      // If the backend or state provided a specific thumbnailUrl (e.g. face search crops with boxes), use it exactly.
+      let item = null;
+      if (state.isSearchActive && state.searchResults && state.searchResults.length > this.index) {
+          item = state.searchResults[this.index];
+      } else if (state.req && state.req.items && state.req.items.length > this.index) {
+          item = state.req.items[this.index];
+      }
+      
+      if (item && item.thumbnailUrl) {
+          return item.thumbnailUrl;
+      }
+      
       const targetName = this.companionImage || this.name;
       
       let path = url.removeTrailingSlash(state.req.path) + "/" + targetName;

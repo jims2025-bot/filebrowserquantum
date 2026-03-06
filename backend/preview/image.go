@@ -7,10 +7,18 @@ import (
 	"fmt"
 	"image"
 	"io"
+	"log"
 
 	"github.com/disintegration/imaging"
 	exif "github.com/dsoprea/go-exif/v3"
 	exifcommon "github.com/dsoprea/go-exif/v3/common"
+
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
+
+	_ "golang.org/x/image/bmp"
+	_ "golang.org/x/image/tiff"
 )
 
 // Format is an image file format.
@@ -132,13 +140,7 @@ func (s *Service) Resize(ctx context.Context, in io.Reader, width, height int, o
 	}
 	defer s.release()
 
-	format, wrappedReader, err := s.detectFormat(in)
-	if err != nil {
-		return err
-	}
-
 	config := resizeConfig{
-		format:     format,
 		resizeMode: ResizeModeFit,
 		quality:    QualityMedium,
 	}
@@ -146,11 +148,25 @@ func (s *Service) Resize(ctx context.Context, in io.Reader, width, height int, o
 		option(&config)
 	}
 
+	// Read everything into memory once to allow multi-pass (EXIF + Decode)
+	data, err := io.ReadAll(in)
+	if err != nil {
+		return err
+	}
+
+	format, _, err := s.detectFormat(bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+
+	if config.format == 0 {
+		config.format = format
+	}
+
 	// Disable embedded thumbnail extraction if we need to crop a specific face box,
 	// because the thumbnail will likely trim out the face we're actually looking for.
 	if config.quality == QualityLow && format == FormatJpeg && config.boxParam == "" {
-		thm, newWrappedReader, errThm := getEmbeddedThumbnail(wrappedReader)
-		wrappedReader = newWrappedReader
+		thm, _, errThm := getEmbeddedThumbnail(bytes.NewReader(data))
 		if errThm == nil {
 			_, err = out.Write(thm)
 			if err == nil {
@@ -159,26 +175,43 @@ func (s *Service) Resize(ctx context.Context, in io.Reader, width, height int, o
 		}
 	}
 
-	img, err := imaging.Decode(wrappedReader)
-	if err != nil {
-		return err
-	}
-
-	// NEW: Perform dynamic face cropping if requested
+	// If a box is provided, we must handle orientation manually AFTER cropping
+	// to ensure coordinates match the raw pixels.
+	var img image.Image
+	var orientation int
 	if config.boxParam != "" {
+		// Bulletproof raw decode: try standard library first
+		img, _, err = image.Decode(bytes.NewReader(data))
+		if err != nil {
+			// Fallback to imaging.Decode if standard fails
+			img, err = imaging.Decode(bytes.NewReader(data), imaging.AutoOrientation(false))
+			if err != nil {
+				return err
+			}
+		}
+		orientation = getOrientation(data)
+		log.Printf("[PreviewDebug] Face crop requested: %s, Orientation: %d", config.boxParam, orientation)
+
+		// Perform dynamic face cropping
 		var y1, x2, y2, x1 int
-		_, err := fmt.Sscanf(config.boxParam, "%d,%d,%d,%d", &y1, &x2, &y2, &x1)
+		_, err = fmt.Sscanf(config.boxParam, "%d,%d,%d,%d", &y1, &x2, &y2, &x1)
 		if err == nil && x2 > x1 && y2 > y1 {
-			// imaging.Crop takes a standard image.Rectangle
 			rect := image.Rect(x1, y1, x2, y2)
+			bounds := img.Bounds()
+			log.Printf("[PreviewDebug] Orientation: %d, ImgSize: %dx%d, Box: [%d,%d,%d,%d], Crop: %v",
+				orientation, bounds.Dx(), bounds.Dy(), y1, x2, y2, x1, rect)
 			img = imaging.Crop(img, rect)
 		}
-	}
 
-	// For now, we'll skip auto-orientation after crop if it's tricky,
-	// but usually face thumbnails don't need it as much as full previews.
-	// Actually, let's just use Fit/Fill which usually handles orientation if we use the right loader.
-	// Reverting to a safe state that compiles and crops.
+		// Apply orientation to the crop
+		img = applyOrientation(img, orientation)
+	} else {
+		// Use imaging.Decode with auto-orientation for efficiency
+		img, err = imaging.Decode(bytes.NewReader(data), imaging.AutoOrientation(true))
+		if err != nil {
+			return err
+		}
+	}
 
 	switch config.resizeMode {
 	case ResizeModeFill:
@@ -190,6 +223,58 @@ func (s *Service) Resize(ctx context.Context, in io.Reader, width, height int, o
 	}
 
 	return imaging.Encode(out, img, config.format.toImaging())
+}
+
+func getOrientation(data []byte) int {
+	rawExif, err := exif.SearchAndExtractExif(data)
+	if err != nil {
+		return 1
+	}
+	im, _ := exifcommon.NewIfdMappingWithStandard()
+	ti := exif.NewTagIndex()
+	_, index, err := exif.Collect(im, ti, rawExif)
+	if err != nil {
+		return 1
+	}
+	ifd := index.RootIfd
+	results, err := ifd.FindTagWithName("Orientation")
+	if err != nil {
+		return 1
+	}
+	if len(results) > 0 {
+		valAny, err := results[0].Value()
+		if err != nil {
+			return 1
+		}
+		if val, ok := valAny.([]uint16); ok && len(val) > 0 {
+			return int(val[0])
+		}
+		if val, ok := valAny.([]int); ok && len(val) > 0 {
+			return val[0]
+		}
+	}
+	return 1
+}
+
+func applyOrientation(img image.Image, orientation int) image.Image {
+	switch orientation {
+	case 2:
+		return imaging.FlipH(img)
+	case 3:
+		return imaging.Rotate180(img)
+	case 4:
+		return imaging.FlipV(img)
+	case 5:
+		return imaging.Transpose(img)
+	case 6:
+		return imaging.Rotate270(img)
+	case 7:
+		return imaging.Transverse(img)
+	case 8:
+		return imaging.Rotate90(img)
+	default:
+		return img
+	}
 }
 
 func (s *Service) detectFormat(in io.Reader) (Format, io.Reader, error) {

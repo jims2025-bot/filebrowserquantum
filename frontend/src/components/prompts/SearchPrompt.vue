@@ -6,7 +6,7 @@
         <i class="material-icons">search</i>
         <span>Search</span>
       </button>
-      <button :class="['tab-btn', { active: activeTab === 'results' }]" @click="activeTab = 'results'">
+      <button :class="['tab-btn', { active: activeTab === 'results', 'pulse-yellow': pulseResults }]" @click="activeTab = 'results'">
         <i class="material-icons">grid_view</i>
         <span>Results ({{ results.length }})</span>
       </button>
@@ -65,7 +65,7 @@
               v-for="person in people" 
               :key="person.name"
               type="button"
-              :class="['filter-chip', { active: value.includes('person:&quot;' + person.name + '&quot;') }]"
+              :class="['filter-chip', { active: value.includes('person:&quot;' + person.name + '&quot;') || value.includes('person:\&quot;' + person.name + '\&quot;') }]"
               @click.stop="togglePerson(person.name)"
               :title="person.count + ' faces'"
             >
@@ -155,8 +155,19 @@
          <b style="color: var(--textPrimary)">Options</b>
          <button @click="closeContextMenu" class="close-icon" style="background: none; border: none; cursor: pointer; color: var(--textSecondary)"><i class="material-icons">close</i></button>
       </div>
-      <div v-if="isPersonSearch && getSearchPersonName" style="margin-bottom: 10px;">
+      <div v-if="isPersonSearch && getSearchPersonName" style="margin-bottom: 10px; display: flex; flex-direction: column; gap: 4px;">
          <button @click="setAvatar(faceContextMenu.file, getSearchPersonName); closeContextMenu()" class="button button--flat" style="width: 100%; text-align: left; background: var(--surfaceSecondary); color: var(--textPrimary); border: none; padding: 8px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 8px;"><i class="material-icons" style="font-size: 18px">person</i> Set as Avatar</button>
+         <button @click="markAsNotPerson(faceContextMenu.file, getSearchPersonName); closeContextMenu()" class="button button--flat" style="width: 100%; text-align: left; background: var(--surfaceSecondary); color: var(--textPrimary); border: none; padding: 8px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 8px;"><i class="material-icons" style="font-size: 18px">person_off</i> Not {{ getSearchPersonName }}</button>
+      </div>
+      <div style="margin-bottom: 10px; border-bottom: 1px solid var(--borderDivider); padding-bottom: 10px;">
+         <input type="text" list="search-rename-people-list" v-model="faceContextMenu.editName" placeholder="Rename person..." @keyup.enter="renameFace" class="input input--block" style="width: 100%; margin-bottom: 4px; padding: 6px; border-radius: 4px; border: 1px solid var(--borderDivider); background: var(--surfaceSecondary); color: var(--textPrimary);" />
+         <datalist id="search-rename-people-list" v-if="people && people.length">
+           <option v-for="person in people" :value="person.name" :key="person.name"></option>
+         </datalist>
+         <button @click="renameFace" class="button button--flat" style="width: 100%; text-align: center; background: var(--blue); color: white; border: none; padding: 6px; border-radius: 4px; cursor: pointer;">Save Name</button>
+      </div>
+      <div style="margin-bottom: 10px;">
+         <button @click="removeFace(faceContextMenu.file); closeContextMenu()" class="button button--flat button--red" style="width: 100%; text-align: left; background: rgba(255, 0, 0, 0.1); color: var(--red); border: none; padding: 8px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 8px;"><i class="material-icons" style="font-size: 18px">delete_outline</i> Remove Face</button>
       </div>
       <div style="font-size: 0.85em; color: var(--textSecondary); display: flex; flex-direction: column; gap: 4px;">
          <div><b>File:</b> {{ baseName(faceContextMenu.file.path) }}</div>
@@ -201,7 +212,9 @@ export default {
         top: 0,
         left: 0,
         file: null,
+        editName: "",
       },
+      pulseResults: false,
     };
   },
   watch: {
@@ -254,6 +267,11 @@ export default {
     getSearchPersonName() {
       const match = this.value.match(/person:"([^"]+)"|person:&quot;([^&]+)&quot;/);
       return match ? (match[1] || match[2]) : null;
+    },
+    canShowSearchContextMenu() {
+      return state.user?.permissions?.manageFaces === true || 
+             state.user?.permissions?.runFaceScan === true || 
+             state.user?.permissions?.admin === true;
     }
   },
   mounted() {
@@ -265,6 +283,9 @@ export default {
     });
     window.addEventListener("keydown", this.keyEvent);
     
+    // Ensure clean state on open
+    mutations.setSearchResults([]);
+    
     // Initial fetch if starting on search tab
     if (this.activeTab === 'search' && this.people.length === 0) {
       this.fetchPeople();
@@ -275,7 +296,9 @@ export default {
   },
   methods: {
     showContextMenu(event, s) {
+       if (!this.canShowSearchContextMenu) return;
        this.faceContextMenu.file = s;
+       this.faceContextMenu.editName = this.getSearchPersonName || "";
        let top = event.clientY;
        let left = event.clientX;
        if (top < 100) top = 100;
@@ -290,12 +313,22 @@ export default {
     },
     async setAvatar(file, name) {
       try {
-        const res = await fetchURL(`/api/facerec/avatar?source=${encodeURIComponent(file.source || state.sources.current)}`, {
+        let boxStr = "";
+        if (typeof file.box === 'string') {
+          boxStr = file.box;
+        } else if (Array.isArray(file.box)) {
+          boxStr = file.box.join(',');
+        }
+
+        const sourceName = file.source || state.sources.current;
+        const sourceUrl = state.serverHasMultipleSources ? `/files/${sourceName}${file.path}` : `/files${file.path}`;
+
+        const res = await fetchURL(`/api/facerec/avatar?source=${encodeURIComponent(sourceName)}`, {
           method: 'PUT',
           body: JSON.stringify({
             name: name,
             imagePath: file.path,
-            box: file.box || ""
+            box: boxStr
           })
         });
         if (res.ok) {
@@ -308,7 +341,76 @@ export default {
         console.error("Avatar update error:", e);
       }
     },
+    async markAsNotPerson(file) {
+      if (!confirm(`Are you sure this face is not ${this.getSearchPersonName}?`)) return;
+      try {
+        const { updateFaceBox } = await import('@/api/files');
+        const sourceName = file.source || state.sources.current;
+        const sourceUrl = state.serverHasMultipleSources ? `/files/${sourceName}${file.path}` : `/files${file.path}`;
+        await updateFaceBox(sourceUrl, this.getSearchPersonName, "Unknown", file.box || "");
+        
+        // Remove from the local results display array
+        const index = state.searchResults.findIndex(s => s.path === file.path && s.box === file.box);
+        if (index > -1) {
+          state.searchResults.splice(index, 1);
+        }
+        this.fetchPeople();
+      } catch (e) {
+        console.error("Failed to un-map person:", e);
+        alert(`Failed to unmap face: ${e.message}`);
+      }
+    },
+    async removeFace(file) {
+      if (!confirm(`Are you sure you want to completely remove this face box from the image?`)) return;
+      try {
+        const { removeFaceBox } = await import('@/api/files');
+        const sourceName = file.source || state.sources.current;
+        const sourceUrl = state.serverHasMultipleSources ? `/files/${sourceName}${file.path}` : `/files${file.path}`;
+        
+        // Use regex to try to get oldname, otherwise fallback to "Unknown" 
+        // to appease the backend requirement that oldName exists.
+        const currentName = this.getSearchPersonName || "Unknown";
+        
+        await removeFaceBox(sourceUrl, currentName, file.box || "");
+        
+        // Remove from the local results display array
+        const index = state.searchResults.findIndex(s => s.path === file.path && s.box === file.box);
+        if (index > -1) {
+          state.searchResults.splice(index, 1);
+        }
+        this.fetchPeople();
+      } catch (e) {
+        console.error("Failed to remove face box:", e);
+        alert(`Failed to delete face: ${e.message}`);
+      }
+    },
+    async renameFace() {
+       const newName = this.faceContextMenu.editName.trim();
+       if (!newName) return;
+       if (!confirm(`Are you sure you want to rename this face to ${newName}?`)) return;
+       
+       try {
+          const { updateFaceBox } = await import('@/api/files');
+          const file = this.faceContextMenu.file;
+          const sourceName = file.source || state.sources.current;
+          const sourceUrl = state.serverHasMultipleSources ? `/files/${sourceName}${file.path}` : `/files${file.path}`;
+          
+          await updateFaceBox(sourceUrl, this.getSearchPersonName, newName, file.box || "");
+          
+          // Remove from the local results display array since this is no longer the searched person
+          const index = state.searchResults.findIndex(s => s.path === file.path && s.box === file.box);
+          if (index > -1) {
+            state.searchResults.splice(index, 1);
+          }
+          this.closeContextMenu();
+          this.fetchPeople();
+       } catch (e) {
+          console.error("Failed to rename face:", e);
+          alert(`Failed to rename face: ${e.message}`);
+       }
+    },
     handleTouchStart(event, s) {
+      if (!this.canShowSearchContextMenu) return;
       this.touchTimeout = setTimeout(() => {
         this.showContextMenu(event, s);
       }, 600); // 600ms for long press
@@ -326,11 +428,13 @@ export default {
       this.results = [];
       this.autocompleteResults = [];
       this.activeTab = "search";
+      mutations.setSearchResults([]);
     },
     onInput() {
       if (this.value.length < 3) {
         this.results = [];
         this.autocompleteResults = [];
+        mutations.setSearchResults([]);
         return;
       }
       this.fetchAutocomplete();
@@ -346,6 +450,7 @@ export default {
     async submit() {
       if (this.value.length < 3) {
         this.results = [];
+        mutations.setSearchResults([]);
         return;
       }
       
@@ -395,6 +500,7 @@ export default {
     selectPerson(name) {
       this.value = `person:"${name}"`;
       this.autocompleteResults = [];
+      this.triggerPulse();
       this.submit();
     },
     async fetchPeople() {
@@ -414,25 +520,51 @@ export default {
     },
     togglePerson(name) {
       const tag = `person:"${name}"`;
-      // Match all existing person tags regardless of quotes
-      const personRegex = /person:"([^"]+)"|person:&quot;([^&]+)&quot;/g;
+      const personRegex = /(?:person|face):"([^"]+)"|(?:person|face):&quot;([^&]+)&quot;/gi;
       
       let currentNames = [];
       let match;
       while ((match = personRegex.exec(this.value)) !== null) {
-        currentNames.push(match[1] || match[2]);
+        currentNames.push((match[1] || match[2]).toLowerCase());
       }
 
-      if (currentNames.includes(name)) {
+      if (currentNames.includes(name.toLowerCase())) {
         // Remove it
         const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const removeRegex = new RegExp(`(person:"${escapedName}"|person:&quot;${escapedName}&quot;)( |$)`, 'g');
+        const removeRegex = new RegExp(`(?:person|face):("|&quot;)${escapedName}\\1`, 'gi');
         this.value = this.value.replace(removeRegex, "").trim();
+        
+        // Clean up dangling operators and extra spaces
+        this.value = this.value
+          .replace(/^\s*(?:AND|OR)\s+/i, '')
+          .replace(/\s*(?:AND|OR)\s*$/i, '')
+          .replace(/\s+(?:AND|OR)\s+(?:AND|OR)\s+/gi, ' AND ')
+          .replace(/\s{2,}/g, ' ')
+          .trim();
+
+        // If no more person tags, clear results
+        const stillHasPerson = /(?:person|face):/i.test(this.value);
+        if (!stillHasPerson) {
+          mutations.setSearchResults([]);
+        }
       } else {
         // Add it
-        this.value = (tag + " " + this.value).trim();
+        const stillHasPerson = /(?:person|face):/i.test(this.value);
+        if (stillHasPerson && this.value.length > 0) {
+          // If already has content, add AND
+          this.value = `${tag} AND ${this.value}`;
+        } else {
+          this.value = (tag + " " + this.value).trim();
+        }
+        this.triggerPulse();
       }
       this.submit();
+    },
+    triggerPulse() {
+      this.pulseResults = true;
+      setTimeout(() => {
+        this.pulseResults = false;
+      }, 2000);
     },
     baseName(path) {
       let parts = url.removeTrailingSlash(path).split("/");
@@ -1068,6 +1200,19 @@ export default {
 
 .results-pane {
   padding: 0; /* Let the grid handle the padding */
+}
+
+@keyframes pulse-yellow {
+    0% { background-color: transparent; box-shadow: none; }
+    25% { background-color: rgba(255, 235, 59, 0.8); box-shadow: 0 0 10px rgba(255, 235, 59, 0.8); transform: scale(1.05); }
+    50% { background-color: transparent; box-shadow: none; transform: scale(1.0); }
+    75% { background-color: rgba(255, 235, 59, 0.8); box-shadow: 0 0 10px rgba(255, 235, 59, 0.8); transform: scale(1.05); }
+    100% { background-color: transparent; box-shadow: none; transform: scale(1.0); }
+}
+
+.pulse-yellow {
+  animation: pulse-yellow 1.5s ease-in-out;
+  color: #fbc02d !important;
 }
 </style>
 

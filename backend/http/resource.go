@@ -120,8 +120,8 @@ func resourceDeleteHandler(w http.ResponseWriter, r *http.Request, d *requestCon
 	// EXCEPTION: Allow removing EXIF/GPS metadata if "action=exif" is specified.
 	action := r.URL.Query().Get("action")
 	if action == "exif" {
-		if !d.user.Permissions.Modify {
-			return http.StatusForbidden, fmt.Errorf("user is not allowed to modify files")
+		if !d.user.Permissions.Admin {
+			return http.StatusForbidden, fmt.Errorf("user is not allowed to modify file metadata")
 		}
 
 		path := r.URL.Query().Get("path")
@@ -152,7 +152,7 @@ func resourceDeleteHandler(w http.ResponseWriter, r *http.Request, d *requestCon
 		fileOpts := iteminfo.FileOptions{
 			Path:   scopePath,
 			Source: source,
-			Modify: d.user.Permissions.Modify,
+			Modify: d.user.Permissions.Admin,
 			Expand: false,
 		}
 
@@ -187,10 +187,7 @@ func resourcePostHandler(w http.ResponseWriter, r *http.Request, d *requestConte
 			return http.StatusBadRequest, fmt.Errorf("invalid source encoding: %v", err)
 		}
 	}
-	if !d.user.Permissions.Modify {
-		return http.StatusForbidden, fmt.Errorf("user is not allowed to create or modify")
-	}
-	if !d.user.Permissions.Modify {
+	if !d.user.Permissions.Admin {
 		return http.StatusForbidden, fmt.Errorf("user is not allowed to create or modify")
 	}
 	// Parse scope index and resolve path handling cross-scope permissions
@@ -203,7 +200,7 @@ func resourcePostHandler(w http.ResponseWriter, r *http.Request, d *requestConte
 	fileOpts := iteminfo.FileOptions{
 		Path:   scopePath,
 		Source: source,
-		Modify: d.user.Permissions.Modify,
+		Modify: d.user.Permissions.Admin,
 		Expand: false,
 	}
 	if strings.HasSuffix(path, "/") {
@@ -219,7 +216,7 @@ func resourcePostHandler(w http.ResponseWriter, r *http.Request, d *requestConte
 			logger.Debugf("Resource already exists: %v", fileInfo.RealPath)
 			return http.StatusConflict, nil
 		}
-		if !d.user.Permissions.Modify {
+		if !d.user.Permissions.Admin {
 			return http.StatusForbidden, nil
 		}
 		preview.DelThumbs(r.Context(), fileInfo)
@@ -243,7 +240,7 @@ func resourcePutHandler(w http.ResponseWriter, r *http.Request, d *requestContex
 			return http.StatusBadRequest, fmt.Errorf("invalid source encoding: %v", err)
 		}
 	}
-	if !d.user.Permissions.Modify {
+	if !d.user.Permissions.Admin {
 		return http.StatusForbidden, fmt.Errorf("user is not allowed to create or modify")
 	}
 	encodedPath := r.URL.Query().Get("path")
@@ -267,7 +264,7 @@ func resourcePutHandler(w http.ResponseWriter, r *http.Request, d *requestContex
 	fileOpts := iteminfo.FileOptions{
 		Path:   scopePath,
 		Source: source,
-		Modify: d.user.Permissions.Modify,
+		Modify: d.user.Permissions.Admin,
 		Expand: false,
 	}
 	// Handle EXIF updates
@@ -305,7 +302,7 @@ func resourcePutHandler(w http.ResponseWriter, r *http.Request, d *requestContex
 // resourcePatchHandler performs a patch operation (move/rename) on a resource.
 func resourcePatchHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
 	action := r.URL.Query().Get("action")
-	if !d.user.Permissions.Modify {
+	if !d.user.Permissions.Admin {
 		return http.StatusForbidden, fmt.Errorf("user is not allowed to create or modify")
 	}
 	encodedFrom := r.URL.Query().Get("from")
@@ -372,7 +369,7 @@ func resourcePatchHandler(w http.ResponseWriter, r *http.Request, d *requestCont
 	if rename {
 		realDest = addVersionSuffix(realDest)
 	}
-	if overwrite && !d.user.Permissions.Modify {
+	if overwrite && !d.user.Permissions.Admin {
 		return http.StatusForbidden, fmt.Errorf("forbidden: user does not have permission to overwrite file")
 	}
 	err = patchAction(r.Context(), action, realSrc, realDest, d, isSrcDir, srcIndex, dstIndex)
@@ -410,7 +407,7 @@ func patchAction(ctx context.Context, action, src, dst string, d *requestContext
 			Path:       srcPath,
 			Source:     srcIndex,
 			IsDir:      isSrcDir,
-			Modify:     d.user.Permissions.Modify,
+			Modify:     d.user.Permissions.Admin,
 			Expand:     false,
 			ReadHeader: false,
 		})
@@ -496,4 +493,71 @@ func resourceFixThumbnailsHandler(w http.ResponseWriter, r *http.Request, d *req
 	}
 
 	return http.StatusOK, nil
+}
+func resourceRebuildThumbnailsHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
+	if !d.user.Permissions.RebuildThumbnails && !d.user.Permissions.Admin {
+		return http.StatusForbidden, fmt.Errorf("user does not have permission to rebuild thumbnails")
+	}
+
+	encodedPath := r.URL.Query().Get("path")
+	path, _ := url.QueryUnescape(encodedPath)
+	source := r.URL.Query().Get("source")
+	if source == "" {
+		source = config.Server.DefaultSource.Name
+	} else {
+		source, _ = url.QueryUnescape(source)
+	}
+
+	// Resolve scope path
+	scopePath, realSource, err := ResolveScopePath(d.user, source, path)
+	if err != nil {
+		return http.StatusForbidden, err
+	}
+	source = realSource
+
+	// Get Real Path via Indexing/Files Adapter
+	idx := indexing.GetIndex(source)
+	if idx == nil {
+		return http.StatusNotFound, fmt.Errorf("source %s not found", source)
+	}
+
+	realFolderPath, isDir, err := idx.GetRealPath(scopePath)
+	if err != nil {
+		return http.StatusNotFound, err
+	}
+
+	if !isDir {
+		return http.StatusBadRequest, fmt.Errorf("rebuild thumbnails: path is not a directory")
+	}
+
+	// Walk the directory and clear thumbnails for each file
+	err = filepath.Walk(realFolderPath, func(fpath string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+
+		// Create mock FileInfo for DelThumbs
+		fileInfo := iteminfo.ExtendedFileInfo{
+			FileInfo: iteminfo.FileInfo{
+				ItemInfo: iteminfo.ItemInfo{
+					ModTime: info.ModTime(),
+					Name:    info.Name(),
+				},
+			},
+			RealPath: fpath,
+			Source:   source,
+		}
+
+		preview.DelThumbs(r.Context(), fileInfo)
+		return nil
+	})
+
+	if err != nil {
+		return http.StatusInternalServerError, err
+	}
+
+	return renderJSON(w, r, map[string]string{"status": "success"})
 }

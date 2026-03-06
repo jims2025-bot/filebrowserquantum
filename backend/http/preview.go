@@ -41,7 +41,7 @@ type FileCache interface {
 // @Failure 501 {object} map[string]string "Preview generation not implemented"
 // @Router /api/preview [get]
 func previewHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
-	logger.Debug(fmt.Sprintf("[previewHandler] ENTRY: Method=%s, Path=%s, Remote=%s", r.Method, r.URL.Path, r.RemoteAddr))
+	logger.Infof("[PreviewArrival] %s?%s", r.URL.Path, r.URL.RawQuery)
 	if config.Server.DisablePreviews {
 		return http.StatusNotImplemented, fmt.Errorf("preview is disabled")
 	}

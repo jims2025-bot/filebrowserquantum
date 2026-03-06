@@ -74,6 +74,12 @@
       @action="scanFaces"
     />
     <action
+      v-if="selectedCount == 1 && selectedItem && !selectedItem.isDir && user.permissions.manageFaces"
+      icon="face"
+      label="Scan File for Faces"
+      @action="scanFaces"
+    />
+    <action
       v-if="selectedCount <= 1 && showShare"
       icon="share"
       :label="$t('buttons.share')"
@@ -86,7 +92,7 @@
       show="rename"
     />
     <action
-      v-if="!showCreate && selectedCount > 0 && userPerms.modify"
+      v-if="!showCreate && selectedCount > 0 && userPerms.modify && user.permissions.admin"
       icon="content_copy"
       :label="$t('buttons.copyFile')"
       show="copy"

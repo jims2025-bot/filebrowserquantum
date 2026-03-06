@@ -131,7 +131,7 @@ func RemoveFaceFromIndex(name string, imagePath string) error {
 
 	_, err := DB.Exec(`
 		DELETE FROM face_index 
-		WHERE image_path = ? AND person_id = (SELECT id FROM people WHERE name = ?)
+		WHERE image_path = ? COLLATE NOCASE AND person_id = (SELECT id FROM people WHERE name = ?)
 	`, imagePath, name)
 
 	return err
@@ -414,4 +414,85 @@ func GetPeopleSummary(pathPrefix string) ([]PersonSummary, error) {
 		}
 	}
 	return results, nil
+}
+
+type FolderStat struct {
+	Path            string `json:"path"`
+	FaceCount       int    `json:"faceCount"`
+	UnverifiedCount int    `json:"unverifiedCount"`
+}
+
+type DatabaseStats struct {
+	TotalPeople     int          `json:"totalPeople"`
+	TotalFaces      int          `json:"totalFaces"`
+	TotalUnverified int          `json:"totalUnverified"`
+	Folders         []FolderStat `json:"folders"`
+}
+
+func GetDatabaseStats() (DatabaseStats, error) {
+	var stats DatabaseStats
+	if DB == nil {
+		return stats, fmt.Errorf("database not initialized")
+	}
+
+	err := DB.QueryRow("SELECT COUNT(*) FROM people").Scan(&stats.TotalPeople)
+	if err != nil {
+		return stats, err
+	}
+
+	err = DB.QueryRow("SELECT COUNT(*) FROM face_index").Scan(&stats.TotalFaces)
+	if err != nil {
+		return stats, err
+	}
+
+	err = DB.QueryRow("SELECT COUNT(*) FROM face_index WHERE confidence < 0.99").Scan(&stats.TotalUnverified)
+	if err != nil {
+		return stats, err
+	}
+
+	rows, err := DB.Query("SELECT image_path, confidence FROM face_index")
+	if err != nil {
+		return stats, err
+	}
+	defer rows.Close()
+
+	folderMap := make(map[string]*FolderStat)
+	for rows.Next() {
+		var path string
+		var confidence float64
+		if err := rows.Scan(&path, &confidence); err != nil {
+			continue
+		}
+
+		dir := filepath.Dir(path)
+		// Fix for Windows paths to ensure standard output or just use the raw dir
+		if _, ok := folderMap[dir]; !ok {
+			folderMap[dir] = &FolderStat{Path: dir}
+		}
+		folderMap[dir].FaceCount++
+		if confidence < 0.99 {
+			folderMap[dir].UnverifiedCount++
+		}
+	}
+
+	for _, f := range folderMap {
+		stats.Folders = append(stats.Folders, *f)
+	}
+
+	return stats, nil
+}
+
+func CleanUnverifiedFaces(folderPath string) error {
+	if DB == nil {
+		return fmt.Errorf("database not initialized")
+	}
+
+	if folderPath == "" {
+		_, err := DB.Exec("DELETE FROM face_index WHERE confidence < 0.99")
+		return err
+	}
+
+	cleanPath := filepath.Clean(folderPath) + string(os.PathSeparator)
+	_, err := DB.Exec("DELETE FROM face_index WHERE confidence < 0.99 AND image_path LIKE ?", cleanPath+"%")
+	return err
 }

@@ -322,10 +322,14 @@ backend/
 #### 5. Preview System
 **Location**: `backend/preview/`
 
-- Thumbnail generation (small: 256x256, thumb: 64x64)
-- EXIF metadata extraction
-- Video frame extraction
-- Caching
+- **Thumbnail Generation**:
+    - **Small**: 256x256 high-quality thumbnail.
+    - **Thumb**: 64x64 tiny icon.
+    - **Orientation**: Uses `imaging.AutoOrientation(true)` for standard previews. For face crops (`boxParam`), the system decodes the raw image, applies the crop, and then manually applies the EXIF orientation transformation to ensure the crop coordinates remain accurate to the original pixel grid while the output is correctly rotated.
+- **EXIF Metadata**: Extraction of IPTC, XMP, and standard EXIF tags.
+- **Video frame extraction**: Uses FFmpeg to pull frames.
+- **Caching**: Persistent disk-based cache using hashed filenames.
+- **Rebuild Mechanism**: The `rebuildThumbnails` API allows invalidating the cache for a folder and its subdirectories by recursively walking the directory and deleting corresponding cache files.
 
 #### 6. Heatmap System
 **Location**: `backend/heatmap/`
@@ -1758,8 +1762,14 @@ Audio files use the same architecture but with the `<audio>` element:
 Users can be assigned specific permissions (e.g., admin, create, rename, delete) to control their meaningful actions within the file browser.
 
 ### Map Location Permissions
-- **Permission**: updateMap`n- **Purpose**: Controls access to map regeneration and coordinate editing.
+- **Permission**: `updateMap`
+- **Purpose**: Controls access to map regeneration and coordinate editing.
 - **Frontend Effect**: Hides `Regenerate Heatmap` button and disables map editing inputs if permission is missing.
+
+### Thumbnails & Cache Permissions
+- **Permission**: `rebuildThumbnails`
+- **Purpose**: Allows users to manually clear the application's generated (cached) thumbnails for a folder to fix visual issues without affecting original files.
+- **Restriction**: Recommended for administrative or power users.
 
 ---
 
@@ -1786,11 +1796,17 @@ The application includes several advanced features restricted to users with **Ad
     - **Red Error (🚫)**: Critical issues (e.g., file corruption, zero bytes).
     - **Visibility**: These icons appear in the file list and inside the image preview (via "View Issue" button) **only for Admins**.
 
-#### 2. Thumbnail Repair
-- **Feature**: "Fix Thumbnails" button (`build`) in the main header.
-- **Purpose**: Forces regeneration of EXIF thumbnails and embedded metadata for all files in the folder (recursive).
+#### 2. EXIF Thumbnail Repair
+- **Feature**: "Fix EXIF Thumbnails" button (`build`) in the Folder Options dropdown.
+- **Purpose**: Forces regeneration of **embedded** EXIF thumbnails and metadata within the original files using ExifTool.
 - **Restriction**: **Admin Only**.
-- **Use Case**: Used when thumbnails appear black or corrupted due to bad existing embedded data.
+- **Use Case**: Used when thumbnails appear black or corrupted *inside other applications* because the file's embedded data is bad.
+
+#### 3. App Thumbnail Rebuild
+- **Feature**: "Rebuild App Thumbnails" button (`refresh`) in the Folder Options dropdown.
+- **Purpose**: Clears the **application's generated cache** for the current folder and subfolders.
+- **Restriction**: Requires `rebuildThumbnails` permission.
+- **Use Case**: Used when the web app's thumbnails are cropped or rotated incorrectly but the original file's EXIF is otherwise fine.
 
 #### 3. Heatmap Regeneration
 - **Feature**: "Regenerate Heatmap" button (`sync`) in the header.
@@ -2009,8 +2025,8 @@ The facial recognition system generates a `faces.json` file in each scanned dire
 #### 8. ACDSee Integration & Data Veracity
 **Location:** `backend/facerec/job.go` & `backend/http/facerec.go`
 - **Metadata Extraction:** The backend reads ACDSee's proprietary XMP region tags.
-- **Strict Data Siloing:** Auto-assigned ACDSee faces (where `NameAssignType` is missing or not 'Manual') are assigned a default confidence of `0.85` and are explicitly excluded from ML training to prevent model poisoning. Only ACDSee faces explicitly assigned as 'Manual' (`1.0` confidence) are ingested.
-- **Verification Duplication:** Approving an unverified ACDSee face via the frontend does not mutate the original ACDSee entry. Instead, the backend copies the bounding box data, asynchronously queries the Python server to calculate its embedding, and spawns a new verified ML face (`Source: "ml"`, `Confidence: 1.0`) leaving the original ACDSee data preserved in parallel.
+- **Verified Promotion:** ACDSee faces explicitly assigned as 'Manual' (1.0 confidence) are ingested into the same management pipeline as ML faces. They are mapped to the search index and used for recognition training.
+- **Unified Management:** Unlike unverified ACDSee regions (which remain read-only), 100% confidence verified ACDSee faces are promoted to the ML management list, allowing users to rename or remove them if needed.
 
 #### 9. Frontend Face UI & Interactions
 **Location:** `frontend/src/views/files/Preview.vue`
@@ -2020,7 +2036,227 @@ The facial recognition system generates a `faces.json` file in each scanned dire
   - **Purple:** Unverified ACDSee Faces
   - **Blue:** Verified ML Faces (Manually Renamed)
   - **Yellow / Orange:** Unverified ML Faces (Model Guesses)
-- **Rapid Verification Options:** Face bounding boxes feature floating action icons in their corners.
-  - Unverified ACDSee faces exhibit a single "Approve" checkmark to spawn an ML duplicate. This option hides itself automatically once duplicated.
-  - Unverified ML faces exhibit an "Approve" checkmark and a "Remove" cross, enabling rapid dataset pruning without relying on context menus.
-- **Autocomplete Renaming:** Right-clicking any face box opens a rename dialog featuring an autocomplete text box directly bound to the `people.db` library, preventing typos.
+- **Unified Face Management:** All face management (verify, rename, remove) is centralized in a list panel on the Face tab.
+- **Verified ACDSee & ML Synergy:** 100% confidence ACDSee faces are displayed in the ML list, permitting full management (renaming, removal). Standard (unverified) ACDSee faces remains read-only to preserve original file metadata.
+- **Immediate State Hydration:** When renaming, verifying, or deleting a face, the frontend actively mutates the current `searchResults` list in memory (`updateSearchThumbnailUrl`) to immediately reflect the new name and thumbnail crop. The thumbnail is intelligently updated by picking the best available face (ML or verified ACDSee) associated with that person.
+
+#### 10. Scan Decision Logic & Force Rules
+
+The system has three scan trigger modes with different skip behavior:
+
+| Trigger | Handler / Function | `force` | Skips Existing ML? |
+|---|---|:-:|:-:|
+| **Weekly background scan** | `ScanAllSources()` | `false` | ✅ Yes — skips as soon as it finds **even one** face with `source: "ml"` in that image's `faces.json` entry |
+| **UI: Scan single image** | `faceScanFileHandler` → `ScanFile()` | `true` | ❌ No — always re-processes |
+| **UI: Scan folder** | `faceScanFolderHandler` → `ScanFolder()` | `true` | ❌ No — always re-processes all images |
+
+**Per-Image Skip Logic (when `force=false`):**
+
+```mermaid
+flowchart TD
+    A["processSingleFile(image)"] --> B{"Image in faces.json?"}
+    B -- No --> D["Full Processing"]
+    B -- Yes --> C{"Any face with\nsource='ml'?"}
+    C -- "Yes (even just 1)" --> E["SKIP — already processed"]
+    C -- No --> F["NOT skipped —\nRun full ML Detection"]
+
+    D --> G["1. Extract ACDSee regions\n2. Run Python ML\n3. Match embeddings\n4. Save to faces.json + people.db"]
+    F --> G
+    
+    G --> H{"Did ML find any\nnon-overlapping faces?"}
+    H -- "Yes" --> I["ML entries saved → next\nweekly scan will SKIP"]
+    H -- "No (all filtered\nby IOU > 35%)" --> J["No ML entries saved →\nnext weekly scan will\nRE-PROCESS again"]
+```
+
+> [!IMPORTANT]
+> The weekly scan checks **per-image filename**, not per-folder. New photos added to an already-scanned folder will be detected and processed. Only images that already have at least one `source: "ml"`, `source: "ml_scanned"`, or `source: "deleted"` entry are skipped.
+
+> - **Deletion Persistence:** When a user removes a face via the UI, it is converted to a `"deleted"` marker (`source: "deleted"`, `confidence: -1.0`). 
+> - **Resurrection Prevention:** During a `force=true` scan (triggered by "Scan Image"), the backend merges existing `faces.json` data with freshly extracted ACDSee regions. If a fresh box overlaps an existing `"deleted"` marker via IOU, it is permanently suppressed. This prevents bad ACDSee regions from reappearing after the user has manually curated them out.
+> - Both markers (`ml_scanned` and `deleted`) ensure subsequent weekly scans skip the image entirely, honoring the user's explicit curation.
+
+**Full Scan Flow (per image):**
+
+```mermaid
+flowchart TD
+    START["processSingleFile"] --> SKIP{"Already has ML\ndata & !force?"}
+    SKIP -- Yes --> DONE["Skip"]
+    SKIP -- No --> ACDSEE["1. Extract ACDSee Regions\n(ExifTool: XMP mwg-rs)"]
+    
+    ACDSEE --> LEARN{"ACDSee face\nmanual (1.0)?"}
+    LEARN -- Yes --> EMB["Send to /learn endpoint\nGet 128-float embedding\nSave to people.db"]
+    LEARN -- No --> ML
+    EMB --> ML
+    
+    ML["2. Run Python /analyze\n(YuNet face detection)"] --> ORIENT["3. Convert ML boxes\noriented → raw pixel space\n(EXIF orientation)"]
+    
+    ORIENT --> AREA["4. Compute Area\n(oriented percentages\nfor Preview.vue overlay)"]
+    
+    AREA --> MATCH["5. Compare ML embeddings\nvs known faces in people.db\n(Cosine Similarity > 0.82)"]
+    
+    MATCH --> IOU["6. Filter duplicates\n(IOU > 35% overlap\nwith ACDSee faces)"]
+    
+    IOU --> SAVE["7. Save combined faces\nto faces.json + people.db"]
+    SAVE --> DONE2["Done"]
+```
+
+#### 11. Coordinate Space Architecture
+
+The face detection pipeline involves **two different coordinate spaces** that must be kept in sync:
+
+| Coordinate Space | Used By | Description |
+|---|---|---|
+| **Oriented / Display** | Python `cv2.imdecode`, browser `<img>`, Preview.vue overlay | Image as humans see it (EXIF rotation applied) |
+| **Raw / Stored** | Go `image.Decode`, `image.go` thumbnail cropping | Pixel data as stored in the JPEG file (no rotation) |
+
+**The Problem:** `cv2.imdecode()` in the Python ML server auto-applies EXIF rotation before detecting faces. The ML bounding boxes therefore come back in *oriented* space. But Go's `image.Decode()` reads *raw* pixels without rotation when generating face thumbnails.
+
+**The Solution — Dual Storage:**
+
+Each ML face entry in `faces.json` stores coordinates in **both** spaces:
+
+```json
+{
+  "box": [ry1, rx2, ry2, rx1],
+  "Area": { "X": 0.45, "Y": 0.52, "W": 0.12, "H": 0.15 },
+  "source": "ml"
+}
+```
+
+- **`box`** → Raw pixel coordinates → Used by `image.go` for correct thumbnail cropping
+- **`Area`** → Oriented percentages (0–1 range, center + size format) → Used by Preview.vue for correct face overlay positioning
+
+**Coordinate Conversion Pipeline:**
+
+```mermaid
+flowchart LR
+    PY["Python cv2.imdecode\n(auto-rotates)"] --> |"Oriented box\n[y1,x2,y2,x1]"| GO["Go processSingleFile"]
+    
+    GO --> |"Step 1"| AREA["Compute Area\n(÷ display dimensions)"]
+    GO --> |"Step 2"| RAW["convertOrientedBoxToRaw\n(inverse EXIF transform)"]
+    
+    AREA --> |"Oriented %"| JSON_A["faces.json → Area field\n→ Preview.vue overlay"]
+    RAW --> |"Raw pixels"| JSON_B["faces.json → box field\n→ image.go thumbnail crop\n→ people.db search index"]
+```
+
+**EXIF Orientation Transform (`convertOrientedBoxToRaw`):**
+
+The following mathematical inversions convert oriented space `[oy1, ox2, oy2, ox1]` back to raw stored pixels `[ry1, rx2, ry2, rx1]`:
+
+| Orientation | Transform | Display Dimensions | Inverse Math for `[rx1, rx2, ry1, ry2]` |
+|:-:|---|---|---|
+| 1 | None (identity) | W×H | Unchanged |
+| 2 | Flip Horizontal | W×H | `rx1 = rawW - ox2`<br>`rx2 = rawW - ox1` |
+| 3 | Rotate 180° | W×H | `rx1 = rawW - ox2`<br>`ry1 = rawH - oy2`<br>`rx2 = rawW - ox1`<br>`ry2 = rawH - oy1` |
+| 4 | Flip Vertical | W×H | `ry1 = rawH - oy2`<br>`ry2 = rawH - oy1` |
+| 5 | Transpose | H×W (swapped) | `rx1 = oy1`<br>`rx2 = oy2`<br>`ry1 = ox1`<br>`ry2 = ox2` |
+| 6 | Rotate 90° CW | H×W (swapped) | `rx1 = oy1`<br>`rx2 = oy2`<br>`ry1 = rawH - ox2`<br>`ry2 = rawH - ox1`|
+| 7 | Transverse | H×W (swapped) | `rx1 = rawW - oy2`<br>`rx2 = rawW - oy1`<br>`ry1 = rawH - ox2`<br>`ry2 = rawH - ox1` |
+| 8 | Rotate 270° CW | H×W (swapped) | `rx1 = rawW - oy2`<br>`rx2 = rawW - oy1`<br>`ry1 = ox1`<br>`ry2 = ox2` |
+
+> [!NOTE]
+> Orientations 5–8 swap the display width and height relative to the raw stored dimensions. The conversion functions in `job.go` (`getImageExifInfo` and `convertOrientedBoxToRaw`) handle all 8 cases using `image.DecodeConfig` to guarantee the true raw pixel padding limits.
+
+**Float Tolerance for Box Comparisons:**
+Since JSON parsing and network transport across the frontend/backend divide introduces floating point precision instability, updating or deleting an existing face in `faces.json` requires calculating the Absolute difference between coordinates instead of strict equality. A threshold of `math.Abs(diff) < 2.0` pixels is utilized when finding target face indices based on their bounding box arrays.
+
+**ACDSee Coordinate Handling (for comparison):**
+ACDSee stores face regions in MWG standard format — always in *oriented/viewed* space as percentages `[vx, vy, vw, vh]`. `ExtractACDSeeRegions` in `job.go` performs a similar inverse orientation transform to convert these percentages to raw pixel space. 
+> [!TIP]
+> **Pixel-Perfect Dimensions:** The extraction uses `image.DecodeConfig` to identify the *true* raw pixel dimensions of the decoded JPEG (including MCU padding), matching exactly what the backend cropping tool sees and preventing "black row" artifacts or slight thumbnail offsets often caused by purely metadata-based dimension reporting.
+
+#### 12. Data Storage Summary
+
+Face data lives in two complementary stores:
+
+```mermaid
+flowchart TD
+    subgraph "Per-Folder (Disk)"
+        FJ["faces.json"]
+        FJ --> |"Per image"| ENTRY["filename → FaceEntry[]"]
+        ENTRY --> BOX["box: raw pixels\n(thumbnail crop)"]
+        ENTRY --> AREA2["Area: oriented %\n(display overlay)"]
+        ENTRY --> EMB2["embedding: 128-float\n(recognition)"]
+        ENTRY --> META["name, confidence,\nsource (acdsee/ml)"]
+    end
+    
+    subgraph "Global (SQLite)"
+        PDB["people.db"]
+        PDB --> PEOPLE["people table\n(unique names)"]
+        PDB --> FIDX["face_index table\n(person_id, image_path,\nconfidence, box string)"]
+        PDB --> FEMB["face_embeddings table\n(person_id, image_path,\nembedding blob)"]
+    end
+    
+    ENTRY -.->|"MapFaceToIndex\n(UPSERT)"| FIDX
+    EMB2 -.->|"SaveFaceEmbedding\n(UPSERT)"| FEMB
+```
+
+**Key UPSERT Behavior:**
+- `face_index` has a `UNIQUE(person_id, image_path)` constraint — re-scanning updates existing records, never creates duplicates.
+- `face_embeddings` uses `INSERT OR REPLACE` — same upsert safety.
+- Deleting `faces.json` and re-scanning is safe: `people.db` records get updated in-place.
+
+---
+
+## 17. Unified Header & Folder Options
+
+[↑ Back to Top](#table-of-contents)
+
+The application utilizes a **Unified Header** (`Default.vue`) to provide consistent navigation and action access across its different views.
+
+### Folder Options Dropdown
+To maintain a clean and uncluttered user interface, folder-level actions are consolidated into a single **"Folder Options"** dropdown menu (`more_vert`) in the header.
+
+**Consolidated Actions**:
+- **Folder Info**: Opens the `FolderDetails` modal for editing notes and people lists.
+- **Face Scan**: Triggers an asynchronous ML face detection and recognition job.
+- **Regenerate Heatmap**: Forces a rebuild of the geographic cluster data.
+- **Integrity Check**: (Admin Only) Runs a file corruption and metadata validation scan.
+- **Jobs**: (Admin Only) Opens the background task management panel.
+- **Fix EXIF Thumbnails**: (Admin Only) Repipes original file metadata to fix embedded thumbnails.
+- **Rebuild App Thumbnails**: (Permission Based) Clears the application's generated cache for the current folder.
+
+### 18. User Permissions & Access Control
+
+[↑ Back to Top](#table-of-contents)
+
+The application implements a granular permission system to control access to sensitive features, particularly focusing on administrative tasks and computational-heavy face management. All permissions are configured via the User Administration interface.
+
+| Permission Key | UI Title | Description | Scope |
+|---|---|---|---|
+| `admin` | Administrator | Full system access. Can manage all users, global settings, and system-level operations. | Global |
+| `modify` | Edit Image Notes | Allows the user to update the Notes (Photoshop Instructions - XMP). | Global |
+| `manageFaces` | File Manual Face Management | Allows manual management of faces (rename, verify, remove) and running face scans for individual files. | Single File |
+| `runFaceScan` | Manual Folder Face Scans | Allows triggering facial recognition scans on entire folders and managing the "People" list in the Folder Info screen. | Folder/Global |
+| `share` | Share files | Allows creating public links to files and folders with optional passwords and expiration. | Global |
+| `api` | API Access | Allows managing long-lived API keys for external integration. | Global |
+| `realtime` | Real-time Updates | Enables live synchronization of file changes across devices via WebSockets. | Global |
+| `updateMap` | Update Map Locations | Allows manual correction of photo GPS coordinates via the heatmap interface. | Global |
+| `manageServiceShares` | Create Service Shares | Allows creating shares that present the full application interface instead of the public share view. | Global |
+| `rebuildThumbnails`| Rebuild Thumbnails | Allows clearing and regenerating cached app thumbnails to fix rotation or cropping issues. | Folder |
+
+> [!IMPORTANT]
+> **File Management Restriction**: Actions such as Renaming, Moving, Deleting, and Uploading files or directories are strictly restricted to the **Administrator** (`admin`) permission. The **Edit Image Notes** (`modify`) permission only grants access to edit image metadata (Notes/XMP).
+
+#### Face Management Permission Split
+
+To provide refined user control and prevent accidental triggering of heavy processing, face management is explicitly split:
+
+1.  **File Manual Face Management (`manageFaces`)**:
+    *   **Scope**: Individual files.
+    *   **Capabilities**: Allows running the ML detection pipeline on a single image and managing its faces in the ML tab of `Preview.vue`.
+    *   **UI Influence**: Enables "Scan File for Faces" in the context menu for single items.
+
+2.  **Manual Folder Face Scans (`runFaceScan`)**:
+    *   **Scope**: Hierarchical/Deep scans.
+    *   **Capabilities**: Allows triggering full recursive scans of folders from the Header or Folder Context Menu.
+    *   **UI Influence**: Grants access to the **Face Management** (previously Face Database) management screen for global unverified face cleanup and statistics.
+
+> [!NOTE]
+> Visibility of header and context menu actions is strictly gated by these permissions. If a user lacks a permission, the corresponding action will be hidden from the UI to maintain a clean experience.
+
+### View Switching
+The header provides instant view mode switching (List, Compact, Normal, Gallery) which is persisted to the user's profile and synchronized across all devices.
+
+### Search Integration
+The global search icon triggers the `SearchPrompt.vue` interface, which is seamlessly integrated into the header's layout.

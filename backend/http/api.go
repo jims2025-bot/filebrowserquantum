@@ -294,6 +294,9 @@ func resourceGetInstructionsHandler(w http.ResponseWriter, r *http.Request, d *r
 // @Failure 500 {object} map[string]string "Internal server error"
 // @Router /api/resources/instructions [post]
 func resourceInstructionsHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
+	if !d.user.Permissions.Modify && !d.user.Permissions.Admin {
+		return http.StatusForbidden, fmt.Errorf("user does not have permission to edit image notes")
+	}
 	source := r.URL.Query().Get("source")
 	path := r.URL.Query().Get("path")
 	instructions := r.URL.Query().Get("instructions")

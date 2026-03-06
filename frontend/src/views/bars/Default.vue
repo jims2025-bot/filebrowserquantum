@@ -36,46 +36,48 @@
       :label="$t('sidebar.heatmap')"
       @action="openHeatmap"
     />
-    <action
-      v-if="isListingView"
-      icon="folder_open"
-      label="Folder Info"
-      @action="openFolderDetails"
-    />
-    <action
-      v-if="isListingView && canRunFaceScan"
-      icon="face"
-      :label="isScanningFaces ? 'Scanning Faces...' : 'Scan Folder for Faces'"
-      :disabled="isScanningFaces"
-      :class="{ 'spin-action': isScanningFaces }"
-      @action="scanFolderFaces"
-    />
-    <action
-      v-if="isListingView && canRegenerate"
-      icon="sync"
-      :label="regenerationLabel"
-      :disabled="isRegenerating"
-      @action="handleRegenerateHeatmap"
-    />
-    <action
-      v-if="showIntegrityCheck"
-      icon="security"
-      label="Integrity Check"
-      @action="handleIntegrityCheck"
-    />
-    <action
-      v-if="isAdmin"
-      icon="schedule"
-      label="Jobs"
-      @action="openAdminJobs"
-    />
 
-     <action
-      v-if="showThumbnailFix"
-      icon="build"
-      :label="$t('files.fixThumbnails')"
-      @action="confirmThumbnailFix"
-    />
+    <div v-if="isListingView" class="folder-options-container">
+      <action
+        icon="more_vert"
+        label="Folder Options"
+        @action="showFolderMenu = !showFolderMenu"
+      />
+      <div v-if="showFolderMenu" class="folder-dropdown" @click="showFolderMenu = false">
+        <div class="dropdown-item" @click="openFolderDetails">
+          <i class="material-icons">info</i>
+          <span>Folder Info</span>
+        </div>
+        <div class="dropdown-item" v-if="canRunFaceScan" :class="{ 'disabled': isScanningFaces }" @click="scanFolderFaces">
+          <i class="material-icons" :class="{ 'spin-action': isScanningFaces }">face</i>
+          <span>{{ isScanningFaces ? 'Scanning Faces...' : 'Scan Folder for Faces' }}</span>
+        </div>
+        <div class="dropdown-item" v-if="canRegenerate" :class="{ 'disabled': isRegenerating }" @click="handleRegenerateHeatmap">
+          <i class="material-icons">sync</i>
+          <span>{{ regenerationLabel }}</span>
+        </div>
+        <div class="dropdown-item" v-if="showIntegrityCheck" @click="handleIntegrityCheck">
+          <i class="material-icons">security</i>
+          <span>Integrity Check</span>
+        </div>
+        <div class="dropdown-item" v-if="isAdmin" @click="openAdminJobs">
+          <i class="material-icons">schedule</i>
+          <span>Jobs</span>
+        </div>
+        <div class="dropdown-item" v-if="showThumbnailFix" @click="confirmThumbnailFix">
+          <i class="material-icons">build</i>
+          <span>Fix EXIF Thumbnails</span>
+        </div>
+        <div class="dropdown-item" v-if="canRebuildThumbnails" @click="confirmRebuildThumbnails">
+          <i class="material-icons">refresh</i>
+          <div class="item-text-group">
+            <span class="main-label">Rebuild App Thumbnails</span>
+            <span class="sub-label">Clears generated cache to fix rotation/cropping. Does NOT modify original file's EXIF thumbnails.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <action
       v-if="isListingView"
       :icon="viewIcon"
@@ -166,6 +168,7 @@ export default {
       selectedMapOverlay: "",
       isFlashing: false,
       breadcrumbVisible: true,
+      showFolderMenu: false,
     };
   },
   computed: {
@@ -268,6 +271,9 @@ export default {
     },
     showThumbnailFix() {
        return getters.currentView() === 'listingView' && state.user.permissions.admin;
+    },
+    canRebuildThumbnails() {
+       return getters.currentView() === 'listingView' && state.user.permissions.rebuildThumbnails;
     },
     isAdmin() {
       return !!state.user.permissions.admin;
@@ -436,6 +442,21 @@ export default {
          notify.showSuccess("Thumbnail fix job done!");
        } catch (e) {
           notify.showError("Thumbnail fix failed: " + e.message);
+       }
+    },
+    confirmRebuildThumbnails() {
+       if (confirm("Are you sure you want to rebuild thumbnails for ALL files in this folder and subfolders?\n\nThis CLEARS the application's generated (cached) thumbnails to fix rotation or cropping issues. It does NOT modify the original file's embedded EXIF thumbnails.")) {
+           this.handleRebuildThumbnails();
+       }
+    },
+    async handleRebuildThumbnails() {
+       notify.showSuccess("Starting thumbnail rebuild process...");
+       try {
+         await filesApi.rebuildThumbnails(this.req.path);
+         notify.showSuccess("Thumbnail rebuild requested! Fresh thumbnails will generate as you browse.");
+         this.showFolderMenu = false;
+       } catch (e) {
+          notify.showError("Thumbnail rebuild failed: " + e.message);
        }
     },
     async checkFileIntegrity() {
@@ -834,4 +855,79 @@ header {
     }
 }
 
+/* Folder Options Dropdown */
+.folder-options-container {
+    position: relative;
+    display: inline-block;
+}
+
+.folder-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    background-color: white;
+    box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+    border-radius: 8px;
+    padding: 8px 0;
+    z-index: 1001;
+    min-width: 320px;
+    margin-top: 8px;
+    border: 1px solid rgba(0,0,0,0.1);
+    animation: fadeIn 0.15s ease-out;
+}
+
+.dark-mode-header .folder-dropdown {
+    background-color: #2c2c2c;
+    border-color: #444;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+}
+
+.dropdown-item {
+    padding: 12px 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transition: background-color 0.15s;
+    color: var(--textPrimary);
+    text-align: left;
+}
+
+.dropdown-item:hover {
+    background-color: rgba(0,0,0,0.05);
+}
+
+.dark-mode-header .dropdown-item:hover {
+    background-color: rgba(255,255,255,0.08);
+}
+
+.dropdown-item i {
+    font-size: 20px;
+    color: var(--textSecondary);
+    flex-shrink: 0;
+}
+
+.dropdown-item.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.dropdown-item .item-text-group {
+    display: flex;
+    flex-direction: column;
+}
+
+.dropdown-item .main-label {
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.dropdown-item .sub-label {
+    font-size: 11px;
+    color: var(--textSecondary);
+    opacity: 0.8;
+    line-height: 1.3;
+    margin-top: 2px;
+    white-space: normal;
+}
 </style>

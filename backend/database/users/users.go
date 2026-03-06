@@ -37,6 +37,8 @@ type Permissions struct {
 	ManageServiceShares bool `json:"manageServiceShares"`
 	ManageFaces         bool `json:"manageFaces"`
 	RunFaceScan         bool `json:"runFaceScan"`
+	ViewACDSee          bool `json:"viewACDSee"`
+	RebuildThumbnails   bool `json:"rebuildThumbnails"`
 }
 
 // SortingSettings represents the sorting settings.

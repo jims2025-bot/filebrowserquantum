@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div 
     id="previewer" 
     @mousemove="toggleNavigation" 
@@ -32,53 +32,11 @@
                       :key="index"
                       class="face-box"
                       :style="getFaceBoxStyle(region)"
-                      @contextmenu.prevent="showFaceContextMenu($event, region)"
-                      @click.stop="showFaceContextMenu($event, region)"
                     >
                       <span class="face-label" :style="{ fontSize: faceFontSize + 'px', fontWeight: 'bold', top: -faceFontSize * 1.5 + 'px', left: '-4px', padding: '2px 8px', borderRadius: '4px 4px 0 0', backgroundColor: getFaceBoxColor(region, 0.95), color: '#000', whiteSpace: 'nowrap' }">
-                        {{ region.Name || 'Unknown' }}
-                        <span v-if="region.Source === 'ml'" style="font-size: 0.7em; margin-left: 4px;"> ({{ (region.Confidence * 100).toFixed(1) }}%)</span>
+                        {{ region.DisplayName || region.Name || 'Unknown' }}
+                        <span v-if="region.Source === 'ml' && region.Name && region.Name !== 'Unknown'" style="font-size: 0.7em; margin-left: 4px;"> ({{ (region.Confidence * 100).toFixed(1) }}%)</span>
                       </span>
-
-                      <!-- Quick Verify Button overlay inside the box for ACDSee -->
-                      <div
-                        v-if="region.Source === 'acdsee' && region.Confidence < 1.0 && !hasMatchingMLFace(region) && !isMobile"
-                        @click.stop="quickVerifyFace(region)"
-                        @mousedown.stop
-                        @touchstart.stop
-                        title="Verify and Add to ML Learning Database"
-                        style="position: absolute; bottom: 5px; right: 5px; background: rgba(255,255,255,0.95); border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.5); z-index: 10;"
-                      >
-                        <i class="material-icons" style="color: #4CAF50; font-size: 20px;">check_circle</i>
-                      </div>
-
-                      <!-- Quick Action Buttons for Unverified ML Faces -->
-                      <div
-                        v-if="region.Source === 'ml' && region.Confidence < 1.0 && !isMobile"
-                        style="position: absolute; bottom: 5px; right: 5px; display: flex; gap: 12px; z-index: 10;"
-                      >
-                        <!-- Verify (Approve) -->
-                         <div
-                          v-if="region.Name && region.Name !== 'Unknown'"
-                          @click.stop="quickVerifyFace(region)"
-                          @mousedown.stop
-                          @touchstart.stop
-                          title="Confirm this person"
-                          style="background: rgba(255,255,255,0.95); border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.5);"
-                        >
-                          <i class="material-icons" style="color: #4CAF50; font-size: 20px;">check_circle</i>
-                        </div>
-                        <!-- Deny (Remove) -->
-                         <div
-                          @click.stop="quickRemoveFace(region)"
-                          @mousedown.stop
-                          @touchstart.stop
-                          title="Not this person (Remove)"
-                          style="background: rgba(255,255,255,0.95); border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.5);"
-                        >
-                          <i class="material-icons" style="color: #F44336; font-size: 20px;">cancel</i>
-                        </div>
-                      </div>
                     </div>
                   </div>
                 </div>
@@ -182,30 +140,7 @@
           </div>
        </div>
 
-       <!-- Face Context Menu (Floating) -->
-       <div 
-         v-if="faceContextMenu.show" 
-         class="face-context-menu"
-         :style="{ top: faceContextMenu.top + 'px', left: faceContextMenu.left + 'px', position: 'absolute', zIndex: 1000 }"
-       >
-          <div class="face-menu-header">
-             <b>{{ faceContextMenu.region.Name || 'Unknown' }}</b>
-             <button @click="closeFaceContextMenu" class="close-icon"><i class="material-icons">close</i></button>
-          </div>
-          <div class="face-menu-body" v-if="canManageFaces">
-             <input type="text" list="rename-people-list" v-model="faceContextMenu.editName" placeholder="Rename person..." @keyup.enter="renameFace" class="input input--block" />
-             <datalist id="rename-people-list" v-if="peopleList && peopleList.length">
-               <option v-for="person in peopleList" :value="person.name" :key="person.name"></option>
-             </datalist>
-             <div class="button-row">
-               <button @click="renameFace" class="button button--flat" style="background: rgba(255, 255, 255, 0.85); color: #333; font-weight: 500;">Rename</button>
-               <button @click="removeFace" class="button button--flat" style="background: rgba(255, 255, 255, 0.85); color: #d32f2f; font-weight: 500;">Remove</button>
-             </div>
-          </div>
-          <div class="face-menu-body" v-else>
-             <p class="small" style="color:#999; margin: 0;">You do not have permission to manage faces.</p>
-          </div>
-       </div>
+
 
     </div>
 	
@@ -314,12 +249,14 @@
 		</div> 
 
         <div v-if="activeTab === 'xmp'" class="tab-pane">
-          <h3>FACE</h3>
+          <h3 :title="'Machine Learning Face Data'">
+            {{ canViewACDSee ? 'ACDSee and ML Face Data' : 'ML Face Data' }}
+          </h3>
           
           <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
             <button 
-              v-if="hasAnyFaceData"
-              @click="showACDSeeFaces = !showACDSeeFaces" 
+              v-if="hasAnyFaceData && canViewACDSee"
+              @click="showACDSeeFaces = !showACDSeeFaces; if (showACDSeeFaces) showMLFaces = false;" 
               class="button button--flat" 
               :style="showACDSeeFaces ? 'color: var(--accent-green); background: rgba(66, 185, 131, 0.1); border: 1px solid var(--accent-green);' : 'opacity: 0.5; border: 1px solid transparent;'"
               style="padding: 0.2rem 0.5rem; min-height: unset; margin:0; display: flex; align-items: center; gap: 4px;" 
@@ -330,7 +267,7 @@
             </button>
             <button 
               v-if="hasAnyFaceData"
-              @click="showMLFaces = !showMLFaces" 
+              @click="showMLFaces = !showMLFaces; if (showMLFaces) showACDSeeFaces = false;" 
               class="button button--flat" 
               :style="showMLFaces ? 'color: var(--accent-yellow); background: rgba(255, 235, 59, 0.1); border: 1px solid var(--accent-yellow);' : 'opacity: 0.5; border: 1px solid transparent;'"
               style="padding: 0.2rem 0.5rem; min-height: unset; margin:0; display: flex; align-items: center; gap: 4px;" 
@@ -357,38 +294,73 @@
                style="width: 100%; cursor: pointer;"
              >
           </div>
-          <div v-if="metadata && metadata.xmp && Object.keys(metadata.xmp).length > 0" class="metadata-table">
-            <table v-if="faceRegions.length > 0">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Details</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(region, index) in faceRegions" :key="index">
-                  <td>{{ region.Name || 'Unnamed' }}</td>
-                  <td style="word-break: break-all; white-space: pre-wrap;">{{ JSON.stringify(region) }}</td>
-                </tr>
-              </tbody>
-            </table>
-            <table v-else>
-              <thead>
-                <tr>
-                  <th>Key</th>
-                  <th>Value</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(value, key) in metadata.xmp" :key="key">
-                  <td>{{ key }}</td>
-                  <td style="word-break: break-all; white-space: pre-wrap;">{{ JSON.stringify(value) }}</td>
-                </tr>
-              </tbody>
-            </table>
+          <!-- Face List Panel -->
+          <div v-if="faceRegions.length > 0">
+            <!-- Toolbar: All / None / Remove Selected -->
+            <div v-if="canManageFaces" style="display: flex; gap: 6px; align-items: center; margin-bottom: 8px; padding: 4px 0;">
+              <button @click.stop="selectAllFaces" class="button button--flat" style="font-size: 10px; padding: 2px 6px; min-height: unset;">All</button>
+              <button @click.stop="unselectAllFaces" class="button button--flat" style="font-size: 10px; padding: 2px 6px; min-height: unset;">None</button>
+              <button v-if="selectedFaceIndices.length > 0"
+                @click.stop="removeSelectedFaces"
+                class="button button--flat"
+                style="font-size: 10px; padding: 2px 6px; min-height: unset; color: #f44336; margin-left: auto;">
+                <i class="material-icons" style="font-size: 13px; vertical-align: middle;">delete</i>
+                Remove ({{ selectedFaceIndices.length }})
+              </button>
+            </div>
+
+            <!-- Face rows -->
+            <div v-for="(region, index) in faceRegions" :key="'fl-' + index"
+                 style="border-bottom: 1px solid rgba(255,255,255,0.08); padding: 5px 0;">
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <!-- Checkbox -->
+                <input v-if="canManageFaces && (region.Source === 'ml' || (region.Source === 'acdsee' && region.Confidence === 1.0))" type="checkbox" v-model="selectedFaceIndices" :value="index"
+                       @click.stop
+                       style="margin: 0; cursor: pointer; flex-shrink: 0;">
+                <div v-else-if="canManageFaces" style="width: 13px; margin: 0; flex-shrink: 0;"></div>
+                <!-- Color dot -->
+                <span :style="{ color: getFaceBoxColor(region, 1.0), fontSize: '14px', flexShrink: 0 }">●</span>
+                <!-- Name (click to start rename) -->
+                <span v-if="renamingFaceIndex !== index"
+                      :style="{ fontWeight: '500', flex: '1', cursor: (canManageFaces && (region.Source === 'ml' || (region.Source === 'acdsee' && region.Confidence === 1.0))) ? 'pointer' : 'default', minWidth: '0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }"
+                      :title="region.DisplayName"
+                      @click.stop="canManageFaces && (region.Source === 'ml' || (region.Source === 'acdsee' && region.Confidence === 1.0)) && startRename(index, region)">
+                  {{ region.DisplayName }}
+                </span>
+                <!-- Inline rename input -->
+                <div v-else style="flex: 1; display: flex; gap: 4px; align-items: center; min-width: 0;">
+                  <input type="text" list="rename-people-list-inline"
+                         v-model="renameInput"
+                         @keyup.enter="submitInlineRename(index, region)"
+                         @keyup.escape="renamingFaceIndex = -1"
+                         placeholder="Name..."
+                         ref="inlineRenameInput"
+                         class="input" style="flex: 1; height: 22px; font-size: 12px; padding: 1px 4px; min-width: 60px;">
+                  <button @click.stop="submitInlineRename(index, region)" class="button button--flat" style="padding: 1px 4px; min-height: unset; font-size: 11px;">✓</button>
+                  <button @click.stop="renamingFaceIndex = -1" class="button button--flat" style="padding: 1px 4px; min-height: unset; font-size: 11px;">✕</button>
+                </div>
+                <!-- Verify button (for unverified faces with a name) -->
+                <button
+                  v-if="canManageFaces && renamingFaceIndex !== index && region.Confidence < 1.0 && region.Name && region.Name !== 'Unknown' && region.Source === 'ml'"
+                  @click.stop="quickVerifyFace(region)"
+                  class="button button--flat"
+                  title="Verify this face"
+                  style="padding: 1px; min-height: unset; color: #4CAF50; flex-shrink: 0;">
+                  <i class="material-icons" style="font-size: 16px;">check_circle</i>
+                </button>
+                <!-- Source + confidence -->
+                <span style="font-size: 10px; opacity: 0.5; flex-shrink: 0; white-space: nowrap;"
+                >{{ region.Source }} {{ region.Confidence ? (region.Confidence * 100).toFixed(0) + '%' : '' }}</span>
+              </div>
+            </div>
+            <!-- Shared datalist for inline rename autocomplete -->
+            <datalist id="rename-people-list-inline" v-if="peopleList && peopleList.length">
+              <option v-for="person in peopleList" :value="person.name" :key="'rl-' + person.name"></option>
+            </datalist>
           </div>
-          <p v-else-if="metadata && (!metadata.xmp || Object.keys(metadata.xmp).length === 0)">No XMP data found for this file.</p>
-          <p v-else>Loading XMP metadata...</p>
+          <p v-else-if="hasAnyFaceData">Toggle ACDSee or ML faces above to see face data.</p>
+          <p v-else-if="metadata && (!metadata.xmp || Object.keys(metadata.xmp).length === 0)">No face data found. Use the scan button to detect faces.</p>
+          <p v-else>Loading...</p>
         </div>
 
           <div v-show="activeTab === 'map'" class="tab-pane" style="height: 100%; display: flex; flex-direction: column; overflow-y: auto;">
@@ -697,8 +669,11 @@ export default {
       jsonCopied: false, // copy-button flash state
       isPreFetching: false, // background scan status
       facesData: [], // Store JSON parsed faces
-      showACDSeeFaces: true, // Toggle ACDSee faces
-      showMLFaces: true,     // Toggle ML faces
+      showACDSeeFaces: false, // Toggle ACDSee faces (off by default, ML is primary)
+      showMLFaces: true,     // Toggle ML faces (default TRUE)
+      selectedFaceIndices: [], // For bulk face selection
+      renamingFaceIndex: -1,   // Index of face being renamed inline (-1 = none)
+      renameInput: '',         // Current inline rename text
       faceContextMenu: {
         show: false,
         top: 0,
@@ -757,6 +732,23 @@ export default {
           }
         });
 
+        // Filter out ml_scanned markers and explicitly rejected faces
+        mapped = mapped.filter(f => f.Source !== 'ml_scanned');
+
+        // Number unknown faces with compact display names
+        let unknownCounter = 0;
+        mapped.forEach(f => {
+          if (!f.Name || f.Name === 'Unknown') {
+            unknownCounter++;
+            f.DisplayName = `#${unknownCounter}`;
+          } else {
+            f.DisplayName = f.Name;
+          }
+        });
+
+        // Ignore explicitly rejected faces
+        mapped = mapped.filter(f => f.Confidence === undefined || f.Confidence >= 0);
+
         // Filter based on toggles
         if (!this.showACDSeeFaces && !this.showMLFaces) {
             mapped = [];
@@ -803,13 +795,16 @@ export default {
       return combinedFaces;
     },
     canRunFaceScan() {
-      return state.user?.permissions?.runFaceScan === true && this.previewType === 'image';
+      // In Preview.vue, we check File Management permission for single file scans
+      return state.user?.permissions?.manageFaces === true && this.previewType === 'image';
     },
     acdseeFaceCount() {
-       return this.faceRegions.filter(f => f.Source === 'acdsee').length;
+       if (!this.facesData) return 0;
+       return this.facesData.filter(f => f.source === 'acdsee').length;
     },
     mlFaceCount() {
-       return this.faceRegions.filter(f => f.Source === 'ml' || (f.Source === 'acdsee' && f.Confidence === 1.0)).length;
+       if (!this.facesData) return 0;
+       return this.facesData.filter(f => f.source === 'ml' || (f.source === 'acdsee' && f.confidence === 1.0)).length;
     },
     canShare() {
       // Check if basic sharing is supported. Strict file sharing check happens at runtime or we assume support if navigator.share exists.
@@ -844,6 +839,9 @@ export default {
     },
     canManageFaces() {
         return state.user?.permissions?.manageFaces === true;
+    },
+    canViewACDSee() {
+        return state.user?.permissions?.viewACDSee === true || state.user?.permissions?.admin === true;
     },
 
     sidebarShowing() {
@@ -1398,6 +1396,40 @@ export default {
     }
   },
   methods: {
+    updateSearchThumbnailUrl(boxArray) {
+      if (!this.req || typeof this.req.thumbnailUrl !== 'string') return;
+      if (!Array.isArray(boxArray) || boxArray.length < 4) return;
+      
+      const newBoxStr = boxArray.join(',');
+      let url = this.req.thumbnailUrl;
+      
+      if (url.includes('&box=')) {
+         url = url.replace(/&box=[^&]*/, '&box=' + newBoxStr);
+      } else if (url.includes('?box=')) {
+         url = url.replace(/\?box=[^&]*/, '?box=' + newBoxStr);
+      } else {
+         url += (url.includes('?') ? '&' : '?') + 'box=' + newBoxStr;
+      }
+      
+      // Update the known box so it naturally follows
+      this.req.box = newBoxStr;
+      
+      // Cache-bust to force Icon.vue to reload image
+      url = url.replace(/&_t=\d+/, ''); 
+      url += '&_t=' + Date.now();
+      
+      this.req.thumbnailUrl = url;
+      
+      // Reactively mutate the matching item in the parent listing (search results)
+      if (this.listing && this.listing.length > 0) {
+        // Find the corresponding item in the list
+        const listIndex = this.listing.findIndex(item => item.name === this.req.name && item.path === this.req.path);
+        if (listIndex !== -1) {
+          this.listing[listIndex].box = newBoxStr;
+          this.listing[listIndex].thumbnailUrl = url;
+        }
+      }
+    },
     async checkScanStatus() {
         try {
             const { getFaceScanStatus } = await import('@/api/files');
@@ -1412,7 +1444,18 @@ export default {
                         clearInterval(this.scanInterval);
                         this.scanInterval = null;
                         notify.showSuccess(`Finished scanning faces`);
-                        this.fetchFacesData(); // reload
+                        await this.fetchFacesData(); // reload
+                        
+                        // Smart thumbnail updater: if we are in a face search result context
+                        if (this.req && typeof this.req.thumbnailUrl === 'string' && this.req.thumbnailUrl.includes('box=')) {
+                            // Try to find the best ML or verified ACDSee face to update the thumbnail with
+                            const validFaces = (this.faceRegions || []).filter(f => (f.Source === 'ml' || (f.Source === 'acdsee' && f.Confidence === 1.0)) && f._rawBox);
+                            if (validFaces.length > 0) {
+                                // Prefer a face that was recognized with a name, else just the first one
+                                const namedFace = validFaces.find(f => f.Name && f.Name !== 'Unknown');
+                                this.updateSearchThumbnailUrl(namedFace ? namedFace._rawBox : validFaces[0]._rawBox);
+                            }
+                        }
                     }
                 }, 1000); // 1 second polling
             }
@@ -1461,6 +1504,8 @@ export default {
 
     async fetchFacesData() {
       this.facesData = [];
+      this.selectedFaceIndices = [];
+      this.renamingFaceIndex = -1;
       if (this.previewType !== 'image') return;
       
       try {
@@ -1507,28 +1552,8 @@ export default {
         this.isScanningFaces = false;
       }
     },
-    showFaceContextMenu(event, region) {
-       event.preventDefault(); // Stop default right-click
-       this.fetchPeopleList();
-       this.faceContextMenu.region = region;
-       this.faceContextMenu.editName = region.Name && region.Name !== 'Unknown' ? region.Name : '';
-       
-       // Handle desktop vs mobile / click vs contextmenu positioning
-       const rect = event.currentTarget.getBoundingClientRect();
-       
-       // Position menu near the click/tap
-       let top = event.clientY - 60;
-       let left = event.clientX;
-       
-       // If it's too high up, move it down
-       if (top < 100) top = 100;
-       
-       this.faceContextMenu.top = top;
-       this.faceContextMenu.left = left;
-       this.faceContextMenu.show = true;
-    },
     async fetchPeopleList() {
-      if (this.peopleList.length > 0) return; // already fetched
+      if (this.peopleList && this.peopleList.length > 0) return; // already fetched
       try {
         const { fetchURL } = await import('@/api/utils');
         const source = this.req.source || state.sources?.current || "";
@@ -1541,47 +1566,72 @@ export default {
         console.error("Error fetching people list:", e);
       }
     },
-    closeFaceContextMenu() {
-       this.faceContextMenu.show = false;
-       this.faceContextMenu.region = null;
+
+    // --- Bulk selection methods ---
+    selectAllFaces() {
+      this.selectedFaceIndices = this.faceRegions
+        .map((r, i) => r.Source === 'ml' ? i : -1)
+        .filter(i => i !== -1);
     },
-    async renameFace() {
-       const newName = this.faceContextMenu.editName.trim();
-       if (!newName) return;
-       
-       const oldName = this.faceContextMenu.region.Name;
-       const box = this.faceContextMenu.region._rawBox;
-       if (!box) {
-         notify.showError("Missing raw box data for update.");
-         return;
-       }
-
-       try {
-         const { updateFaceBox } = await import('@/api/files');
-         await updateFaceBox(this.req.url, oldName, newName, box);
-         notify.showSuccess(`Renamed ${oldName || 'Unknown'} to ${newName}`);
-         this.closeFaceContextMenu();
-         this.fetchFacesData(); // Refresh UI
-       } catch (err) {
-         notify.showError(`Error updating face: ${err.message}`);
-       }
+    unselectAllFaces() {
+      this.selectedFaceIndices = [];
     },
-    async quickRemoveFace(region) {
-       const oldName = region.Name;
-       const box = region._rawBox;
-       if (!box) return;
+    async removeSelectedFaces() {
+      const faces = this.selectedFaceIndices
+        .sort((a, b) => b - a) // Process in reverse order
+        .map(i => this.faceRegions[i])
+        .filter(r => r && r._rawBox);
+      if (!faces.length) return;
+      if (!confirm(`Remove ${faces.length} face(s)?`)) return;
 
-       if (!confirm("Are you sure you want to remove this face box?")) return;
+      try {
+        const { removeFaceBox } = await import('@/api/files');
+        for (const face of faces) {
+          await removeFaceBox(this.req.url, face.Name || 'Unknown', face._rawBox);
+        }
+        notify.showSuccess(`Removed ${faces.length} face(s)`);
+        this.selectedFaceIndices = [];
+        this.fetchFacesData();
+      } catch (err) {
+        notify.showError(`Error removing faces: ${err.message}`);
+      }
+    },
+    // --- Inline rename methods ---
+    startRename(index, region) {
+      this.fetchPeopleList();
+      this.renamingFaceIndex = index;
+      this.renameInput = (region.Name && region.Name !== 'Unknown') ? region.Name : '';
+      this.$nextTick(() => {
+        const inputs = this.$refs.inlineRenameInput;
+        if (inputs) {
+          // refs with v-for return an array
+          const input = Array.isArray(inputs) ? inputs[0] : inputs;
+          if (input) input.focus();
+        }
+      });
+    },
+    async submitInlineRename(index, region) {
+      const newName = this.renameInput.trim();
+      if (!newName) return;
 
-       try {
-         const { removeFaceBox } = await import('@/api/files');
-         notify.showSuccess(`Removing face box for ${oldName || 'Unknown'}...`);
-         await removeFaceBox(this.req.url, oldName, box);
-         notify.showSuccess(`Removed face box for ${oldName || 'Unknown'}`);
-         this.fetchFacesData(); // Refresh UI
-       } catch (err) {
-         notify.showError(`Error removing face: ${err.message}`);
-       }
+      const oldName = region.Name;
+      const box = region._rawBox;
+      if (!box) {
+        notify.showError("Missing raw box data for rename.");
+        return;
+      }
+
+      try {
+        const { updateFaceBox } = await import('@/api/files');
+        await updateFaceBox(this.req.url, oldName, newName, box);
+        notify.showSuccess(`Renamed ${region.DisplayName} → ${newName}`);
+        this.renamingFaceIndex = -1;
+        this.renameInput = '';
+        this.updateSearchThumbnailUrl(box);
+        this.fetchFacesData();
+      } catch (err) {
+        notify.showError(`Error renaming face: ${err.message}`);
+      }
     },
     async quickVerifyFace(region) {
        const name = region.Name;
@@ -1598,6 +1648,7 @@ export default {
          notify.showSuccess(`Verifying ${name}...`);
          await updateFaceBox(this.req.url, name, name, box); // Same name acts as manual verification
          notify.showSuccess(`Verified ${name} and saved to ML DB.`);
+         this.updateSearchThumbnailUrl(box);
          this.fetchFacesData(); // Refresh UI
        } catch (err) {
          notify.showError(`Error verifying face: ${err.message}`);

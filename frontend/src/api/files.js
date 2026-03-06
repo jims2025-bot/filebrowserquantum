@@ -597,6 +597,20 @@ export async function getJobsStatus() {
     return null;
   }
 }
+export async function rebuildThumbnails(url) {
+  try {
+    const result = extractSourceFromPath(url)
+    const apiPath = getApiPath('api/resources/thumbnails/rebuild', {
+      path: encodeURIComponent(result.path),
+      source: result.source
+    })
+    const res = await fetchURL(apiPath, { method: 'POST' })
+    return res
+  } catch (err) {
+    notify.showError(err.message || 'Error rebuilding thumbnails')
+    throw err
+  }
+}
 
 export async function runJobNow(jobname) {
   try {
@@ -646,13 +660,36 @@ export async function getFaceScanStatus() {
   return res.json()
 }
 
+export async function getAdminFaceStats() {
+  const apiPath = getApiPath('api/admin/facerec/stats')
+  const res = await fetchURL(apiPath, { headers: { 'X-Auth': state.jwt } })
+  if (res.status !== 200) throw new Error(await res.text())
+  return res.json()
+}
+
+export async function adminFaceCleanup(folderPath, source) {
+  const params = {};
+  if (source) params.source = source;
+  const apiPath = getApiPath('api/admin/facerec/cleanup', params)
+  const body = JSON.stringify({ folder: folderPath || '' })
+  const res = await fetchURL(apiPath, { method: 'POST', body, headers: { 'X-Auth': state.jwt } })
+  if (res.status !== 200) throw new Error(await res.text())
+  return res.json()
+}
+
 export async function updateFaceBox(url, oldName, newName, box) {
   const result = extractSourceFromPath(url)
   const apiPath = getApiPath('api/facerec/update', {
     path: encodeURIComponent(result.path),
     source: result.source
   })
-  const body = JSON.stringify({ imagePath: result.path, oldName, newName, box })
+  let parsedBox = [];
+  if (typeof box === 'string' && box.trim()) {
+    parsedBox = box.split(',').map(Number);
+  } else if (Array.isArray(box)) {
+    parsedBox = box;
+  }
+  const body = JSON.stringify({ imagePath: result.path, oldName, newName, box: parsedBox })
   const res = await fetchURL(apiPath, { method: 'POST', body, headers: { 'X-Auth': state.jwt } })
   if (res.status !== 200) throw new Error(await res.text())
   return res.json()
@@ -664,7 +701,13 @@ export async function removeFaceBox(url, oldName, box) {
     path: encodeURIComponent(result.path),
     source: result.source
   })
-  const body = JSON.stringify({ imagePath: result.path, oldName, box })
+  let parsedBox = [];
+  if (typeof box === 'string' && box.trim()) {
+    parsedBox = box.split(',').map(Number);
+  } else if (Array.isArray(box)) {
+    parsedBox = box;
+  }
+  const body = JSON.stringify({ imagePath: result.path, oldName, box: parsedBox })
   const res = await fetchURL(apiPath, { method: 'POST', body, headers: { 'X-Auth': state.jwt } })
   if (res.status !== 200) throw new Error(await res.text())
   return res.json()

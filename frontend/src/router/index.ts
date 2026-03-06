@@ -25,6 +25,7 @@ const titles = {
   NotFound: "errors.notFound",
   InternalServerError: "errors.internal",
   Heatmap: "sidebar.heatmap",
+  FaceDatabase: "Face Database",
 };
 
 const routes = [
@@ -57,6 +58,21 @@ const routes = [
         component: Files,
       },
     ],
+  },
+  {
+    path: "/face-database",
+    component: Layout,
+    meta: {
+      requiresAuth: true,
+      requiresFaceScan: true,
+    },
+    children: [
+      {
+        path: "",
+        name: "FaceDatabase",
+        component: () => import("@/views/FaceRec.vue"),
+      }
+    ]
   },
   {
     path: "/heatmap",
@@ -170,6 +186,13 @@ router.beforeResolve(async (to, from, next) => {
 
     if (to.matched.some((record) => record.meta.requiresAdmin)) {
       if (!getters.isAdmin()) {
+        next({ path: "/403" });
+        return;
+      }
+    }
+
+    if (to.matched.some((record) => record.meta.requiresFaceScan)) {
+      if (!getters.isAdmin() && !state.user.permissions?.runFaceScan) {
         next({ path: "/403" });
         return;
       }

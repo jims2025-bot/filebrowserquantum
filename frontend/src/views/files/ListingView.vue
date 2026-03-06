@@ -49,6 +49,10 @@
         }"
         class="file-icons"
       >
+        <div class="listing-permission-note" v-if="req.path !== '/'">
+          <i class="material-icons">info</i>
+          <span>The people section in "Folder Info" is limited to users with "Manual Folder Face Scans" permissions.</span>
+        </div>
         <div>
           <div class="header" :class="{ 'dark-mode-item-header': isDarkMode }">
             <p
@@ -730,7 +734,7 @@ export default {
         //   break;
 
         case "F2":
-          if (!state.user.permissions.modify || state.selected.length !== 1) return;
+          if (!state.user.permissions.admin || state.selected.length !== 1) return;
           mutations.showHover("rename");
           break;
 
@@ -845,6 +849,7 @@ export default {
       };
     },
     async paste(event) {
+      if (!state.user.permissions.admin) return;
       if (event.target.tagName.toLowerCase() === "input") {
         return;
       }
@@ -919,6 +924,7 @@ export default {
       this.dragCounter--;
     },
     async drop(event) {
+      if (!state.user.permissions.admin) return;
       event.preventDefault();
       this.dragCounter = 0;
 
@@ -973,6 +979,7 @@ export default {
     },
 
     async uploadInput(event) {
+      if (!state.user.permissions.admin) return;
       mutations.closeHovers();
       const rawFiles = event.currentTarget.files;
       if (!rawFiles || rawFiles.length === 0) return;
@@ -1094,5 +1101,25 @@ export default {
   transform: scale(0.97);
   border-radius: 1em;
   box-shadow: var(--primaryColor) 0 0 1em;
+}
+</style>
+
+<style scoped>
+.listing-permission-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 10px 15px 10px;
+  padding: 8px 12px;
+  background: var(--surfaceSecondary, #f9f9f9);
+  border-radius: 4px;
+  border: 1px solid var(--divider, #eee);
+  font-size: 0.85em;
+  color: var(--textSecondary, #777);
+}
+
+.listing-permission-note .material-icons {
+  font-size: 16px;
+  color: var(--blue, #2196f3);
 }
 </style>

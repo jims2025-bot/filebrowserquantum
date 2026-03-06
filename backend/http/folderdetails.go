@@ -113,7 +113,7 @@ func getFolderDetailsHandler(w http.ResponseWriter, r *http.Request, d *requestC
 // Writes (creates if necessary) folderdetails.json in the requested folder.
 // Requires modify permission.
 func putFolderDetailsHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
-	if !d.user.Permissions.Modify {
+	if !d.user.Permissions.Admin && !d.user.Permissions.RunFaceScan {
 		return http.StatusForbidden, nil
 	}
 
@@ -220,7 +220,7 @@ func getPeopleListHandler(w http.ResponseWriter, r *http.Request, d *requestCont
 // Merges the supplied names into the global PeopleList.json (deduped, sorted).
 // Requires modify permission.
 func putPeopleListHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
-	if !d.user.Permissions.Modify {
+	if !d.user.Permissions.Admin && !d.user.Permissions.RunFaceScan {
 		return http.StatusForbidden, nil
 	}
 

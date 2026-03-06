@@ -82,10 +82,14 @@ func GetPreviewForFile(file iteminfo.ExtendedFileInfo, previewSize, url string, 
 		return nil, ErrUnsupportedMedia
 	}
 	cacheKey := CacheKey(file.RealPath, previewSize, file.ItemInfo.ModTime, seekPercentage, boxParam)
-	if data, found, err := service.fileCache.Load(context.Background(), cacheKey); err != nil {
-		return nil, fmt.Errorf("failed to load from cache: %w", err)
-	} else if found {
-		return data, nil
+	if boxParam == "" {
+		if data, found, err := service.fileCache.Load(context.Background(), cacheKey); err != nil {
+			return nil, fmt.Errorf("failed to load from cache: %w", err)
+		} else if found {
+			return data, nil
+		}
+	} else {
+		logger.Infof("[PreviewBypass] Face crop requested, bypassing cache for: %s", boxParam)
 	}
 
 	return GeneratePreview(file, previewSize, url, seekPercentage, boxParam)

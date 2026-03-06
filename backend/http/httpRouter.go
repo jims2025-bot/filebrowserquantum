@@ -161,6 +161,10 @@ func StartHttp(ctx context.Context, storage *storage.Storage, shutdownComplete c
 	api.HandleFunc("GET /admin/jobs", withAdmin(getJobsStatusHandler))
 	api.HandleFunc("POST /admin/jobs/{jobname}/run", withAdmin(runJobHandler))
 
+	// Admin FaceRec routes
+	api.HandleFunc("GET /admin/facerec/stats", withAdmin(adminFaceStatsHandler))
+	api.HandleFunc("POST /admin/facerec/cleanup", withAdmin(adminFaceCleanupHandler))
+
 	// Facial Recognition Routes
 	api.HandleFunc("GET /facerec/status", withUser(faceScanStatusHandler))
 	api.HandleFunc("GET /facerec/people", withUser(faceAutocompleteHandler))
@@ -174,6 +178,7 @@ func StartHttp(ctx context.Context, storage *storage.Storage, shutdownComplete c
 	api.HandleFunc("GET /resources/instructions", withUser(resourceGetInstructionsHandler))
 	api.HandleFunc("POST /resources/instructions", withUser(resourceInstructionsHandler))
 	api.HandleFunc("POST /resources/thumbnails/fix", withAdmin(resourceFixThumbnailsHandler))
+	api.HandleFunc("POST /resources/thumbnails/rebuild", withUser(resourceRebuildThumbnailsHandler))
 
 	apiPath := config.Server.BaseURL + "api"
 	router.Handle(apiPath+"/", http.StripPrefix(apiPath, api))

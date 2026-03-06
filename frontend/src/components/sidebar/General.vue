@@ -160,6 +160,24 @@
           </table>
       </div>
     </div>
+
+    <!-- Face Management Section -->
+    <div v-if="canSeeFaceDatabase" class="sources card" style="margin-top: 1em;">
+      <span> {{ isAdmin ? 'Admin Tools' : 'Face Management' }}</span>
+      <div class="inner-card">
+        <button
+          class="action source-button"
+          :class="{ active: route.path === '/face-database' }"
+          @click="navigateTo('/face-database')"
+          aria-label="Face Database"
+        >
+          <div class="source-container">
+            <i class="material-icons" style="margin-right: 0.5em; font-size: 20px;">face</i>
+            <span>Face Database</span>
+          </div>
+        </button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -208,6 +226,10 @@ export default {
     activeSourceInfo() {
       if (!state.sources.hasSourceInfo || !state.sources.current) return null;
       return state.sources.info[state.sources.current];
+    },
+    isAdmin: () => getters.isAdmin(),
+    canSeeFaceDatabase() {
+      return getters.isAdmin() || state.user.permissions?.runFaceScan;
     },
     realtimeActive: () => state.realtimeActive,
     humanReadableQuickScan() {

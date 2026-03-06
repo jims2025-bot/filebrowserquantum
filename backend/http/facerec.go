@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"math"
 
 	"github.com/gtsteffaniak/go-logger/logger"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
@@ -142,14 +143,18 @@ func faceUpdateHandler(w http.ResponseWriter, r *http.Request, d *requestContext
 	updated := false
 	var existingEmb []float64
 
+	if facesData == nil {
+		facesData = make(facerec.FacesFile)
+	}
+
 	if entries, ok := facesData[filename]; ok {
 		var mlFound bool
 		var acdseeFound bool
 		var acdseeTemplate facerec.FaceEntry
 
 		for i, e := range entries {
-			// Basic box matching
-			if len(e.Box) == 4 && len(req.Box) == 4 && e.Box[0] == req.Box[0] && e.Box[1] == req.Box[1] {
+			// Basic box matching with float tolerance
+			if len(e.Box) == 4 && len(req.Box) == 4 && math.Abs(float64(e.Box[0]-req.Box[0])) < 2.0 && math.Abs(float64(e.Box[1]-req.Box[1])) < 2.0 {
 				if e.Source == "ml" {
 					facesData[filename][i].Name = req.NewName
 					facesData[filename][i].Confidence = 1.0 // Manual approval!
@@ -172,6 +177,25 @@ func faceUpdateHandler(w http.ResponseWriter, r *http.Request, d *requestContext
 			existingEmb = newFace.Embedding
 			facesData[filename] = append(facesData[filename], newFace)
 			updated = true
+		}
+	}
+
+	if !updated {
+		// Face not found in faces.json. It's likely an ACDSee face dynamically rendered.
+		// Pull ACDSee faces, insert them into faces.json, and modify the target one.
+		acdseeFaces, _ := facerec.ExtractACDSeeRegions(diskPath)
+		if len(acdseeFaces) > 0 {
+			var newEntries []facerec.FaceEntry
+			for _, e := range acdseeFaces {
+				if len(e.Box) == 4 && len(req.Box) == 4 && math.Abs(float64(e.Box[0]-req.Box[0])) < 2.0 && math.Abs(float64(e.Box[1]-req.Box[1])) < 2.0 {
+					e.Source = "ml" // It is now manually verified
+					e.Name = req.NewName
+					e.Confidence = 1.0
+					updated = true
+				}
+				newEntries = append(newEntries, e)
+			}
+			facesData[filename] = append(facesData[filename], newEntries...)
 		}
 	}
 
@@ -225,7 +249,7 @@ func faceUpdateHandler(w http.ResponseWriter, r *http.Request, d *requestContext
 						if err := json.Unmarshal(jsonBytes, &asyncData); err == nil {
 							if entries, ok := asyncData[filename]; ok {
 								for i, e := range entries {
-									if len(e.Box) == 4 && len(req.Box) == 4 && e.Box[0] == req.Box[0] && e.Box[1] == req.Box[1] {
+									if len(e.Box) == 4 && len(req.Box) == 4 && math.Abs(float64(e.Box[0]-req.Box[0])) < 2.0 && math.Abs(float64(e.Box[1]-req.Box[1])) < 2.0 {
 										asyncData[filename][i].Embedding = emb
 										bAsync, _ := json.MarshalIndent(asyncData, "", "  ")
 										os.WriteFile(facesFilePath, bAsync, 0666)
@@ -241,6 +265,10 @@ func faceUpdateHandler(w http.ResponseWriter, r *http.Request, d *requestContext
 				}
 			}()
 		}
+	} else {
+		// If it wasn't found in faces.json AND failed to extract from ACDSee, it's a completely stale entry in people.db!
+		// Force purge it from the database anyway to clean up the user's search results.
+		people.RemoveFaceFromIndex(req.OldName, diskPath)
 	}
 
 	return renderJSON(w, r, facesData[filename])
@@ -280,27 +308,53 @@ func faceRemoveHandler(w http.ResponseWriter, r *http.Request, d *requestContext
 		json.Unmarshal(jsonBytes, &facesData)
 	}
 
-	// Remove the specific face
+	if facesData == nil {
+		facesData = make(facerec.FacesFile)
+	}
+
 	updated := false
 	if entries, ok := facesData[filename]; ok {
-		var newEntries []facerec.FaceEntry
-		for _, e := range entries {
-			if len(e.Box) == 4 && len(req.Box) == 4 && e.Box[0] == req.Box[0] && e.Box[1] == req.Box[1] {
-				updated = true // Skip appending this one
-				continue
+		for i, e := range entries {
+			if len(e.Box) == 4 && len(req.Box) == 4 && math.Abs(float64(e.Box[0]-req.Box[0])) < 2.0 && math.Abs(float64(e.Box[1]-req.Box[1])) < 2.0 {
+				facesData[filename][i].Source = "deleted"
+				facesData[filename][i].Confidence = -1.0
+				updated = true
+				break
 			}
-			newEntries = append(newEntries, e)
 		}
-		facesData[filename] = newEntries
+	}
+
+	if !updated {
+		// It was not in faces.json (e.g. an ACDSee face rendered via fallback).
+		// We must pull the ACDSee faces, insert them into faces.json, and mark this one deleted.
+		acdseeFaces, _ := facerec.ExtractACDSeeRegions(diskPath)
+		if len(acdseeFaces) > 0 {
+			for i, e := range acdseeFaces {
+				if len(e.Box) == 4 && len(req.Box) == 4 && math.Abs(float64(e.Box[0]-req.Box[0])) < 2.0 && math.Abs(float64(e.Box[1]-req.Box[1])) < 2.0 {
+					acdseeFaces[i].Source = "deleted"
+					acdseeFaces[i].Confidence = -1.0
+					updated = true
+				}
+			}
+			facesData[filename] = append(facesData[filename], acdseeFaces...)
+		}
 	}
 
 	if updated {
 		b, _ := json.MarshalIndent(facesData, "", "  ")
 		os.WriteFile(facesFilePath, b, 0666)
-
-		// Remove from people.db
-		people.RemoveFaceFromIndex(req.OldName, diskPath)
+		logger.Debug(fmt.Sprintf("[FacialRec] Saved faces.json with deleted marker for %s", req.OldName))
+	} else {
+		logger.Debug(fmt.Sprintf("[FacialRec] Warning: FaceBox mismatch or missing in faces.json and ACDSee. Force purging DB anyway. req.Box=%v", req.Box))
 	}
+
+	logger.Debug(fmt.Sprintf("[FacialRec] Executing people.RemoveFaceFromIndex(name=%s, path=%s)", req.OldName, diskPath))
+	// Always remove from index, whether it was updated in JSON or was just a stale DB entity
+	err = people.RemoveFaceFromIndex(req.OldName, diskPath)
+	if err != nil {
+		logger.Error(fmt.Sprintf("[FacialRec] RemoveFaceFromIndex failed: %v", err))
+	}
+	logger.Debug(fmt.Sprintf("[FacialRec] RemoveFaceFromIndex executed."))
 
 	return renderJSON(w, r, map[string]string{"status": "removed"})
 }
@@ -479,4 +533,49 @@ func faceAutocompleteHandler(w http.ResponseWriter, r *http.Request, d *requestC
 	}
 
 	return renderJSON(w, r, results)
+}
+
+func adminFaceStatsHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
+	stats, err := people.GetDatabaseStats()
+	if err != nil {
+		return http.StatusInternalServerError, err
+	}
+	return renderJSON(w, r, stats)
+}
+
+func adminFaceCleanupHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
+	var req struct {
+		Folder string `json:"folder"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		return http.StatusBadRequest, err
+	}
+
+	diskPath := ""
+	if req.Folder != "" {
+		source := r.URL.Query().Get("source")
+		if source == "" {
+			source = settings.Config.Server.DefaultSource.Name
+		}
+		scopePath, realSource, err := ResolveScopePath(d.user, source, req.Folder)
+		if err != nil {
+			return http.StatusForbidden, err
+		}
+		index := indexing.GetIndex(realSource)
+		if index == nil {
+			return http.StatusInternalServerError, fmt.Errorf("source index not found")
+		}
+		dp, _, err := index.GetRealPath("/", scopePath)
+		if err != nil {
+			return http.StatusInternalServerError, err
+		}
+		diskPath = dp
+	}
+
+	err := people.CleanUnverifiedFaces(diskPath)
+	if err != nil {
+		return http.StatusInternalServerError, err
+	}
+
+	return renderJSON(w, r, map[string]string{"status": "success"})
 }

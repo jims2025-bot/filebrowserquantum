@@ -68,9 +68,16 @@
         <!-- People -->
         <div class="fd-section">
           <label class="fd-section-label">People</label>
-
+          <div class="fd-permission-note">
+            Note: This section is limited to users with "Manual Folder Face Scans" permissions.
+          </div>
+          <div v-if="!canManageFolderFaces" class="fd-permission-hint">
+            <i class="material-icons">info_outline</i>
+            <span>You need "Manual Folder Face Scans" permission to manage people for this folder.</span>
+          </div>
+          
           <!-- Restriction Toggle -->
-          <div class="fd-toggle-row" v-if="canEdit" style="margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+          <div class="fd-toggle-row" v-if="canManageFolderFaces && canEdit" style="margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
             <label class="switch">
               <input type="checkbox" v-model="editRestrictFaces" />
               <span class="slider round"></span>
@@ -90,17 +97,17 @@
             >
               {{ person }}
               <button
-                v-if="canEdit"
+                v-if="canManageFolderFaces && canEdit"
                 class="fd-chip-remove"
                 @click="removePerson(idx)"
                 title="Remove"
               >&times;</button>
             </span>
-            <span v-if="editPeople.length === 0 && !canEdit" class="fd-empty">(none)</span>
+            <span v-if="editPeople.length === 0 && (!canEdit || !canManageFolderFaces)" class="fd-empty">(none)</span>
           </div>
 
           <!-- Autocomplete input (edit mode only) -->
-          <div v-if="canEdit" class="fd-autocomplete-wrap">
+          <div v-if="canManageFolderFaces && canEdit" class="fd-autocomplete-wrap">
             <input
               ref="personInput"
               v-model="personQuery"
@@ -184,7 +191,10 @@ export default {
   },
   computed: {
     canEdit() {
-      return state.user.permissions.modify;
+      return state.user.permissions.modify || state.user.permissions.admin || state.user.permissions.runFaceScan;
+    },
+    canManageFolderFaces() {
+      return state.user.permissions.runFaceScan || state.user.permissions.admin;
     },
     req() {
       return state.req;
@@ -527,6 +537,29 @@ export default {
 .fd-date-input:focus {
   outline: none;
   border-color: var(--blue, #2196f3);
+}
+
+.fd-permission-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surfaceSecondary, #f5f5f5);
+  padding: 8px 12px;
+  border-radius: 4px;
+  margin-bottom: 12px;
+  font-size: 0.85em;
+  color: var(--textSecondary, #777);
+  border-left: 3px solid #ccc;
+}
+.fd-permission-hint .material-icons {
+  font-size: 16px;
+}
+
+.fd-permission-note {
+  font-size: 0.82em;
+  color: var(--textSecondary, #888);
+  margin-bottom: 10px;
+  font-style: italic;
 }
 
 /* Switch styling */
