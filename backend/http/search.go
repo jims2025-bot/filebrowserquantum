@@ -86,7 +86,7 @@ func searchHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 		}
 
 		// Pagination params
-		limit := 100 // default
+		limit := 1000 // default
 		if l := r.URL.Query().Get("limit"); l != "" {
 			fmt.Sscanf(l, "%d", &limit)
 		}
@@ -115,9 +115,9 @@ func searchHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 		var matches []people.PersonMatch
 		var err error
 		if len(personNames) > 1 || logic == "OR" {
-			matches, err = people.SearchImagesByPeople(personNames, logic, pathPrefix, limit, offset)
+			matches, err = people.SearchImagesByPeople(personNames, logic, pathPrefix, limit, offset, d.user.ID)
 		} else {
-			matches, err = people.SearchImagesByPerson(personNames[0], pathPrefix, limit, offset)
+			matches, err = people.SearchImagesByPerson(personNames[0], pathPrefix, limit, offset, d.user.ID)
 		}
 
 		if err != nil {

@@ -110,6 +110,10 @@
               <Icon :mimetype="s.type" :thumbnailUrl="s.thumbnailUrl" :forcePreview="true" />
             </li>
           </ul>
+          <div v-if="loadingMore" class="search-status" style="margin-top: 10px;">
+            <i class="material-icons spin">autorenew</i>
+            <span>Loading more...</span>
+          </div>
         </div>
       </div>
     </div>
@@ -186,6 +190,7 @@ import { getHumanReadableFilesize } from "@/utils/filesizes";
 import { url } from "@/utils/";
 import Icon from "@/components/files/Icon.vue";
 import router from "@/router";
+import { FaceEvents } from "@/utils/FaceEvents";
 
 export default {
   name: "SearchPrompt",
@@ -215,6 +220,11 @@ export default {
         editName: "",
       },
       pulseResults: false,
+      // Pagination state
+      offset: 0,
+      limit: 100,
+      hasMore: true,
+      loadingMore: false,
     };
   },
   watch: {
@@ -286,13 +296,28 @@ export default {
     // Ensure clean state on open
     mutations.setSearchResults([]);
     
+    // Add scroll listener for infinite scroll
+    const resultsPane = this.$el.querySelector('.results-pane');
+    if (resultsPane) {
+      resultsPane.addEventListener('scroll', this.handleScroll);
+    }
+    
     // Initial fetch if starting on search tab
     if (this.activeTab === 'search' && this.people.length === 0) {
       this.fetchPeople();
     }
+
+    // Subscribe to face updates
+    FaceEvents.on(FaceEvents.FACE_UPDATED, this.handleFaceUpdate);
   },
   beforeUnmount() {
     window.removeEventListener("keydown", this.keyEvent);
+    const resultsPane = this.$el.querySelector('.results-pane');
+    if (resultsPane) {
+      resultsPane.removeEventListener('scroll', this.handleScroll);
+    }
+    // Unsubscribe from face updates
+    FaceEvents.off(FaceEvents.FACE_UPDATED, this.handleFaceUpdate);
   },
   methods: {
     showContextMenu(event, s) {
@@ -465,10 +490,19 @@ export default {
       let source = this.selectedSource || state.sources.current;
       
       try {
+        // Reset pagination for new search
+        this.offset = 0;
+        this.hasMore = true;
+        
         // Pass the signal to the search API or fetch call
-        const res = await search(this.getContext, source, this.value, signal);
+        const res = await search(this.getContext, source, this.value, signal, this.limit, this.offset);
         const safeRes = res || [];
         mutations.setSearchResults(safeRes);
+        
+        if (safeRes.length < this.limit) {
+          this.hasMore = false;
+        }
+        
         if (safeRes.length === 0) {
           this.noneMessage = "No results found.";
         }
@@ -692,6 +726,49 @@ export default {
       const encodedPath = encodeURIComponent(path).replace(/%2F/g, "/");
       let fullpath = "/files/" + (file.source || state.sources.current) + "/" + encodedPath;
       router.push({ path: fullpath });
+    },
+    handleScroll(e) {
+      const el = e.target;
+      // Trigger when within 100px of bottom
+      if (el.scrollHeight - el.scrollTop <= el.clientHeight + 100) {
+        if (!this.ongoing && !this.loadingMore && this.hasMore) {
+          this.loadMore();
+        }
+      }
+    },
+    async loadMore() {
+      if (!this.hasMore || this.loadingMore || this.ongoing) return;
+      this.loadingMore = true;
+      this.offset += this.limit;
+      
+      let source = this.selectedSource || state.sources.current;
+      try {
+        const res = await search(this.getContext, source, this.value, null, this.limit, this.offset);
+        const safeRes = res || [];
+        if (safeRes.length < this.limit) {
+          this.hasMore = false;
+        }
+        if (safeRes.length > 0) {
+          const combined = [...state.searchResults, ...safeRes];
+          mutations.setSearchResults(combined);
+        }
+      } catch (e) {
+        console.error("Load more failed:", e);
+        this.hasMore = false;
+      } finally {
+        this.loadingMore = false;
+      }
+    },
+    handleFaceUpdate() {
+      // Refresh the people overview (counts and avatars)
+      this.fetchPeople();
+      
+      // If a person search is active, refresh the results grid
+      if (this.isPersonSearch) {
+        this.submit();
+        // Since we are refreshing the entire grid, we might also need to update pulse
+        this.triggerPulse();
+      }
     }
   }
 };

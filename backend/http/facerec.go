@@ -148,35 +148,19 @@ func faceUpdateHandler(w http.ResponseWriter, r *http.Request, d *requestContext
 	}
 
 	if entries, ok := facesData[filename]; ok {
-		var mlFound bool
-		var acdseeFound bool
-		var acdseeTemplate facerec.FaceEntry
-
 		for i, e := range entries {
-			// Basic box matching with float tolerance
-			if len(e.Box) == 4 && len(req.Box) == 4 && math.Abs(float64(e.Box[0]-req.Box[0])) < 2.0 && math.Abs(float64(e.Box[1]-req.Box[1])) < 2.0 {
-				if e.Source == "ml" {
-					facesData[filename][i].Name = req.NewName
-					facesData[filename][i].Confidence = 1.0 // Manual approval!
-					existingEmb = e.Embedding
-					updated = true
-					mlFound = true
-				} else if e.Source == "acdsee" {
-					acdseeFound = true
-					acdseeTemplate = e
+			// Use IOU matching for robust coordinate comparison
+			if len(e.Box) == 4 && len(req.Box) == 4 && facerec.CalculateIOU(e.Box, req.Box) > 0.7 {
+				// Avoid reviving deleted faces during a rename/update
+				if e.Source == "deleted" || e.Confidence < 0 {
+					continue
 				}
+				// Convert to verified regardless of original source, but preserve the origin
+				facesData[filename][i].Name = req.NewName
+				facesData[filename][i].Confidence = 1.0 // Manual approval!
+				existingEmb = e.Embedding
+				updated = true
 			}
-		}
-
-		// If no ML face was found but an ACDSee face was, duplicate it to an ML face
-		if !mlFound && acdseeFound {
-			newFace := acdseeTemplate
-			newFace.Source = "ml"
-			newFace.Name = req.NewName
-			newFace.Confidence = 1.0
-			existingEmb = newFace.Embedding
-			facesData[filename] = append(facesData[filename], newFace)
-			updated = true
 		}
 	}
 
@@ -188,7 +172,7 @@ func faceUpdateHandler(w http.ResponseWriter, r *http.Request, d *requestContext
 			var newEntries []facerec.FaceEntry
 			for _, e := range acdseeFaces {
 				if len(e.Box) == 4 && len(req.Box) == 4 && math.Abs(float64(e.Box[0]-req.Box[0])) < 2.0 && math.Abs(float64(e.Box[1]-req.Box[1])) < 2.0 {
-					e.Source = "ml" // It is now manually verified
+					// It is now manually verified, but keep 'acdsee' source info from Exif
 					e.Name = req.NewName
 					e.Confidence = 1.0
 					updated = true
@@ -208,7 +192,7 @@ func faceUpdateHandler(w http.ResponseWriter, r *http.Request, d *requestContext
 		if len(req.Box) == 4 {
 			boxStr = fmt.Sprintf("%d,%d,%d,%d", req.Box[0], req.Box[1], req.Box[2], req.Box[3])
 		}
-		people.RemoveFaceFromIndex(req.OldName, diskPath)
+		people.RemoveFaceFromIndex(req.OldName, diskPath, boxStr)
 		people.MapFaceToIndex(req.NewName, diskPath, 1.0, boxStr)
 
 		// Auto-append manually verified face to folderdetails.json
@@ -249,11 +233,11 @@ func faceUpdateHandler(w http.ResponseWriter, r *http.Request, d *requestContext
 						if err := json.Unmarshal(jsonBytes, &asyncData); err == nil {
 							if entries, ok := asyncData[filename]; ok {
 								for i, e := range entries {
-									if len(e.Box) == 4 && len(req.Box) == 4 && math.Abs(float64(e.Box[0]-req.Box[0])) < 2.0 && math.Abs(float64(e.Box[1]-req.Box[1])) < 2.0 {
+									if len(e.Box) == 4 && len(req.Box) == 4 && facerec.CalculateIOU(e.Box, req.Box) > 0.7 {
 										asyncData[filename][i].Embedding = emb
 										bAsync, _ := json.MarshalIndent(asyncData, "", "  ")
 										os.WriteFile(facesFilePath, bAsync, 0666)
-										break
+										// No break here to update all matches
 									}
 								}
 							}
@@ -268,7 +252,11 @@ func faceUpdateHandler(w http.ResponseWriter, r *http.Request, d *requestContext
 	} else {
 		// If it wasn't found in faces.json AND failed to extract from ACDSee, it's a completely stale entry in people.db!
 		// Force purge it from the database anyway to clean up the user's search results.
-		people.RemoveFaceFromIndex(req.OldName, diskPath)
+		boxStr := ""
+		if len(req.Box) == 4 {
+			boxStr = fmt.Sprintf("%d,%d,%d,%d", req.Box[0], req.Box[1], req.Box[2], req.Box[3])
+		}
+		people.RemoveFaceFromIndex(req.OldName, diskPath, boxStr)
 	}
 
 	return renderJSON(w, r, facesData[filename])
@@ -315,11 +303,12 @@ func faceRemoveHandler(w http.ResponseWriter, r *http.Request, d *requestContext
 	updated := false
 	if entries, ok := facesData[filename]; ok {
 		for i, e := range entries {
-			if len(e.Box) == 4 && len(req.Box) == 4 && math.Abs(float64(e.Box[0]-req.Box[0])) < 2.0 && math.Abs(float64(e.Box[1]-req.Box[1])) < 2.0 {
+			// Use IOU matching to be more robust than exact coordinate match
+			if len(e.Box) == 4 && len(req.Box) == 4 && facerec.CalculateIOU(e.Box, req.Box) > 0.7 {
 				facesData[filename][i].Source = "deleted"
 				facesData[filename][i].Confidence = -1.0
 				updated = true
-				break
+				// No break! Remove all duplicates matching this box.
 			}
 		}
 	}
@@ -330,7 +319,7 @@ func faceRemoveHandler(w http.ResponseWriter, r *http.Request, d *requestContext
 		acdseeFaces, _ := facerec.ExtractACDSeeRegions(diskPath)
 		if len(acdseeFaces) > 0 {
 			for i, e := range acdseeFaces {
-				if len(e.Box) == 4 && len(req.Box) == 4 && math.Abs(float64(e.Box[0]-req.Box[0])) < 2.0 && math.Abs(float64(e.Box[1]-req.Box[1])) < 2.0 {
+				if len(e.Box) == 4 && len(req.Box) == 4 && facerec.CalculateIOU(e.Box, req.Box) > 0.7 {
 					acdseeFaces[i].Source = "deleted"
 					acdseeFaces[i].Confidence = -1.0
 					updated = true
@@ -348,9 +337,13 @@ func faceRemoveHandler(w http.ResponseWriter, r *http.Request, d *requestContext
 		logger.Debug(fmt.Sprintf("[FacialRec] Warning: FaceBox mismatch or missing in faces.json and ACDSee. Force purging DB anyway. req.Box=%v", req.Box))
 	}
 
-	logger.Debug(fmt.Sprintf("[FacialRec] Executing people.RemoveFaceFromIndex(name=%s, path=%s)", req.OldName, diskPath))
-	// Always remove from index, whether it was updated in JSON or was just a stale DB entity
-	err = people.RemoveFaceFromIndex(req.OldName, diskPath)
+	logger.Debug(fmt.Sprintf("[FacialRec] Executing people.RemoveFaceFromIndex(name=%s, path=%s, box=%v)", req.OldName, diskPath, req.Box))
+	boxStr := ""
+	if len(req.Box) == 4 {
+		boxStr = fmt.Sprintf("%d,%d,%d,%d", req.Box[0], req.Box[1], req.Box[2], req.Box[3])
+	}
+	// Always remove from index, whether it was updated in JSON or was just a stale DB entry
+	err = people.RemoveFaceFromIndex(req.OldName, diskPath, boxStr)
 	if err != nil {
 		logger.Error(fmt.Sprintf("[FacialRec] RemoveFaceFromIndex failed: %v", err))
 	}
@@ -387,7 +380,7 @@ func faceUpdateAvatarHandler(w http.ResponseWriter, r *http.Request, d *requestC
 		return http.StatusInternalServerError, fmt.Errorf("could not resolve absolute path: %v", err)
 	}
 
-	err = people.SetPersonAvatar(req.Name, diskPath, req.Box)
+	err = people.SetUserPersonAvatar(d.user.ID, req.Name, diskPath, req.Box)
 	if err != nil {
 		return http.StatusInternalServerError, err
 	}
@@ -426,7 +419,7 @@ func faceAutocompleteHandler(w http.ResponseWriter, r *http.Request, d *requestC
 	}
 
 	if query == "" {
-		summary, err := people.GetPeopleSummary(pathPrefix)
+		summary, err := people.GetPeopleSummary(pathPrefix, d.user.ID)
 		if err != nil {
 			return http.StatusInternalServerError, err
 		}
@@ -472,7 +465,7 @@ func faceAutocompleteHandler(w http.ResponseWriter, r *http.Request, d *requestC
 	}
 
 	// 1. Get raw database matches (returns matches with boxes)
-	matches, err := people.SearchImagesByPerson(query, pathPrefix, 10, 0)
+	matches, err := people.SearchImagesByPerson(query, pathPrefix, 10, 0, d.user.ID)
 	if err != nil || len(matches) == 0 {
 		return renderJSON(w, r, []PersonAutocompleteResult{})
 	}

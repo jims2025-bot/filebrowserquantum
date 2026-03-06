@@ -2,13 +2,19 @@ import { fetchURL } from "./utils";
 import { notify } from "@/notify";  // Import notify for error handling
 import { getApiPath } from "@/utils/url.js";
 
-export default async function search(base, source, query, signal) {
+export default async function search(base, source, query, signal, limit = 100, offset = 0) {
   try {
     query = encodeURIComponent(query);
     if (!base.endsWith("/")) {
       base += "/";
     }
-    const apiPath = getApiPath("api/search", { scope: encodeURIComponent(base), query: query, source: source });
+    const apiPath = getApiPath("api/search", { 
+      scope: encodeURIComponent(base), 
+      query: query, 
+      source: source,
+      limit: limit,
+      offset: offset
+    });
     const res = await fetchURL(apiPath, { signal });
     let data = await res.json();
 

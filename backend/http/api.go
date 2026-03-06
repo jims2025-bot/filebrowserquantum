@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"os"
 
 	"github.com/jims2025-bot/filebrowserquantum/backend/adapters/fs/files"
 	"github.com/jims2025-bot/filebrowserquantum/backend/auth"
@@ -219,6 +220,20 @@ func getMetadataHandler(w http.ResponseWriter, r *http.Request, d *requestContex
 	}
 
 	log.Printf("Real path resolved: %s", realPath)
+
+	// PERFORMANCE: If it's a directory, don't run expensive ExifTool scans via files.GetMetadata.
+	// Return basic info instead.
+	fi, err := os.Stat(realPath)
+	if err == nil && fi.IsDir() {
+		return renderJSON(w, r, map[string]interface{}{
+			"Source": source,
+			"Path":   path,
+			"Name":   fi.Name(),
+			"IsDir":  true,
+			"Size":   fi.Size(),
+			"Mime":   "directory",
+		})
+	}
 
 	metadata, err := files.GetMetadata(realPath)
 	if err != nil {

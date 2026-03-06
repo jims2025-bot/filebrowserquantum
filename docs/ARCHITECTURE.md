@@ -1930,6 +1930,7 @@ The system runs several background jobs to maintain data integrity and update vi
   - Sends ACDSee face crops to the Python ML microservice (`server.py`) to generate a unique 128-float face signature using the SFace model, "learning" the face and storing the signature in `people.db`.
   - Runs the YuNet neural network across the full image to detect "Unknown" faces.
   - If an Unknown face's signature has a >82% Cosine Similarity match to a face in `people.db`, it is automatically labeled with that person's name.
+  - ACDSee-sourced faces with >= 85% confidence (assigned by default to non-manual tags) are automatically indexed and used for recognition training.
 
 ---
 
@@ -1951,8 +1952,8 @@ The facial recognition system provides high-accuracy automated face detection an
 
 #### 2. Go Backend Orchestration
 **Location:** `backend/facerec/job.go`
-- **ACDSee Baseline:** The system first uses ExifTool to extract manually tagged regions (`mwg-rs`) embedded by ACDSee. These are treated as ground truth.
-- **Learning Process:** For every manually tagged face from ACDSee, the Go backend calls the Python `/learn` endpoint to generate a face embedding and saves it to the database (`people.db`).
+- **ACDSee Baseline:** The system first uses ExifTool to extract manually tagged regions (`mwg-rs`) embedded by ACDSee. These are treated as ground truth if their confidence is >= 0.85 (which includes both 'Manual' 1.0 tags and standard 0.85 detections).
+- **Learning Process:** For every manually tagged or high-confidence (>= 0.85) face from ACDSee, the Go backend calls the Python `/learn` endpoint to generate a face embedding and saves it to the database (`people.db`).
 - **ML Overlay & Recognition:** When the Python server detects "Unknown" faces via `/analyze`, the Go backend compares the new face's embedding against all known embeddings in the database using **Cosine Similarity**. If the similarity exceeds the threshold (e.g., 0.82), the face is automatically labeled with the known person's name.
 
 #### 3. Database (`people.db`)
@@ -2025,8 +2026,8 @@ The facial recognition system generates a `faces.json` file in each scanned dire
 #### 8. ACDSee Integration & Data Veracity
 **Location:** `backend/facerec/job.go` & `backend/http/facerec.go`
 - **Metadata Extraction:** The backend reads ACDSee's proprietary XMP region tags.
-- **Verified Promotion:** ACDSee faces explicitly assigned as 'Manual' (1.0 confidence) are ingested into the same management pipeline as ML faces. They are mapped to the search index and used for recognition training.
-- **Unified Management:** Unlike unverified ACDSee regions (which remain read-only), 100% confidence verified ACDSee faces are promoted to the ML management list, allowing users to rename or remove them if needed.
+- **Verified Promotion:** ACDSee faces with >= 0.85 confidence are ingested into the same management pipeline as ML faces. They are mapped to the search index and used for recognition training.
+- **Unified Management:** Unlike unverified ACDSee regions (confidence < 0.85), these high-confidence ACDSee faces are promoted to the ML management list, allowing users to rename or remove them if needed.
 
 #### 9. Frontend Face UI & Interactions
 **Location:** `frontend/src/views/files/Preview.vue`

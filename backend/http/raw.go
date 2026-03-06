@@ -249,11 +249,19 @@ func rawFilesHandler(w http.ResponseWriter, r *http.Request, d *requestContext, 
 		return http.StatusInternalServerError, err
 	}
 	logger.Debugf("RawFilesHandler: Resolved RealPath: %s", realPath)
-	// Compute estimated download size
-	estimatedSize, err := computeArchiveSize(fileList, d)
-	if err != nil {
-		return http.StatusInternalServerError, err
+
+	// PERFORMANCE/BUGFIX: Only compute archive size if we are actually building an archive (multiple files or a directory).
+	// This avoids 500 errors in computeArchiveSize when requesting single sidecar files (like faces.json)
+	// that are not indexed in the metadata store.
+	estimatedSize := int64(0)
+	if len(fileList) > 1 || isDir {
+		var err2 error
+		estimatedSize, err2 = computeArchiveSize(fileList, d)
+		if err2 != nil {
+			return http.StatusInternalServerError, err2
+		}
 	}
+
 	// ** Single file download with Content-Length **
 	if len(fileList) == 1 && !isDir {
 		fd, err2 := os.Open(realPath)
@@ -406,7 +414,9 @@ func computeArchiveSize(fileList []string, d *requestContext) (int64, error) {
 			indexPath = idx.MakeIndexPath(realPath)
 			info, ok = idx.GetReducedMetadata(indexPath, isDir)
 			if !ok {
-				return 0, fmt.Errorf("failed to get metadata info for %s", path)
+				// Don't error out hard, just skip or assume 0 for unindexed but real files
+				// This prevents 500 crashes on non-indexed sidecars.
+				continue
 			}
 		}
 		logger.Debugf("computeArchiveSize: Found metadata for %s. Size: %d", indexPath, info.Size)

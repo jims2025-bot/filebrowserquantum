@@ -314,7 +314,7 @@
                  style="border-bottom: 1px solid rgba(255,255,255,0.08); padding: 5px 0;">
               <div style="display: flex; align-items: center; gap: 6px;">
                 <!-- Checkbox -->
-                <input v-if="canManageFaces && (region.Source === 'ml' || (region.Source === 'acdsee' && region.Confidence === 1.0))" type="checkbox" v-model="selectedFaceIndices" :value="index"
+                <input v-if="canManageFaces && (region.Source === 'ml' || (region.Source === 'acdsee' && region.Confidence >= 0.85))" type="checkbox" v-model="selectedFaceIndices" :value="index"
                        @click.stop
                        style="margin: 0; cursor: pointer; flex-shrink: 0;">
                 <div v-else-if="canManageFaces" style="width: 13px; margin: 0; flex-shrink: 0;"></div>
@@ -322,10 +322,10 @@
                 <span :style="{ color: getFaceBoxColor(region, 1.0), fontSize: '14px', flexShrink: 0 }">●</span>
                 <!-- Name (click to start rename) -->
                 <span v-if="renamingFaceIndex !== index"
-                      :style="{ fontWeight: '500', flex: '1', cursor: (canManageFaces && (region.Source === 'ml' || (region.Source === 'acdsee' && region.Confidence === 1.0))) ? 'pointer' : 'default', minWidth: '0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }"
-                      :title="region.DisplayName"
-                      @click.stop="canManageFaces && (region.Source === 'ml' || (region.Source === 'acdsee' && region.Confidence === 1.0)) && startRename(index, region)">
-                  {{ region.DisplayName }}
+                      :style="{ fontWeight: '500', flex: '1', cursor: (canManageFaces && (region.Source === 'ml' || (region.Source === 'acdsee' && region.Confidence >= 0.85))) ? 'pointer' : 'default', minWidth: '0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }"
+                      :title="region.DisplayName || region.Name"
+                      @click.stop="canManageFaces && (region.Source === 'ml' || (region.Source === 'acdsee' && region.Confidence >= 0.85)) && startRename(index, region)">
+                  {{ region.DisplayName || region.Name || 'Unknown' }}
                 </span>
                 <!-- Inline rename input -->
                 <div v-else style="flex: 1; display: flex; gap: 4px; align-items: center; min-width: 0;">
@@ -576,6 +576,7 @@ import { getTypeInfo } from "@/utils/mimetype";
 import moment from "moment";
 import panzoom from "panzoom"; // Import panzoom
 import L from "leaflet";
+import { FaceEvents } from "@/utils/FaceEvents";
 import "leaflet/dist/leaflet.css";
 
 
@@ -754,7 +755,7 @@ export default {
             mapped = [];
         } else if (!this.showACDSeeFaces) {
             // Show ML faces, PLUS verified ACDSee faces since they are pulled into ML data
-            mapped = mapped.filter(f => f.Source === "ml" || (f.Source === "acdsee" && f.Confidence === 1.0));
+            mapped = mapped.filter(f => f.Source === "ml" || (f.Source === "acdsee" && f.Confidence >= 0.85));
         } else if (!this.showMLFaces) {
             // Show ONLY ACDSee faces
             mapped = mapped.filter(f => f.Source === "acdsee");
@@ -778,8 +779,10 @@ export default {
         combinedFaces = rawItems.map(item => {
            // Handle MWG RegionInfo structure (standard for ACDSee/others)
            let area = item.Area || item.area || item.ALGArea || item.DLYArea || item;
+           let name = item.Name || item.name || 'Unknown';
            return {
-             Name: item.Name || item.name || 'Unknown',
+             Name: name,
+             DisplayName: name,
              Source: 'acdsee',
              Confidence: 1.0,
              Area: {
@@ -804,7 +807,7 @@ export default {
     },
     mlFaceCount() {
        if (!this.facesData) return 0;
-       return this.facesData.filter(f => f.source === 'ml' || (f.source === 'acdsee' && f.confidence === 1.0)).length;
+       return this.facesData.filter(f => f.source === 'ml' || (f.source === 'acdsee' && f.confidence >= 0.85)).length;
     },
     canShare() {
       // Check if basic sharing is supported. Strict file sharing check happens at runtime or we assume support if navigator.share exists.
@@ -1570,7 +1573,7 @@ export default {
     // --- Bulk selection methods ---
     selectAllFaces() {
       this.selectedFaceIndices = this.faceRegions
-        .map((r, i) => r.Source === 'ml' ? i : -1)
+        .map((r, i) => (r.Source === 'ml' || (r.Source === 'acdsee' && r.Confidence >= 0.85)) ? i : -1)
         .filter(i => i !== -1);
     },
     unselectAllFaces() {
@@ -1592,6 +1595,7 @@ export default {
         notify.showSuccess(`Removed ${faces.length} face(s)`);
         this.selectedFaceIndices = [];
         this.fetchFacesData();
+        FaceEvents.emit(FaceEvents.FACE_UPDATED, { type: 'remove', path: this.req.path });
       } catch (err) {
         notify.showError(`Error removing faces: ${err.message}`);
       }
@@ -1629,6 +1633,7 @@ export default {
         this.renameInput = '';
         this.updateSearchThumbnailUrl(box);
         this.fetchFacesData();
+        FaceEvents.emit(FaceEvents.FACE_UPDATED, { type: 'rename', oldName, newName, path: this.req.path });
       } catch (err) {
         notify.showError(`Error renaming face: ${err.message}`);
       }
@@ -1650,6 +1655,7 @@ export default {
          notify.showSuccess(`Verified ${name} and saved to ML DB.`);
          this.updateSearchThumbnailUrl(box);
          this.fetchFacesData(); // Refresh UI
+         FaceEvents.emit(FaceEvents.FACE_UPDATED, { type: 'verify', name: name, path: this.req.path });
        } catch (err) {
          notify.showError(`Error verifying face: ${err.message}`);
        }
@@ -1677,6 +1683,7 @@ export default {
          notify.showSuccess(`Removed face box for ${oldName || 'Unknown'}`);
          this.closeFaceContextMenu();
          this.fetchFacesData(); // Refresh UI
+         FaceEvents.emit(FaceEvents.FACE_UPDATED, { type: 'remove', path: this.req.path });
        } catch (err) {
          notify.showError(`Error removing face: ${err.message}`);
        }

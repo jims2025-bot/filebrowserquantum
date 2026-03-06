@@ -47,7 +47,7 @@ func InitDB(basePath string) error {
 
 	CREATE TABLE IF NOT EXISTS face_index (
 		person_id INTEGER,
-		image_path TEXT NOT NULL,
+		image_path TEXT NOT NULL COLLATE NOCASE,
 		confidence REAL,
 		box TEXT,
 		is_avatar INTEGER DEFAULT 0,
@@ -58,7 +58,7 @@ func InitDB(basePath string) error {
 	CREATE TABLE IF NOT EXISTS face_embeddings (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		person_id INTEGER,
-		image_path TEXT NOT NULL,
+		image_path TEXT NOT NULL COLLATE NOCASE,
 		embedding BLOB NOT NULL,
 		FOREIGN KEY(person_id) REFERENCES people(id)
 	);
@@ -66,6 +66,14 @@ func InitDB(basePath string) error {
 	CREATE INDEX IF NOT EXISTS idx_face_index_person ON face_index(person_id);
 	CREATE INDEX IF NOT EXISTS idx_face_index_path ON face_index(image_path);
 	CREATE INDEX IF NOT EXISTS idx_face_embeddings_person ON face_embeddings(person_id);
+
+	CREATE TABLE IF NOT EXISTS user_face_avatars (
+		user_id INTEGER,
+		person_id INTEGER,
+		image_path TEXT NOT NULL COLLATE NOCASE,
+		box TEXT,
+		PRIMARY KEY(user_id, person_id)
+	);
 	`
 	_, err = db.Exec(schema)
 	if err != nil {
@@ -96,7 +104,7 @@ func GetOrCreatePerson(name string) (int64, error) {
 
 	// Fetch the ID
 	var id int64
-	err = DB.QueryRow("SELECT id FROM people WHERE name = ?", name).Scan(&id)
+	err = DB.QueryRow("SELECT id FROM people WHERE name = ? COLLATE NOCASE", name).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
@@ -124,16 +132,20 @@ func MapFaceToIndex(name string, imagePath string, confidence float64, box strin
 }
 
 // RemoveFaceFromIndex deletes a link between a person and an image (used during manual UI removal).
-func RemoveFaceFromIndex(name string, imagePath string) error {
+func RemoveFaceFromIndex(name string, imagePath string, box string) error {
 	if DB == nil {
 		return nil
 	}
 
-	_, err := DB.Exec(`
-		DELETE FROM face_index 
-		WHERE image_path = ? COLLATE NOCASE AND person_id = (SELECT id FROM people WHERE name = ?)
-	`, imagePath, name)
+	query := "DELETE FROM face_index WHERE image_path = ? COLLATE NOCASE AND person_id = (SELECT id FROM people WHERE name = ?)"
+	args := []interface{}{imagePath, name}
 
+	if box != "" {
+		query += " AND box = ?"
+		args = append(args, box)
+	}
+
+	_, err := DB.Exec(query, args...)
 	return err
 }
 
@@ -161,13 +173,29 @@ func SetPersonAvatar(name string, imagePath string, box string) error {
 	return err
 }
 
+func SetUserPersonAvatar(userID uint, name string, imagePath string, box string) error {
+	if DB == nil {
+		return fmt.Errorf("people.db not initialized")
+	}
+	personID, err := GetOrCreatePerson(name)
+	if err != nil {
+		return err
+	}
+
+	_, err = DB.Exec(`
+		INSERT OR REPLACE INTO user_face_avatars (user_id, person_id, image_path, box)
+		VALUES (?, ?, ?, ?)
+	`, userID, personID, imagePath, box)
+	return err
+}
+
 type PersonMatch struct {
 	ImagePath string `json:"imagePath"`
 	Box       string `json:"box"`
 }
 
 // SearchImagesByPerson returns all absolute image paths tagged with a specific person name.
-func SearchImagesByPerson(nameQuery string, pathPrefix string, limit int, offset int) ([]PersonMatch, error) {
+func SearchImagesByPerson(nameQuery string, pathPrefix string, limit int, offset int, userID uint) ([]PersonMatch, error) {
 	if DB == nil {
 		return nil, fmt.Errorf("people.db not initialized")
 	}
@@ -176,9 +204,10 @@ func SearchImagesByPerson(nameQuery string, pathPrefix string, limit int, offset
 		SELECT fi.image_path, fi.box 
 		FROM face_index fi
 		JOIN people p ON p.id = fi.person_id
-		WHERE p.name = ?
+		LEFT JOIN user_face_avatars ufa ON ufa.person_id = p.id AND ufa.user_id = ?
+		WHERE p.name = ? COLLATE NOCASE
 	`
-	args := []interface{}{nameQuery}
+	args := []interface{}{userID, nameQuery}
 
 	if pathPrefix != "" {
 		// Ensure pathPrefix ends with separator for subfolder matching
@@ -188,7 +217,7 @@ func SearchImagesByPerson(nameQuery string, pathPrefix string, limit int, offset
 	}
 
 	queryStr += `
-		ORDER BY fi.is_avatar DESC, fi.confidence DESC
+		ORDER BY (fi.image_path = ufa.image_path AND fi.box = ufa.box) DESC, fi.is_avatar DESC, fi.confidence DESC
 		LIMIT ? OFFSET ?
 	`
 	args = append(args, limit, offset)
@@ -216,7 +245,7 @@ func SearchImagesByPerson(nameQuery string, pathPrefix string, limit int, offset
 }
 
 // SearchImagesByPeople returns images matching a set of people using AND/OR logic.
-func SearchImagesByPeople(names []string, logic string, pathPrefix string, limit int, offset int) ([]PersonMatch, error) {
+func SearchImagesByPeople(names []string, logic string, pathPrefix string, limit int, offset int, userID uint) ([]PersonMatch, error) {
 	if DB == nil {
 		return nil, fmt.Errorf("people.db not initialized")
 	}
@@ -239,6 +268,7 @@ func SearchImagesByPeople(names []string, logic string, pathPrefix string, limit
 			SELECT fi.image_path, fi.box
 			FROM face_index fi
 			JOIN people p ON p.id = fi.person_id
+			LEFT JOIN user_face_avatars ufa ON ufa.person_id = p.id AND ufa.user_id = ?
 			WHERE fi.image_path IN (
 				SELECT fi2.image_path
 				FROM face_index fi2
@@ -247,8 +277,9 @@ func SearchImagesByPeople(names []string, logic string, pathPrefix string, limit
 				GROUP BY fi2.image_path
 				HAVING COUNT(DISTINCT p2.id) = ?
 			)
-			AND p.name = ?
+			AND p.name = ? COLLATE NOCASE
 		`, placeholderStr)
+		args = append([]interface{}{userID}, args...)
 		args = append(args, len(names), names[0]) // Get box for the first person
 	} else {
 		// OR logic
@@ -256,8 +287,10 @@ func SearchImagesByPeople(names []string, logic string, pathPrefix string, limit
 			SELECT fi.image_path, fi.box 
 			FROM face_index fi
 			JOIN people p ON p.id = fi.person_id
-			WHERE p.name IN (%s)
+			LEFT JOIN user_face_avatars ufa ON ufa.person_id = p.id AND ufa.user_id = ?
+			WHERE p.name IN (%s) COLLATE NOCASE
 		`, placeholderStr)
+		args = append([]interface{}{userID}, args...)
 	}
 
 	if pathPrefix != "" {
@@ -271,7 +304,7 @@ func SearchImagesByPeople(names []string, logic string, pathPrefix string, limit
 	}
 
 	queryStr += `
-		ORDER BY fi.is_avatar DESC, fi.confidence DESC
+		ORDER BY (fi.image_path = ufa.image_path AND fi.box = ufa.box) DESC, fi.is_avatar DESC, fi.confidence DESC
 		LIMIT ? OFFSET ?
 	`
 	args = append(args, limit, offset)
@@ -321,6 +354,21 @@ func SaveFaceEmbedding(name string, imagePath string, embedding []float64) error
 	return err
 }
 
+// HasEmbedding checks if we already have a learned embedding for this person/image combo.
+func HasEmbedding(name string, imagePath string) (bool, error) {
+	if DB == nil {
+		return false, nil
+	}
+	var count int
+	err := DB.QueryRow(`
+		SELECT COUNT(*) 
+		FROM face_embeddings fe
+		JOIN people p ON p.id = fe.person_id
+		WHERE p.name = ? COLLATE NOCASE AND fe.image_path = ? COLLATE NOCASE
+	`, name, imagePath).Scan(&count)
+	return count > 0, err
+}
+
 type PersonEmbedding struct {
 	Name      string
 	Embedding []float64
@@ -364,22 +412,24 @@ type PersonSummary struct {
 }
 
 // GetPeopleSummary returns a list of unique people and the number of indexed faces for each.
-func GetPeopleSummary(pathPrefix string) ([]PersonSummary, error) {
+func GetPeopleSummary(pathPrefix string, userID uint) ([]PersonSummary, error) {
 	if DB == nil {
 		return nil, fmt.Errorf("people.db not initialized")
 	}
 
-	prefixMatch := ""
+	innerPrefixMatch := ""
+	outerPrefixMatch := ""
 	if pathPrefix != "" {
 		prefix := filepath.Clean(pathPrefix)
-		prefixMatch = fmt.Sprintf("WHERE image_path = '%s' OR image_path LIKE '%s%c%%'", prefix, prefix, filepath.Separator)
+		innerPrefixMatch = fmt.Sprintf("WHERE image_path = '%s' OR image_path LIKE '%s%c%%'", prefix, prefix, filepath.Separator)
+		outerPrefixMatch = fmt.Sprintf("WHERE fi.image_path = '%s' OR fi.image_path LIKE '%s%c%%'", prefix, prefix, filepath.Separator)
 	}
 
 	rows, err := DB.Query(fmt.Sprintf(`
 		SELECT name, cnt, box, image_path
 		FROM (
 			SELECT p.name, counts.cnt, fi.box, fi.image_path,
-			       ROW_NUMBER() OVER (PARTITION BY p.id ORDER BY fi.is_avatar DESC, fi.confidence DESC) as rn
+			       ROW_NUMBER() OVER (PARTITION BY p.id ORDER BY (fi.image_path = ufa.image_path AND fi.box = ufa.box) DESC, fi.is_avatar DESC, fi.confidence DESC) as rn
 			FROM people p
 			JOIN (
 				SELECT person_id, COUNT(*) as cnt
@@ -388,10 +438,11 @@ func GetPeopleSummary(pathPrefix string) ([]PersonSummary, error) {
 				GROUP BY person_id
 			) counts ON p.id = counts.person_id
 			JOIN face_index fi ON fi.person_id = p.id
+			LEFT JOIN user_face_avatars ufa ON ufa.person_id = p.id AND ufa.user_id = ?
 			%s
 		) WHERE rn = 1
 		ORDER BY cnt DESC, name ASC
-	`, prefixMatch, prefixMatch))
+	`, innerPrefixMatch, outerPrefixMatch), userID)
 	if err != nil {
 		return nil, err
 	}
@@ -445,7 +496,7 @@ func GetDatabaseStats() (DatabaseStats, error) {
 		return stats, err
 	}
 
-	err = DB.QueryRow("SELECT COUNT(*) FROM face_index WHERE confidence < 0.99").Scan(&stats.TotalUnverified)
+	err = DB.QueryRow("SELECT COUNT(*) FROM face_index WHERE confidence < 0.85").Scan(&stats.TotalUnverified)
 	if err != nil {
 		return stats, err
 	}
@@ -470,7 +521,7 @@ func GetDatabaseStats() (DatabaseStats, error) {
 			folderMap[dir] = &FolderStat{Path: dir}
 		}
 		folderMap[dir].FaceCount++
-		if confidence < 0.99 {
+		if confidence < 0.85 {
 			folderMap[dir].UnverifiedCount++
 		}
 	}
@@ -488,11 +539,11 @@ func CleanUnverifiedFaces(folderPath string) error {
 	}
 
 	if folderPath == "" {
-		_, err := DB.Exec("DELETE FROM face_index WHERE confidence < 0.99")
+		_, err := DB.Exec("DELETE FROM face_index WHERE confidence < 0.85")
 		return err
 	}
 
 	cleanPath := filepath.Clean(folderPath) + string(os.PathSeparator)
-	_, err := DB.Exec("DELETE FROM face_index WHERE confidence < 0.99 AND image_path LIKE ?", cleanPath+"%")
+	_, err := DB.Exec("DELETE FROM face_index WHERE confidence < 0.85 AND image_path LIKE ?", cleanPath+"%")
 	return err
 }

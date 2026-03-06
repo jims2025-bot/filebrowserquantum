@@ -463,27 +463,80 @@ func ScanFolder(dirPath string, cfg settings.FacialRecognition, store *storage.S
 	jsonBytes, err := os.ReadFile(facesFilePath)
 	if err == nil {
 		json.Unmarshal(jsonBytes, &facesData)
+
+		// Get folder dimensions once to validate boxes
+		var firstW, firstH float64
+		// Deduplicate and validate existing entries once at the start of the scan to clean up any legacy duplicates
+		updatedJSON := false
+		for fname, entries := range facesData {
+			if len(entries) > 0 {
+				fullPath := filepath.Join(dirPath, fname)
+				orient, w, h := getImageExifInfo(fullPath)
+				if w == 0 || h == 0 {
+					w, h = firstW, firstH // Fallback to first seen if exif fails
+				} else if firstW == 0 {
+					firstW, firstH = w, h
+				}
+
+				validEntries := []FaceEntry{}
+				for _, e := range entries {
+					if isBoxValid(e.Box, orient, int(w), int(h)) {
+						validEntries = append(validEntries, e)
+					} else {
+						updatedJSON = true
+						log.Printf("[FacialRec] Purging invalid box for %s in %s: %v (Orient: %d, Image: %dx%d)", e.Name, fname, e.Box, orient, int(w), int(h))
+					}
+				}
+
+				deduped := deduplicateFaces(validEntries)
+				if len(deduped) < len(entries) {
+					facesData[fname] = deduped
+					updatedJSON = true
+					log.Printf("[FacialRec] Cleaned up %d duplicate(s) for %s in %s", len(entries)-len(deduped), fname, facesFilePath)
+				} else if len(validEntries) < len(entries) {
+					facesData[fname] = validEntries
+				}
+			}
+		}
+		if updatedJSON {
+			b, _ := json.MarshalIndent(facesData, "", "  ")
+			os.WriteFile(facesFilePath, b, 0666)
+		}
+
 		// Fast-sync existing faces to people.db to ensure all boxes are populated
 		for filename, entries := range facesData {
 			fullPath := filepath.Join(dirPath, filename)
+			
+			// Group entries by person to avoid index/delete tug-of-war
+			personHasVerified := make(map[string]bool)
+			for _, f := range entries {
+				if f.Name != "" && f.Name != "Unknown" && (f.Source == "ml" || f.Confidence >= 0.85) {
+					personHasVerified[f.Name] = true
+				}
+			}
+
+			seenPeople := make(map[string]bool)
 			for _, f := range entries {
 				if f.Name != "" && f.Name != "Unknown" {
+					if seenPeople[f.Name] {
+						continue // Only index one box per person per image (schema limitation)
+					}
 					boxStr := ""
 					if len(f.Box) == 4 {
 						boxStr = fmt.Sprintf("%d,%d,%d,%d", f.Box[0], f.Box[1], f.Box[2], f.Box[3])
 					}
-					// Use 1.0 confidence for manual/unknown, or the actual confidence
 					conf := f.Confidence
 					if conf == 0 {
 						conf = 1.0
 					}
 
-					// Only allow ML faces or verified ACDSee faces (confidence >= 0.99) into the global search index
-					if f.Source == "ml" || conf >= 0.99 {
+					// Only allow ML faces or verified ACDSee faces into the global search index
+					if f.Source == "ml" || conf >= 0.85 {
 						people.MapFaceToIndex(f.Name, fullPath, conf, boxStr)
-					} else {
-						// Proactively remove any previously mapped unverified faces from search results
-						people.RemoveFaceFromIndex(f.Name, fullPath)
+						seenPeople[f.Name] = true
+					} else if !personHasVerified[f.Name] {
+						// Only remove if we DON'T have a verified entry for this person in this image
+						people.RemoveFaceFromIndex(f.Name, fullPath, "")
 					}
 				}
 			}
@@ -688,17 +741,21 @@ func processSingleFile(dirPath string, name string, facesData FacesFile, cfg set
 	// Check if we already have ML data for this file
 	existing, alreadyProcessed := facesData[name]
 	hasML := false
+	needsLearning := false
 	if alreadyProcessed {
 		for _, f := range existing {
-		if f.Source == "ml" || f.Source == "ml_scanned" || f.Source == "deleted" {
+			if f.Source == "ml" || f.Source == "ml_scanned" || f.Source == "deleted" {
 				hasML = true
-				break
+			}
+			// If it's a high-confidence ACDSee face but HAS NO embedding, we still need to process/learn it
+			if f.Source == "acdsee" && f.Confidence >= 0.85 && (f.Embedding == nil || len(f.Embedding) == 0) {
+				needsLearning = true
 			}
 		}
 	}
 
-	if alreadyProcessed && hasML && !force {
-		log.Printf("[FacialRec] Skip %s: already has ML data", name)
+	if alreadyProcessed && hasML && !needsLearning && !force {
+		log.Printf("[FacialRec] Skip %s: already has ML data and no pending ACDSee learning", name)
 		return false // Fully processed
 	}
 
@@ -710,13 +767,16 @@ func processSingleFile(dirPath string, name string, facesData FacesFile, cfg set
 	if alreadyProcessed && !force {
 		baseFaces = existing
 	} else {
+		log.Printf("[FacialRec]   Extracting ACDSee regions for %s", fullPath)
 		freshACDSee, _ := ExtractACDSeeRegions(fullPath)
+		log.Printf("[FacialRec]   Found %d ACDSee regions", len(freshACDSee))
 
 		// Preserve manual ML faces or deleted markers from existing data
 		var preserved []FaceEntry
 		if alreadyProcessed {
+			orient, w, h := getImageExifInfo(fullPath)
 			for _, f := range existing {
-				if f.Source == "deleted" || (f.Source == "ml" && f.Confidence >= 0.99) {
+				if (f.Source == "deleted" || (f.Source == "ml" && f.Confidence >= 0.99)) && isBoxValid(f.Box, orient, int(w), int(h)) {
 					preserved = append(preserved, f)
 				}
 			}
@@ -737,23 +797,43 @@ func processSingleFile(dirPath string, name string, facesData FacesFile, cfg set
 			}
 		}
 
+		// Group entries by person to avoid index/delete tug-of-war
+		personHasVerified := make(map[string]bool)
+		for _, f := range baseFaces {
+			if f.Name != "" && f.Name != "Unknown" && (f.Source == "ml" || f.Confidence >= 0.85) {
+				personHasVerified[f.Name] = true
+			}
+		}
+
+		seenPeople := make(map[string]bool)
 		for i, f := range baseFaces {
 			if f.Name != "" && f.Name != "Unknown" {
+				if seenPeople[f.Name] {
+					continue
+				}
 				boxStr := ""
 				if len(f.Box) == 4 {
 					boxStr = fmt.Sprintf("%d,%d,%d,%d", f.Box[0], f.Box[1], f.Box[2], f.Box[3])
 				}
 
-				// Only map verified ACDSee faces (confidence >= 0.99) to the global search index
-				if f.Confidence >= 0.99 {
+				// Only map verified ACDSee faces (confidence >= 0.85) to the global search index
+				if f.Confidence >= 0.85 {
 					people.MapFaceToIndex(f.Name, fullPath, f.Confidence, boxStr)
-				} else {
-					// Proactively remove any previously mapped unverified faces from search results
-					people.RemoveFaceFromIndex(f.Name, fullPath)
+					seenPeople[f.Name] = true
+				} else if !personHasVerified[f.Name] {
+					// Only remove if we DON'T have a verified entry for this person in this image
+					people.RemoveFaceFromIndex(f.Name, fullPath, "")
 				}
 
 				// "LEARN": Get embedding for the ACDSee box if it's manual
-				if f.Source == "acdsee" && f.Confidence >= 0.99 && (f.Box != nil && len(f.Box) == 4 && f.Box[1] > 0) {
+				if f.Source == "acdsee" && f.Confidence >= 0.85 && (f.Box != nil && len(f.Box) == 4 && f.Box[1] > 0) {
+					// Check if we already have it in people.db to save time and Python server load
+					hasEmb, _ := people.HasEmbedding(f.Name, fullPath)
+					if hasEmb {
+						log.Printf("[FacialRec]   Skip learning for %s: embedding already exists in DB", f.Name)
+						continue
+					}
+
 					log.Printf("[FacialRec] Learning face for %s at box %v", f.Name, f.Box)
 					emb, err := LearnFace(cfg.ServerAddress, fullPath, f.Box)
 					if err == nil {
@@ -766,18 +846,18 @@ func processSingleFile(dirPath string, name string, facesData FacesFile, cfg set
 					} else {
 						log.Printf("[FacialRec] ERROR learning face for %s: %v", f.Name, err)
 					}
-				} else {
-					log.Printf("[FacialRec] Skipping learning for %s (Confidence: %f, Box: %v)", f.Name, f.Confidence, f.Box)
 				}
 			}
 		}
 	}
 
 	// 2. Python ML overlay
+	log.Printf("[FacialRec]   Analyzing via Python ML server for %s", fullPath)
 	mlFaces, err := AnalyzeFile(cfg.ServerAddress, fullPath)
 	if err != nil {
-		log.Printf("[FacialRec] Error analyzing %s via Python server: %v", name, err)
+		log.Printf("[FacialRec]   Error analyzing %s via Python server: %v", name, err)
 	} else {
+		log.Printf("[FacialRec]   Found %d ML faces", len(mlFaces))
 		// cv2.imdecode auto-rotates images, so ML boxes are in oriented/display space.
 		// We need to:
 		// 1. Compute oriented-space Area (for Preview.vue face overlays which use browser's auto-oriented image)
@@ -863,13 +943,12 @@ func processSingleFile(dirPath string, name string, facesData FacesFile, cfg set
 
 		// We no longer filter out ML faces that overlap with ACDSee faces because
 		// the UI now has mutually exclusive toggles (ML vs ACDSee). Both should be saved.
-		filteredMLFaces := mlFaces
-
-		baseFaces = append(baseFaces, filteredMLFaces...)
+		// HOWEVER, we should merge them to avoid literal duplicates in the JSON.
+		baseFaces = deduplicateFaces(append(baseFaces, mlFaces...))
 
 		// If ML ran but no ML faces survived IOU filtering, add a marker
 		// so the weekly background scan knows not to re-process this image.
-		if len(filteredMLFaces) == 0 {
+		if len(mlFaces) == 0 {
 			hasMLMarker := false
 			for _, f := range baseFaces {
 				if f.Source == "ml_scanned" || f.Source == "deleted" {
@@ -887,12 +966,13 @@ func processSingleFile(dirPath string, name string, facesData FacesFile, cfg set
 		}
 
 		// Map high-confidence ML faces to `people.db`
-		for _, f := range filteredMLFaces {
-			if f.Name != "" && f.Name != "Unknown" && f.Confidence > 0.90 {
+		for _, f := range baseFaces {
+			if f.Source == "ml" && f.Name != "" && f.Name != "Unknown" && f.Confidence > 0.90 {
 				boxStr := ""
 				if len(f.Box) == 4 {
 					boxStr = fmt.Sprintf("%d,%d,%d,%d", f.Box[0], f.Box[1], f.Box[2], f.Box[3])
 				}
+				// Prioritize indexing even if already processed above (Insert OR Replace)
 				people.MapFaceToIndex(f.Name, fullPath, f.Confidence, boxStr)
 				if len(f.Embedding) > 0 {
 					people.SaveFaceEmbedding(f.Name, fullPath, f.Embedding)
@@ -950,4 +1030,100 @@ func ScanAllSources(set *settings.Settings, store *storage.Storage) {
 	}
 
 	log.Printf("[DONE] Facial Recognition Scanner finished in %v", time.Since(start))
+}
+
+// deduplicateFaces merges overlapping boxes while preserving the best metadata.
+func deduplicateFaces(faces []FaceEntry) []FaceEntry {
+	if len(faces) < 2 {
+		return faces
+	}
+
+	result := []FaceEntry{}
+	merged := make(map[int]bool)
+
+	for i := 0; i < len(faces); i++ {
+		if merged[i] {
+			continue
+		}
+
+		current := faces[i]
+		for j := i + 1; j < len(faces); j++ {
+			if merged[j] {
+				continue
+			}
+
+			iou := CalculateIOU(current.Box, faces[j].Box)
+			isMatch := false
+			
+			// 1. Basic IOU threshold for any overlapping faces
+			if iou > 0.7 {
+				isMatch = true
+			}
+			
+			// 2. More aggressive threshold for identical names (catch stale boxes with slightly different coords)
+			if current.Name != "" && current.Name != "Unknown" && current.Name == faces[j].Name && iou > 0.4 {
+				isMatch = true
+			}
+
+			if isMatch {
+				// Duplicate found! Merge faces[j] into current
+				other := faces[j]
+
+				// 1. Prioritize name (take non-unknown)
+				if (current.Name == "" || current.Name == "Unknown") && other.Name != "" && other.Name != "Unknown" {
+					current.Name = other.Name
+				}
+				// 2. Prioritize ML source for embedding/confidence
+				if other.Source == "ml" && current.Source != "ml" {
+					current.Source = "ml"
+					current.Confidence = other.Confidence
+					current.Embedding = other.Embedding
+					if other.Area != nil {
+						current.Area = other.Area
+					}
+				} else if current.Source == "ml" && other.Source == "ml" {
+					// Both ML? Keep the higher confidence or more complete one
+					if other.Confidence > current.Confidence {
+						current.Confidence = other.Confidence
+					}
+					if len(other.Embedding) > 0 && len(current.Embedding) == 0 {
+						current.Embedding = other.Embedding
+					}
+				}
+				
+				merged[j] = true
+			}
+		}
+		result = append(result, current)
+	}
+
+	return result
+}
+
+// isBoxValid checks if the box is within reasonable bounds of the image dimensions.
+func isBoxValid(box FaceBox, orientation, rawW, rawH int) bool {
+	if len(box) != 4 || rawW <= 0 || rawH <= 0 {
+		return true // Can't validate without dimensions
+	}
+	y1, x2, y2, x1 := box[0], box[1], box[2], box[3]
+	
+	// Allow for a small margin of error (e.g. 50px)
+	margin := 50
+	
+	// Determine the oriented (runtime) bounds
+	maxW, maxH := rawW, rawH
+	if orientation >= 5 && orientation <= 8 {
+		maxW, maxH = rawH, rawW // swapped width/height
+	}
+
+	if y1 < -margin || y2 > maxH+margin || x1 < -margin || x2 > maxW+margin {
+		return false
+	}
+	
+	// Sanity check for box size
+	if y2 <= y1 || x2 <= x1 {
+		return false
+	}
+	
+	return true
 }

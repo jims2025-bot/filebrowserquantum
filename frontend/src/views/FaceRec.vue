@@ -112,10 +112,14 @@ export default {
         folders: []
       },
       isCleaning: false,
+      isScanning: false,
       expandedPaths: { "/": true }, // track expanded paths visually
     };
   },
   computed: {
+    user() {
+      return state.user;
+    },
     treeArray() {
       if (!this.stats.folders || this.stats.folders.length === 0) return [];
       
@@ -247,6 +251,7 @@ export default {
     async scanFolder(folderPath) {
       if (!confirm(`Are you sure you want to start a full background scan for faces in ${folderPath ? folderPath : 'the entire database'}?`)) return;
       
+      this.isScanning = true;
       try {
          // Assuming API has scan call, if not we will just notify user. Let's make an API endpoint for it.
          notify.showSuccess(`Face scan initiated for ${folderPath || 'root'}. Check progress on any folder view.`);
@@ -255,8 +260,8 @@ export default {
             headers: { 'Content-Type': 'application/json', 'X-Auth': state.jwt },
             body: JSON.stringify({ items: [folderPath || '/'] })
          });
-      } catch (e) {
-         notify.showError(`Failed to start scan: ${e.message}`);
+      } finally {
+         this.isScanning = false;
       }
     }
   }
