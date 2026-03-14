@@ -434,7 +434,8 @@ export default {
     
         const companions = {};
         for (const f of this.files) {
-            if (f.name.toLowerCase().endsWith('.geojson')) {
+            const low = f.name.toLowerCase();
+            if (low.endsWith('.geojson') || low.endsWith('.pmtiles') || low.endsWith('.pmtile')) {
                 const base = f.name.substring(0, f.name.lastIndexOf('.'));
                 if (imageMap[base]) {
                     companions[f.name] = imageMap[base];

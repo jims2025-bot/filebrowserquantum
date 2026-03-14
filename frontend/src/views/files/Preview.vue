@@ -1327,7 +1327,8 @@ export default {
   },
   async mounted() {
     // Check for GeoJSON redirect
-    if (this.req && this.req.name && this.req.name.toLowerCase().endsWith('.geojson')) {
+    const low = this.req.name.toLowerCase();
+    if (this.req && this.req.name && (low.endsWith('.geojson') || low.endsWith('.pmtiles') || low.endsWith('.pmtile'))) {
         const path = this.req.path;
         const source = this.req.source;
         this.$router.replace({ 

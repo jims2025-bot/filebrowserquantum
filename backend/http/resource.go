@@ -65,6 +65,37 @@ func resourceGetHandler(w http.ResponseWriter, r *http.Request, d *requestContex
 		return http.StatusForbidden, err
 	}
 
+	// NEW: Handle Virtual Root Listing (ALL_SOURCES)
+	// Only trigger aggregator view if this isn't a physical source.
+	_, isPhysical := settings.Config.Server.NameToSource[realSource]
+	if settings.IsVirtualSource(realSource) && !isPhysical && scopePath == "/" {
+		virtualRoot := iteminfo.ExtendedFileInfo{
+			FileInfo: iteminfo.FileInfo{
+				ItemInfo: iteminfo.ItemInfo{
+					Name:    realSource,
+					Type:    "directory",
+					ModTime: settings.Config.Server.ServerStart,
+				},
+				Files: []iteminfo.ItemInfo{}, // Ensure items is an empty slice, not nil
+				Path:  "/",
+			},
+			Source: realSource,
+		}
+		// Populate Folders with user scopes to help navigation
+		for _, s := range d.user.Scopes {
+			name := s.Alias
+			if name == "" {
+				name = filepath.Base(s.Name)
+			}
+			virtualRoot.Folders = append(virtualRoot.Folders, iteminfo.ItemInfo{
+				Name:    name,
+				Type:    "directory",
+				ModTime: settings.Config.Server.ServerStart,
+			})
+		}
+		return renderJSON(w, r, virtualRoot)
+	}
+
 	// Restore userscope for path trimming logic later
 	// We use the original source string because that's what the scopes are mapped to (or aliases)
 	userscope, _, _ := settings.GetScopeFromSourceString(d.user.Scopes, source)

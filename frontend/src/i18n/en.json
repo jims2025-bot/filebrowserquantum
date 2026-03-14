@@ -283,7 +283,11 @@
       "viewACDSee": "View ACDSee Face Data",
       "viewACDSeeDescription": "Allows viewing unverified ACDSee face regions and toggling the ACDSee face layer in the image preview.",
       "rebuildThumbnails": "Rebuild Thumbnails",
-      "rebuildThumbnailsDescription": "Allows clearing and regenerating cached app thumbnails to fix rotation or cropping issues."
+      "rebuildThumbnailsDescription": "Allows clearing and regenerating cached app thumbnails to fix rotation or cropping issues.",
+      "viewMapLibre": "View MapLibre Map",
+      "viewMapLibreDescription": "Allows users to view and interact with the MapLibre Map (explore icon).",
+      "manageOverlays": "Overlay Management",
+      "manageOverlaysDescription": "Allows users to edit naming and descriptions for Map Overlays (.geojson, .pmtiles)."
     },
     "permissions-name": "Permissions",
     "permissionsHelp": "You can set the user to be an administrator or choose the permissions individually. If you select \"Administrator\", all of the other options will be automatically checked. The management of users remains a privilege of an administrator.\n",

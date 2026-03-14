@@ -39,6 +39,8 @@ type Permissions struct {
 	RunFaceScan         bool `json:"runFaceScan"`
 	ViewACDSee          bool `json:"viewACDSee"`
 	RebuildThumbnails   bool `json:"rebuildThumbnails"`
+	ViewMapLibre        bool `json:"viewMapLibre"`
+	ManageOverlays      bool `json:"manageOverlays"`
 }
 
 // SortingSettings represents the sorting settings.

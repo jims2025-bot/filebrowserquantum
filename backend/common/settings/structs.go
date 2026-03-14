@@ -1,6 +1,8 @@
 package settings
 
 import (
+	"time"
+
 	"github.com/jims2025-bot/filebrowserquantum/backend/database/users"
 )
 
@@ -43,6 +45,7 @@ type Server struct {
 	SourceMap      map[string]Source `json:"-" yaml:"-" validate:"omitempty"` // uses realpath as key
 	NameToSource   map[string]Source `json:"-" yaml:"-" validate:"omitempty"` // uses name as key
 	DefaultSource  Source            `json:"-" yaml:"-" validate:"omitempty"`
+	ServerStart    time.Time         `json:"-" yaml:"-"`
 }
 
 type Integrations struct {

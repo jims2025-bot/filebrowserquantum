@@ -12,6 +12,7 @@ import (
 
 	"github.com/gtsteffaniak/go-cache/cache"
 	"github.com/gtsteffaniak/go-logger/logger"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/errors"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
 	"github.com/jims2025-bot/filebrowserquantum/backend/common/utils"
 	"github.com/jims2025-bot/filebrowserquantum/backend/indexing/iteminfo"
@@ -121,7 +122,7 @@ func (idx *Index) indexDirectory(adjustedPath string, quick, recursive bool) err
 	dir, err := os.Open(realPath)
 	if err != nil {
 		idx.RemoveDirectory(adjustedPath) // Remove, must have been deleted
-		return err
+		return fmt.Errorf("%w: %v", errors.ErrNotExist, err)
 	}
 	defer dir.Close()
 
@@ -432,7 +433,7 @@ func (idx *Index) RefreshFileInfo(opts iteminfo.FileOptions) (string, error) {
 	//utils.PrintStructFields(*file)
 	result := idx.UpdateMetadata(file)
 	if !result {
-		return refreshOptions.Path, fmt.Errorf("file/folder does not exist in metadata: %s", refreshOptions.Path)
+		return refreshOptions.Path, fmt.Errorf("%w: file/folder does not exist in metadata: %s", errors.ErrNotExist, refreshOptions.Path)
 	}
 	if !exists {
 		return refreshOptions.Path, nil

@@ -101,7 +101,7 @@ func getTileHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (
 	// Get heatmap data based on path (with caching)
 	var data heatmap.HeatmapData
 
-	if (path == "/" && source == "") || source == "ALL" {
+	if (path == "/" && source == "") || (realSource == "" && settings.IsVirtualSource(source)) {
 		// Global heatmap - Scope by User ID to prevent leaking data between users
 		userKey := fmt.Sprintf("user:%v", d.user.ID)
 		data, err = getCachedHeatmap(userKey, "global", func() (heatmap.HeatmapData, error) {

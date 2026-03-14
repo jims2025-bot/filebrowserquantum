@@ -339,8 +339,23 @@ func GetXMPInstructions(filePath string) (string, error) {
 
 func FileInfoFaster(opts iteminfo.FileOptions) (iteminfo.ExtendedFileInfo, error) {
 	response := iteminfo.ExtendedFileInfo{}
-	if opts.Source == "ALL" {
-		return response, fmt.Errorf("file listing is not supported for pseudo-source 'ALL'")
+	// Only treat as virtual if it's not a physical source name
+	_, isPhysical := settings.Config.Server.NameToSource[opts.Source]
+	if settings.IsVirtualSource(opts.Source) && !isPhysical {
+		if opts.Path == "/" || opts.Path == "" {
+			return iteminfo.ExtendedFileInfo{
+				FileInfo: iteminfo.FileInfo{
+					ItemInfo: iteminfo.ItemInfo{
+						Name:    opts.Source,
+						Type:    "directory",
+						ModTime: settings.Config.Server.ServerStart,
+					},
+					Path: "/",
+				},
+				Source: opts.Source,
+			}, nil
+		}
+		return response, fmt.Errorf("%w: virtual source '%s' cannot resolve path '%s' to a physical index", errors.ErrNotExist, opts.Source, opts.Path)
 	}
 	index := indexing.GetIndex(opts.Source)
 	if index == nil {

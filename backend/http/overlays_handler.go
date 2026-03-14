@@ -37,12 +37,29 @@ func HandleGetOverlays(w http.ResponseWriter, r *http.Request, d *requestContext
 		return http.StatusBadRequest, fmt.Errorf("source is required")
 	}
 
-	// Handle "ALL" pseudo-source: Aggregate overlays across all visible scopes
-	if sourceName == "ALL" {
-		var allOverlays []heatmap.MapOverlay
+	// Handle pseudo-sources: Aggregate overlays across all visible scopes
+	if settings.IsVirtualSource(sourceName) {
+		forceScan := r.URL.Query().Get("scan") == "true"
+		allOverlays := []heatmap.MapOverlay{}
 		visited := make(map[string]bool)
 
-		for _, s := range d.user.Scopes {
+		type sourceInfo struct {
+			Name  string
+			Alias string
+		}
+		var sources []sourceInfo
+
+		if d.user.Permissions.Admin {
+			for name := range indexing.GetIndexes() {
+				sources = append(sources, sourceInfo{Name: name, Alias: name})
+			}
+		} else {
+			for _, s := range d.user.Scopes {
+				sources = append(sources, sourceInfo{Name: s.Name, Alias: s.Alias})
+			}
+		}
+
+		for _, s := range sources {
 			idx := indexing.GetIndex(s.Name)
 			if idx == nil {
 				continue
@@ -57,8 +74,20 @@ func HandleGetOverlays(w http.ResponseWriter, r *http.Request, d *requestContext
 			// Resolve relative to THIS specific scope (to handle nested shares/permissions correctly)
 			// But for "ALL" aggregation, we usually want the same path across all.
 			// RESOLUTION: Use the absolute path if possible.
-			realPath, _, err := idx.GetRealPath(target)
+			// Resolve target path for this specific scope/source
+			resolvedTarget, _, err := ResolveScopePath(d.user, s.Name, path)
 			if err != nil {
+				continue
+			}
+
+			if forceScan {
+				logger.Info(fmt.Sprintf("[Overlays] Force scanning virtual sub-source %s at path %s (original: %s)", s.Name, resolvedTarget, path))
+				heatmap.AggregateOverlayLevel(idx.Name, resolvedTarget)
+			}
+
+			realPath, _, err := idx.GetRealPath(resolvedTarget)
+			if err != nil {
+				// logger.Debug(fmt.Sprintf("[Overlays] Target path %s not found in scope %s", resolvedTarget, s.Name))
 				continue
 			}
 
@@ -74,6 +103,7 @@ func HandleGetOverlays(w http.ResponseWriter, r *http.Request, d *requestContext
 				if err == nil {
 					var data heatmap.OverlayData
 					if err := json.Unmarshal(bytes, &data); err == nil {
+						logger.Info(fmt.Sprintf("[Overlays] Found %d overlays in %s for scope %s", len(data.Overlays), overlayPath, s.Name))
 						for _, ov := range data.Overlays {
 							// Inject source alias so the frontend knows which source to use for /api/raw
 							ov.Source = s.Alias
@@ -222,4 +252,44 @@ func HandleGetOverlays(w http.ResponseWriter, r *http.Request, d *requestContext
 	}
 
 	return renderJSON(w, r, response)
+}
+
+// HandleUpdateOverlayMetadata updates the persistent metadata for an overlay.
+// PUT /api/heatmap/overlay/metadata
+func HandleUpdateOverlayMetadata(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
+	if !d.user.Permissions.ManageOverlays && !d.user.Permissions.Admin {
+		return http.StatusForbidden, nil
+	}
+
+	var req struct {
+		Source      string `json:"source"`
+		Path        string `json:"path"` // Relative to source root
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		return http.StatusBadRequest, err
+	}
+
+	if req.Source == "" || req.Path == "" {
+		return http.StatusBadRequest, fmt.Errorf("source and path are required")
+	}
+
+	// Resolve source and path to handle aliases or virtual sources (e.g. ALL_SOURCES)
+	resolvedPath, realSource, err := ResolveScopePath(d.user, req.Source, req.Path)
+	if err != nil {
+		logger.Error(fmt.Sprintf("[Overlays] ResolveScopePath failed: %v", err))
+		return http.StatusInternalServerError, err
+	}
+
+	logger.Info(fmt.Sprintf("[Overlays] Updating metadata for %s in source %s (resolved: %s, %s)", req.Path, req.Source, realSource, resolvedPath))
+
+	err = heatmap.SaveOverlayMetadata(realSource, resolvedPath, req.Name, req.Description)
+	if err != nil {
+		logger.Error(fmt.Sprintf("[Overlays] Failed to save metadata: %v", err))
+		return http.StatusInternalServerError, err
+	}
+
+	return http.StatusOK, nil
 }

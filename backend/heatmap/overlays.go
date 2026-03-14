@@ -20,6 +20,7 @@ type MapOverlay struct {
 	Description string    `json:"description"`
 	Path        string    `json:"path"`   // Relative to source root
 	Source      string    `json:"source"` // Source name
+	Type        string    `json:"type"`   // geojson, pmtiles
 	Size        int64     `json:"size"`
 	ModTime     time.Time `json:"modTime"`
 }
@@ -54,7 +55,9 @@ func ScanLocalOverlays(sourceName, folderPath string) ([]MapOverlay, error) {
 			continue
 		}
 
-		if strings.ToLower(filepath.Ext(entry.Name())) == ".geojson" {
+		ext := strings.ToLower(filepath.Ext(entry.Name()))
+		if ext == ".geojson" || ext == ".pmtiles" || ext == ".pmtile" {
+			logger.Info(fmt.Sprintf("[Overlays] Found map file: %s (ext: %s) in %s", entry.Name(), ext, realPath))
 			info, err := entry.Info()
 			if err != nil {
 				continue
@@ -67,38 +70,52 @@ func ScanLocalOverlays(sourceName, folderPath string) ([]MapOverlay, error) {
 				Name:    entry.Name(),
 				Path:    filepath.ToSlash(filepath.Join(folderPath, entry.Name())),
 				Source:  sourceName,
+				Type:    strings.TrimPrefix(ext, "."),
 				Size:    info.Size(),
 				ModTime: info.ModTime(),
 			}
 
-			// Try to read metadata from file
-			// We only read the first 1KB to avoid loading massive files just for name
-			// Actually, standard GeoJSON usually has "name" in "properties" or top level.
-			// But parsing partial JSON is hard.
-			// Let's just read it. Most geojson overlay files are reasonable size (or should be).
-			// If it's huge, this might be slow.
-			// Optimization: Unmarshal into a struct that only looks for Name/Description/Properties.
-			bytes, err := os.ReadFile(fullPath)
-			if err == nil {
-				var meta struct {
-					Name        string `json:"name"`
-					Description string `json:"description"`
-					Properties  struct {
+			if ext == ".geojson" {
+				// Try to read metadata from file
+				bytes, err := os.ReadFile(fullPath)
+				if err == nil {
+					var meta struct {
 						Name        string `json:"name"`
 						Description string `json:"description"`
-					} `json:"properties"`
-				}
-				if err := json.Unmarshal(bytes, &meta); err == nil {
-					if meta.Name != "" {
-						overlay.Name = meta.Name
-					} else if meta.Properties.Name != "" {
-						overlay.Name = meta.Properties.Name
+						Properties  struct {
+							Name        string `json:"name"`
+							Description string `json:"description"`
+						} `json:"properties"`
 					}
+					if err := json.Unmarshal(bytes, &meta); err == nil {
+						if meta.Name != "" {
+							overlay.Name = meta.Name
+						} else if meta.Properties.Name != "" {
+							overlay.Name = meta.Properties.Name
+						}
 
-					if meta.Description != "" {
-						overlay.Description = meta.Description
-					} else if meta.Properties.Description != "" {
-						overlay.Description = meta.Properties.Description
+						if meta.Description != "" {
+							overlay.Description = meta.Description
+						} else if meta.Properties.Description != "" {
+							overlay.Description = meta.Properties.Description
+						}
+					}
+				}
+			}
+
+			// OVERRIDE with sidecar metadata if present (persistent edits)
+			metaPath := fullPath + ".meta.json"
+			if bytes, err := os.ReadFile(metaPath); err == nil {
+				var sidecar struct {
+					Name        string `json:"name"`
+					Description string `json:"description"`
+				}
+				if err := json.Unmarshal(bytes, &sidecar); err == nil {
+					if sidecar.Name != "" {
+						overlay.Name = sidecar.Name
+					}
+					if sidecar.Description != "" {
+						overlay.Description = sidecar.Description
 					}
 				}
 			}
@@ -243,4 +260,44 @@ func ScanOverlaysRecursive(sourceName, rootPath string) error {
 	// 2. Aggregate this level (after children are done)
 	_, err := AggregateOverlayLevel(sourceName, rootPath)
 	return err
+}
+
+// SaveOverlayMetadata saves persistent metadata to a sidecar file and triggers percolation.
+func SaveOverlayMetadata(sourceName, overlayPath, name, description string) error {
+	idx := indexing.GetIndex(sourceName)
+	if idx == nil {
+		return fmt.Errorf("index not found for source %s", sourceName)
+	}
+
+	realPath, _, err := idx.GetRealPath(overlayPath)
+	if err != nil {
+		return err
+	}
+
+	meta := struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}{
+		Name:        name,
+		Description: description,
+	}
+
+	bytes, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	metaPath := realPath + ".meta.json"
+	logger.Info("[Overlays] Saving persistent metadata to " + metaPath)
+	err = os.WriteFile(metaPath, bytes, 0644)
+	if err != nil {
+		return err
+	}
+
+	// Trigger percolation to update parent mapoverlays.json files
+	folderPath := filepath.ToSlash(filepath.Dir(overlayPath))
+	logger.Info("[Overlays] Triggering percolation for " + folderPath)
+	PercolateOverlaysUp(sourceName, folderPath)
+
+	return nil
 }

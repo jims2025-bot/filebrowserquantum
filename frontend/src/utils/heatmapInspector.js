@@ -38,16 +38,25 @@ export function processDirectItems(directItems, urlGenerator) {
                 count: 0,
                 items: [],
                 clusterIDs: new Set(), // Collect Cluster IDs
-                source: item.source
+                source: item.source,
+                lat: 0, // Centroid Lat
+                lon: 0, // Centroid Lon
+                coordCount: 0
             };
         }
 
         // Robust count accumulation
-        // If item represents a cluster (has count > 1), use that. Else 1.
         const c = (item.count && item.count > 1) ? item.count : 1;
         groups[p].count += c;
 
-        // Capture TotalImageCount if available (from any item in the group)
+        // Centroid Accumulation
+        if (item.lat !== undefined && item.lon !== undefined) {
+            groups[p].lat += Number(item.lat);
+            groups[p].lon += Number(item.lon);
+            groups[p].coordCount++;
+        }
+
+        // Capture TotalImageCount if available
         if (item.totalImageCount) {
             groups[p].totalImageCount = item.totalImageCount;
         }
@@ -59,7 +68,16 @@ export function processDirectItems(directItems, urlGenerator) {
         }
     });
 
-    const formattedSidePanelData = Object.values(groups);
+    const formattedSidePanelData = Object.values(groups).map(g => {
+        if (g.coordCount > 0) {
+            g.lat = g.lat / g.coordCount;
+            g.lon = g.lon / g.coordCount;
+        } else {
+            g.lat = null;
+            g.lon = null;
+        }
+        return g;
+    });
 
     // Check for single group optimization (Auto-Drill)
     // Return a flag or the group itself?

@@ -78,6 +78,22 @@
       />
       <p class="description">{{ $t("settings.permissions.rebuildThumbnailsDescription") }}</p>
     </div>
+    <div class="permission-group">
+      <ToggleSwitch
+        class="item"
+        v-model="permissions.viewMapLibre"
+        :name="$t('settings.permissions.viewMapLibre')"
+      />
+      <p class="description">{{ $t("settings.permissions.viewMapLibreDescription") }}</p>
+    </div>
+    <div class="permission-group">
+      <ToggleSwitch
+        class="item"
+        v-model="permissions.manageOverlays"
+        :name="$t('settings.permissions.manageOverlays')"
+      />
+      <p class="description">{{ $t("settings.permissions.manageOverlaysDescription") }}</p>
+    </div>
   </div>
 </template>
 

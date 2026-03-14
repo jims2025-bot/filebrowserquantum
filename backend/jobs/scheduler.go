@@ -21,11 +21,12 @@ type JobStatus struct {
 
 type job struct {
 	JobStatus
-	weekday time.Weekday
-	hour    int
-	minute  int
-	runFn   func()
-	mu      sync.Mutex
+	weekday  time.Weekday
+	hour     int
+	minute   int
+	interval time.Duration // if > 0, this is an interval job
+	runFn    func()
+	mu       sync.Mutex
 }
 
 var (
@@ -49,6 +50,26 @@ func Register(name, description string, weekday time.Weekday, hour, minute int, 
 		runFn:   runFn,
 	}
 	j.NextRun = nextWeekdayTime(weekday, hour, minute)
+
+	registryMu.Lock()
+	registry = append(registry, j)
+	registryMu.Unlock()
+}
+
+// RegisterInterval adds a job that runs on a recurring interval.
+// interval: how often the job should run.
+func RegisterInterval(name, description string, interval time.Duration, runFn func()) {
+	j := &job{
+		JobStatus: JobStatus{
+			Name:        name,
+			Description: description,
+			Schedule:    fmt.Sprintf("Every %v", interval),
+		},
+		interval: interval,
+		runFn:    runFn,
+	}
+	// Interval jobs run immediately on startup, then every interval.
+	j.NextRun = time.Now()
 
 	registryMu.Lock()
 	registry = append(registry, j)
@@ -89,7 +110,11 @@ func RunNow(name string) error {
 			j.mu.Lock()
 			j.IsRunning = false
 			j.LastRun = time.Now()
-			j.NextRun = nextWeekdayTime(j.weekday, j.hour, j.minute)
+			if j.interval > 0 {
+				j.NextRun = time.Now().Add(j.interval)
+			} else {
+				j.NextRun = nextWeekdayTime(j.weekday, j.hour, j.minute)
+			}
 			j.mu.Unlock()
 		}()
 		logger.Infof("Jobs: Manual run started for '%s'", name)
@@ -128,7 +153,11 @@ func runLoop(j *job) {
 		j.mu.Lock()
 		if j.IsRunning {
 			// Another goroutine (RunNow) beat us to it — skip and reschedule
-			j.NextRun = nextWeekdayTime(j.weekday, j.hour, j.minute)
+			if j.interval > 0 {
+				j.NextRun = time.Now().Add(j.interval)
+			} else {
+				j.NextRun = nextWeekdayTime(j.weekday, j.hour, j.minute)
+			}
 			j.mu.Unlock()
 			continue
 		}
@@ -151,7 +180,11 @@ func runLoop(j *job) {
 		j.mu.Lock()
 		j.IsRunning = false
 		j.LastRun = time.Now()
-		j.NextRun = nextWeekdayTime(j.weekday, j.hour, j.minute)
+		if j.interval > 0 {
+			j.NextRun = time.Now().Add(j.interval)
+		} else {
+			j.NextRun = nextWeekdayTime(j.weekday, j.hour, j.minute)
+		}
 		j.LastError = "" // clear on success
 		j.mu.Unlock()
 

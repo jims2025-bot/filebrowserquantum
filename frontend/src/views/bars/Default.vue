@@ -36,6 +36,12 @@
       :label="$t('sidebar.heatmap')"
       @action="openHeatmap"
     />
+    <action
+      v-if="isListingView && canViewMapLibre"
+      icon="explore"
+      label="New Map (MapLibre)"
+      @action="openHeatmapV2"
+    />
 
     <div v-if="isListingView" class="folder-options-container">
       <action
@@ -47,6 +53,10 @@
         <div class="dropdown-item" @click="openFolderDetails">
           <i class="material-icons">info</i>
           <span>Folder Info</span>
+        </div>
+        <div class="dropdown-item" v-if="canManageOverlays" @click="openOverlayEditor">
+          <i class="material-icons">layers</i>
+          <span>Manage Overlays</span>
         </div>
         <div class="dropdown-item" v-if="canRunFaceScan" :class="{ 'disabled': isScanningFaces }" @click="scanFolderFaces">
           <i class="material-icons" :class="{ 'spin-action': isScanningFaces }">face</i>
@@ -275,6 +285,12 @@ export default {
     canRebuildThumbnails() {
        return getters.currentView() === 'listingView' && state.user.permissions.rebuildThumbnails;
     },
+    canViewMapLibre() {
+       return state.user && state.user.permissions && state.user.permissions.viewMapLibre;
+    },
+    canManageOverlays() {
+       return state.user && state.user.permissions && (state.user.permissions.manageOverlays || state.user.permissions.admin);
+    },
     isAdmin() {
       return !!state.user.permissions.admin;
     },
@@ -285,7 +301,11 @@ export default {
     availableMaps() {
         if (!this.req || !this.req.items) return [];
         const maps = this.req.items
-            .filter(f => !f.isDir && f.name.toLowerCase().endsWith('.geojson'))
+            .filter(f => !f.isDir && (
+                f.name.toLowerCase().endsWith('.geojson') || 
+                f.name.toLowerCase().endsWith('.pmtiles') || 
+                f.name.toLowerCase().endsWith('.pmtile')
+            ))
             .map(f => ({
                 name: f.name,
                 path: f.path || (this.req.path === '/' ? '/' + f.name : this.req.path + '/' + f.name)
@@ -572,8 +592,23 @@ export default {
           router.push({ path: '/heatmap', query: { source: this.req.source, path: targetPath } });
       }
     },
+    openHeatmapV2() {
+      if (this.req.source !== undefined && this.req.path !== undefined) {
+          const targetPath = this.req.path || "/";
+          router.push({ path: '/heatmap-v2', query: { source: this.req.source, path: targetPath } });
+      }
+    },
     openFolderDetails() {
       mutations.showHover({ name: "FolderDetails" });
+    },
+    openOverlayEditor() {
+      mutations.showHover({
+        name: "OverlayEditor",
+        props: {
+          path: this.req.path,
+          source: this.req.source
+        }
+      });
     },
     async scanFolderFaces() {
       if (this.isScanningFaces) return;

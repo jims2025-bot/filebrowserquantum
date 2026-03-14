@@ -25,7 +25,7 @@ func getJobsStatusHandler(w http.ResponseWriter, r *http.Request, d *requestCont
 // runJobHandler triggers a named background job immediately.
 // @Summary Manually trigger a background job
 // @Tags Admin
-// @Param jobname path string true "Job name (heatmap, integrity, iptcindex)"
+// @Param jobname path string true "Job name (heatmap, integrity, iptcindex, facescan, overlays)"
 // @Success 200 {object} HttpResponse
 // @Failure 403
 // @Failure 404

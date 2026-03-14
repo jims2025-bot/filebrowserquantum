@@ -2261,3 +2261,36 @@ The header provides instant view mode switching (List, Compact, Normal, Gallery)
 
 ### Search Integration
 The global search icon triggers the `SearchPrompt.vue` interface, which is seamlessly integrated into the header's layout.
+
+---
+
+## 19. Map Overlays (GeoJSON & PMTiles)
+
+[↑ Back to Top](#table-of-contents)
+
+The application supports geographic overlays in **GeoJSON** and **PMTiles** formats across both MapLibre (v5) and Leaflet implementations.
+
+### Overlay Management Logic
+Overlays are identified by a **Composite Key**: `[Source]::[NormalizedPath]`. This ensures that files with the same name in different storage roots (e.g., `PHOTOS` vs `BACKUP`) do not conflict.
+
+### Leaflet Implementation (`Heatmap.vue`)
+- **GeoJSON**: Rendered using standard `L.geoJSON`.
+- **PMTiles (Raster)**: Uses `pmtiles.leafletRasterLayer`. Only tileType 2 (Raster) is supported in the Leaflet view.
+- **Visibility**: Overlays use `bringToFront()` and an explicit `zIndex: 650` to stay above base map tiles.
+- **Opacity**: Controlled via `setOpacity` and `setStyle` helpers. Initialized using a `getOverlayOpacity` helper to avoid key mismatches in the template.
+
+### MapLibre Implementation (`HeatmapV2.vue`)
+- **PMTiles (Vector & Raster)**: Uses a custom `addProtocol` implementation (MapLibre v5 Promise-based). Vector PMTiles are automatically styled with default `fill`, `line`, and `circle` layers.
+- **Opacity**: Standard `paint` properties. For `fill` layers, the previous `0.4` multiplier was removed to allow 100% opacity.
+
+---
+
+## 20. Documentation & Maintenance Policy
+
+[↑ Back to Top](#table-of-contents)
+
+To maintain long-term repository health and assistant "memory":
+
+1.  **Architecture Documentation**: The `/docs/ARCHITECTURE.md` file MUST be updated whenever a new architectural pattern, backend handler, or complex frontend logic is introduced or significantly modified.
+2.  **Change Tracking**: All significant technical decisions (e.g., switching to MapLibre v5 protocol, composite overlay keys) should be documented in the relevant section.
+3.  **Knowledge Items (KIs)**: Knowledge Items are created in the `.gemini/knowledge` directory to provide cross-session memory for the AI assistant regarding project-specific rules and patterns.

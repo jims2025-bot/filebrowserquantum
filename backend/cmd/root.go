@@ -132,8 +132,13 @@ func StartFilebrowser() {
 	)
 	jobs.StartAll()
 
-	// Start Map Overlay Job (keeps its own frequency-based schedule)
-	heatmap.StartOverlayJob(store)
+	// Start Map Overlay Job (interval-based schedule)
+	jobs.RegisterInterval(
+		"overlays",
+		"Map Overlays Scanner — finds and aggregates PMTiles and GeoJSON files",
+		12*time.Hour,
+		func() { heatmap.ScanAllOverlays(store) },
+	)
 
 	// Start User Expiration Job
 	storage.StartExpirationJob()

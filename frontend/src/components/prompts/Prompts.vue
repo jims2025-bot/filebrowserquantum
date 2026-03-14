@@ -33,6 +33,7 @@ import Totp from "./Totp.vue";
 import FolderDetails from "./FolderDetails.vue";
 import AdminJobs from "./AdminJobs.vue";
 import SearchPrompt from "./SearchPrompt.vue";
+import OverlayEditor from "./OverlayEditor.vue";
 import { state, getters, mutations } from "@/store"; // Import your custom store
 
 export default {
@@ -60,6 +61,7 @@ export default {
     FolderDetails,
     AdminJobs,
     SearchPrompt,
+    OverlayEditor,
   },
   data() {
     return {
@@ -122,7 +124,8 @@ export default {
       return state.plugins;
     },
     showOverlay() {
-      return getters.currentPromptName() !== "more";
+      const name = getters.currentPromptName();
+      return !!name && name !== "more";
     },
   },
   methods: {},

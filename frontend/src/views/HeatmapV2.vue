@@ -21,7 +21,7 @@
        ref="leaderLineSvg"
        :width="leaderLine.svgWidth"
        :height="leaderLine.svgHeight"
-       style="position:absolute; top:0; left:0; z-index:9000; pointer-events:none;">
+       style="position:absolute; top:0; left:0; z-index:11000; pointer-events:none; border: 1px solid rgba(255,0,0,0.2);">
       <defs>
         <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
           <polygon points="0 0, 10 3.5, 0 7" fill="red" />
@@ -160,27 +160,26 @@
                    <!-- Path Header REMOVED to simplify list -->
                    <!-- <div style="font-weight:bold; color:#aaa; font-size:12px; margin-bottom:5px; border-bottom:1px solid #444;">{{ folderPath }}</div> -->
                   
-                  <div v-for="item in group" :key="item.path" 
-                       class="overlay-item" 
-                       style="display:flex; align-items:center; padding:8px; cursor:pointer; border-radius:4px; margin-bottom:2px;"
-                       :style="isOverlayActive(item.path, item.source) ? 'background:rgba(79, 131, 204, 0.3); border:1px solid #4f83cc;' : 'background:rgba(255,255,255,0.05);'"
-                       @click="toggleOverlay(item.path, item.source)">
-                       
-                      <i class="material-icons" style="margin-right:10px; color:#42a5f5;">{{ isOverlayActive(item.path, item.source) ? 'check_box' : 'check_box_outline_blank' }}</i>
+                   <div v-for="item in group" :key="item.path" 
+                        class="overlay-item" 
+                        style="display:flex; align-items:center; padding:8px; cursor:pointer; border-radius:4px; margin-bottom:2px;"
+                        :style="isOverlayActive(item.path, item.source) ? 'background:rgba(79, 131, 204, 0.3); border:1px solid #4f83cc;' : 'background:rgba(255,255,255,0.05);'"
+                        @click="toggleOverlay(item.path, item.source)">
+                                             <i class="material-icons" style="margin-right:10px; color:#42a5f5;">{{ isOverlayActive(item.path, item.source) ? 'check_box' : 'check_box_outline_blank' }}</i>
                       <div style="flex:1; overflow:hidden;">
                           <!-- Clean Name Display: Use Name if available, else filename -->
                           <div class="overlay-name" style="font-weight:500; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
                              {{ item.name || item.path.split('/').pop() }}
                           </div>
-                          <!-- Opacity Slider -->
-                          <div v-if="isOverlayActive(item.path, item.source)" style="margin-top: 5px; display: flex; align-items: center; gap: 8px;" @click.stop>
-                              <i class="material-icons" style="font-size: 14px; color: #aaa;">opacity</i>
-                              <input type="range" min="0" max="1" step="0.1" 
-                                     :value="getOverlayOpacity(item.path, item.source)" 
-                                     @input="updateOverlayOpacity(item.path, $event.target.value, item.source)"
-                                     style="flex: 1; height: 4px; accent-color: #42a5f5; cursor: pointer;">
-                              <span style="font-size: 10px; min-width: 25px;">{{ Math.round(getOverlayOpacity(item.path, item.source) * 100) }}%</span>
-                          </div>
+                           <!-- Opacity Slider -->
+                           <div v-if="isOverlayActive(item.path, item.source)" style="margin-top: 5px; display: flex; align-items: center; gap: 8px;" @click.stop>
+                               <i class="material-icons" style="font-size: 14px; color: #aaa;">opacity</i>
+                               <input type="range" min="0" max="1" step="0.1" 
+                                      :value="getOverlayOpacity(item.path, item.source)" 
+                                      @input="updateOverlayOpacity(item.path, $event.target.value, item.source)"
+                                      style="flex: 1; height: 4px; accent-color: #42a5f5; cursor: pointer;">
+                               <span style="font-size: 10px; min-width: 25px;">{{ Math.round(getOverlayOpacity(item.path, item.source) * 100) }}%</span>
+                           </div>
                           <!-- Description Restored -->
                           <div v-if="item.description" style="font-size:11px; opacity:0.7; word-break: break-word;">
                               {{ item.description }}
@@ -215,9 +214,10 @@
               <span v-else style="font-size:12px; opacity:0.7;">Select an overlay above.</span>
           </div>
           
-          <!-- Folder List View -->
           <div v-else-if="!currentInspectionFolder && sidePanelData.length > 0" class="panel-folder-list">
-             <div v-for="grp in displayedFolders" :key="grp.path" class="folder-item" @click="openFolderView(grp)">
+             <div v-for="grp in displayedFolders" :key="grp.path" class="folder-item" @click="openFolderView(grp)"
+                  @mouseenter="grp.lat && grp.lon ? drawLeaderLine($event, grp.lat, grp.lon) : null"
+                  @mouseleave="clearLeaderLine">
                 <i class="material-icons">folder</i>
                 <div class="folder-info">
                     <span class="folder-name">{{ grp.path.split('/').pop() }}</span>
@@ -307,39 +307,46 @@
 </template>
 
 <script setup>
-import { onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
+import { onMounted, onBeforeUnmount, ref, computed, nextTick, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
-import 'leaflet.markercluster/dist/MarkerCluster.css';
-import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
-import 'leaflet.markercluster';
-import 'leaflet.heat';
+import maplibregl from 'maplibre-gl';
+import 'maplibre-gl/dist/maplibre-gl.css';
 import * as pmtiles from 'pmtiles';
-
-import { fetchJSON } from "@/api/utils";
 import { state } from "@/store";
-import { ref, computed } from 'vue'; // Import ref and computed
-
+import { fetchJSON } from "@/api/utils";
 import { notify } from "@/notify";
 import { processDirectItems } from "@/utils/heatmapInspector";
+
+// Register the global PMTiles protocol once (MapLibre GL v5 compatible)
+if (!window._pmtilesProtocolRegistered) {
+    const protocol = new pmtiles.Protocol();
+    // MapLibre GL v5 uses a Promise-returning function for addProtocol
+    maplibregl.addProtocol('pmtiles', (params) => protocol.tile(params));
+    window._pmtilesProtocolRegistered = true;
+}
 
 const route = useRoute();
 const router = useRouter();
 let map = null;
-let markers = null;
-let heatLayer = null;
-let tileLayer = null; // Store reference to tile layer
-let overlayLayer = null; // GeoJSON Overlay Layer
+let initMapPromise = null; // Persistent promise for initialization
+let overlayLayer = null; // MapLibre source for overlays
 const isFolderMode = ref(false);
 
 // Abort controller for canceling tile requests
 let abortController = null;
+let clusterMarkers = {}; // Keep track of rendered DOM markers
 
+const debugStatus = ref("");
 const debugClusterCount = ref(0);
-const debugStatus = ref("Initializing...");
+const isDesktop = ref(window.innerWidth > 1024);
+const showDebugInfo = ref(isDesktop.value); 
 const currentZoom = ref(0);
-const cursorCoords = ref({ lat: 0, lng: 0 });
+const cursorCoords = ref({ lat: 999, lng: 999 });
+
+// Debounce timer for viewport updates
+let updateDebounceTimer = null;
+const currentSource = ref("");
+const currentPath = ref("");
 
 // Side Panel State
 const showSidePanel = ref(false);
@@ -350,9 +357,12 @@ const currentInspectionFolder = ref(null); // Reference to currently viewing fol
 const overlaySiblings = ref([]); // Sibling GeoJSON files for overlay navigation
 const sidePanelLoading = ref(false);
 const isPanelCollapsed = ref(false);
-const overlayOpacities = ref({});
-
-
+// Overlay State
+const activeTab = ref('inspection'); // Unified declaration at top
+const overlayMode = ref('context'); // 'context' (current folder) or 'all' (global)
+const availableOverlays = ref([]); // List of overlay objects
+const activeOverlayLayers = ref({}); // Map path -> Leaflet Layer
+const overlayOpacities = ref({}); // Map path -> Opacity (0-1)
 
 const isBoxSelectMode = ref(false); // Box Selection Mode State
 const selectionBox = ref({ visible: false, startX: 0, startY: 0, currentX: 0, currentY: 0, style: {} });
@@ -453,6 +463,7 @@ const updateVisibleMarkers = () => {
 
 const drawLeaderLine = (event, lat, lon) => {
     if (!map || !lat || !lon) return;
+    console.log(`[Heatmap] drawLeaderLine: lat=${lat}, lon=${lon}`);
 
     // Store target and element for dynamic updates
     leaderLine.value.targetLat = lat;
@@ -470,37 +481,36 @@ const updateLeaderLine = () => {
    if (!leaderLine.value.visible || !leaderLine.value.startEl || !map) return;
    
    // 1. Ensure SVG matches map container size EXACTLY to avoid scaling
-   const mapSize = map.getSize();
-   leaderLine.value.svgWidth = mapSize.x;
-   leaderLine.value.svgHeight = mapSize.y;
+   const mapContainer = map.getContainer();
+   const mapRect = mapContainer.getBoundingClientRect();
+   leaderLine.value.svgWidth = mapRect.width;
+   leaderLine.value.svgHeight = mapRect.height;
 
    // 2. Get Button and SVG Rects
    const buttonRect = leaderLine.value.startEl.getBoundingClientRect();
    const svgEl = leaderLineSvg.value;
    if (!svgEl) return;
    
-   // FORCE SVG to be same size as map (if not updated by reactivity yet)
-   // But we rely on Vue.
    const svgRect = svgEl.getBoundingClientRect();
 
    // 3. Start Point (Side Panel Button) - Relative to SVG
+   // buttonRect.right is screen space, svgRect.left is screen space. x1 is relative to SVG.
    const x1 = buttonRect.right - svgRect.left; 
    const y1 = (buttonRect.top + (buttonRect.height / 2)) - svgRect.top;
 
    // 4. Get Map Point logic
-   // map.latLngToContainerPoint provides x/y relative to the map container.
-   // We must convert this to "SVG Space" to account for any offset between the Map Div and the SVG.
-   const point = map.latLngToContainerPoint([leaderLine.value.targetLat, leaderLine.value.targetLon]);
-   const mapRect = map.getContainer().getBoundingClientRect();
+   // map.project([lng, lat]) provides x/y relative to the map container's top-left.
+   const point = map.project([leaderLine.value.targetLon, leaderLine.value.targetLat]);
    
-   // Map Container Point -> Screen Point -> SVG Point
-   const screenX = point.x + mapRect.left;
-   const screenY = point.y + mapRect.top;
-   
-   leaderLine.value.x1 = x1;
-   leaderLine.value.y1 = y1;
-   leaderLine.value.x2 = screenX - svgRect.left;
-   leaderLine.value.y2 = screenY - svgRect.top;
+    // If SVG is exactly on top of map container, mapRect.left - svgRect.left is 0.
+    // If not, this math corrects for it.
+    leaderLine.value.x1 = x1;
+    leaderLine.value.y1 = y1;
+    leaderLine.value.x2 = (point.x + mapRect.left) - svgRect.left;
+    leaderLine.value.y2 = (point.y + mapRect.top) - svgRect.top;
+    
+    console.log(`[Heatmap] updateLeaderLine: SVG@(${svgRect.left},${svgRect.top}) Map@(${mapRect.left},${mapRect.top})`);
+    console.log(`[Heatmap] updateLeaderLine: Start=(${x1},${y1}) End=(${leaderLine.value.x2},${leaderLine.value.y2})`);
 };
 
 const clearLeaderLine = () => {
@@ -510,30 +520,194 @@ const clearLeaderLine = () => {
     leaderLine.value.targetLon = null;
 };
 
+// Box Selection Logic (MapLibre Version)
+const toggleSelectionMode = () => {
+    isBoxSelectMode.value = !isBoxSelectMode.value;
+    if (isBoxSelectMode.value) {
+        if (map) {
+            map.dragPan.disable();
+            map.getCanvas().style.cursor = 'crosshair';
+        }
+    } else {
+        if (map) {
+            map.dragPan.enable();
+            map.getCanvas().style.cursor = '';
+        }
+        selectionBox.value.visible = false;
+    }
+};
+
+const startSelection = (e) => {
+    if (!isBoxSelectMode.value) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    let clientX, clientY;
+    if (e.type.startsWith('touch')) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+    } else {
+        clientX = e.clientX;
+        clientY = e.clientY;
+    }
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    selectionBox.value.startX = x;
+    selectionBox.value.startY = y;
+    selectionBox.value.currentX = x;
+    selectionBox.value.currentY = y;
+    selectionBox.value.visible = true;
+    selectionBox.value.style = {
+        left: x + 'px',
+        top: y + 'px',
+        width: '0px',
+        height: '0px'
+    };
+};
+
+const updateSelection = (e) => {
+    if (!isBoxSelectMode.value || !selectionBox.value.visible) return;
+    if (e.type.startsWith('touch')) e.preventDefault();
+    const rect = e.currentTarget.getBoundingClientRect();
+    let clientX, clientY;
+    if (e.type.startsWith('touch')) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+    } else {
+        clientX = e.clientX;
+        clientY = e.clientY;
+    }
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    selectionBox.value.currentX = x;
+    selectionBox.value.currentY = y;
+    const minX = Math.min(selectionBox.value.startX, x);
+    const maxX = Math.max(selectionBox.value.startX, x);
+    const minY = Math.min(selectionBox.value.startY, y);
+    const maxY = Math.max(selectionBox.value.startY, y);
+    selectionBox.value.style = {
+        left: minX + 'px',
+        top: minY + 'px',
+        width: (maxX - minX) + 'px',
+        height: (maxY - minY) + 'px'
+    };
+};
+
+const endSelection = (e) => {
+    if (!isBoxSelectMode.value || !selectionBox.value.visible) return;
+    selectionBox.value.visible = false;
+    
+    if (!map) return;
+
+    const overlay = e.currentTarget;
+    const overlayRect = overlay.getBoundingClientRect();
+    const mapContainer = map.getContainer();
+    const mapRect = mapContainer.getBoundingClientRect();
+    
+    // Calculate Offset: Overlay Relative -> Map Relative
+    const offsetX = overlayRect.left - mapRect.left;
+    const offsetY = overlayRect.top - mapRect.top;
+    
+    const startX = selectionBox.value.startX + offsetX;
+    const startY = selectionBox.value.startY + offsetY;
+    const endX = selectionBox.value.currentX + offsetX;
+    const endY = selectionBox.value.currentY + offsetY;
+    
+    const p1 = [Math.min(startX, endX), Math.min(startY, endY)];
+    const p2 = [Math.max(startX, endX), Math.max(startY, endY)];
+    
+    // Convert screen coordinates to LngLat bounds
+    // sw (SouthWest) = minX, maxY; ne (NorthEast) = maxX, minY
+    const sw = map.unproject([p1[0], p2[1]]);
+    const ne = map.unproject([p2[0], p1[1]]);
+
+    // Get features from the source directly (more reliable than queryRenderedFeatures for heatmaps)
+    const finalFeatures = map.querySourceFeatures('heatmap-data');
+    console.log(`[Heatmap] endSelection: unprojected sw=${sw.lng},${sw.lat} ne=${ne.lng},${ne.lat}`);
+    console.log(`[Heatmap] endSelection: source features count=${finalFeatures.length}`);
+
+    const selectedItems = [];
+    const seenItems = new Set();
+
+    finalFeatures.forEach(f => {
+        const coords = f.geometry.coordinates; // [lon, lat]
+        // Check if point is within our LngLat bounds
+        const inBounds = coords[0] >= sw.lng && coords[0] <= ne.lng && coords[1] >= sw.lat && coords[1] <= ne.lat;
+        console.log(`[Heatmap] Checking feature ${f.properties.id}: Lng=${coords[0]}, Lat=${coords[1]}. In bounds? ${inBounds}`);
+        
+        if (inBounds) {
+            const props = f.properties;
+            const key = `cluster:${props.id}`;
+            if (!seenItems.has(key)) {
+                selectedItems.push({
+                    path: props.path || "",
+                    source: props.source || "",
+                    name: (props.path || "").split('/').pop(),
+                    count: parseInt(props.count) || 1,
+                    clusterID: props.id || "",
+                    lat: coords[1], // Capture Lat
+                    lon: coords[0]  // Capture Lon
+                });
+                seenItems.add(key);
+            }
+        }
+    });
+
+    toggleSelectionMode();
+    
+    if (selectedItems.length > 0) {
+        inspectLocation(null, null, selectedItems);
+    } else {
+        notify.showSuccess("No items selected in area");
+    }
+};
+
+
 const zoomToLocation = (lat, lon) => {
     if (map && lat && lon) {
-        // Fly to location with moderate zoom
-        map.flyTo([lat, lon], 16, {
-            duration: 1.5
+        map.flyTo({
+            center: [lon, lat],
+            zoom: 16,
+            essential: true
         });
 
-        // Flash Effect
-        const flashIcon = L.divIcon({
-            className: 'zoom-flash-marker',
-            iconSize: [40, 40],
-            html: '<div class="zoom-flash-circle"></div>'
+        // Flash Effect (Simulated with a temporary layer)
+        const flashId = `zoom-flash-${Date.now()}`;
+        map.addSource(flashId, {
+            type: 'geojson',
+            data: {
+                type: 'Feature',
+                geometry: {
+                    type: 'Point',
+                    coordinates: [lon, lat]
+                }
+            }
         });
 
-        // Current duration is 1.5s. User wants flash 0.5s AFTER move ends.
-        // Total delay = 1500ms + 500ms = 2000ms.
-        setTimeout(() => {
-            const flashMarker = L.marker([lat, lon], { icon: flashIcon }).addTo(map);
+        map.addLayer({
+            id: flashId,
+            type: 'circle',
+            source: flashId,
+            paint: {
+                'circle-radius': 0,
+                'circle-color': '#f1c40f',
+                'circle-opacity': 0.8,
+                'circle-stroke-width': 2,
+                'circle-stroke-color': '#fff'
+            }
+        });
 
-            // Remove after animation (1s)
-            setTimeout(() => {
-                map.removeLayer(flashMarker);
-            }, 1200);
-        }, 2000);
+        // Animate the flash
+        let radius = 0;
+        const animate = () => {
+            radius += 2;
+            if (radius <= 40) {
+                map.setPaintProperty(flashId, 'circle-radius', radius);
+                requestAnimationFrame(animate);
+            } else {
+                map.removeLayer(flashId);
+                map.removeSource(flashId);
+            }
+        };
+        setTimeout(animate, 1500); // Start after flyTo duration
     }
 };
 
@@ -579,13 +753,6 @@ const openOverlaysPanel = () => {
 
 // Quick View State
 const quickViewFile = ref(null);
-
-// Overlay State
-const activeTab = ref('inspection'); // 'inspection' or 'overlays'
-const overlayMode = ref('context'); // 'context' (current folder) or 'all' (global)
-const availableOverlays = ref([]); // List of overlay objects
-const activeOverlayLayers = ref({}); // Map path -> Leaflet Layer
-const showDebugInfo = ref(false); // Debug overlay visibility
 
 // Watch for folder changes to fetch overlays (if in context mode)
 watch([() => route.query.path, () => route.query.source, overlayMode], () => {
@@ -666,26 +833,33 @@ const fetchOverlays = async () => {
     }
 };
 
-
-            
-
-
 const getOverlayKey = (path, sourceArg = null) => {
     const s = sourceArg || route.query.source || "";
     return `${recursiveDecode(s)}::${recursiveDecode(path)}`;
 };
 
+const sanitizeId = (str) => str.replace(/[^a-zA-Z0-9_-]/g, '_');
+
 const toggleOverlay = async (path, providedSource = null) => {
     const key = getOverlayKey(path, providedSource);
-    
+    // Use a safe short ID for MapLibre source/layer IDs (slashes crash MapLibre internals)
+    const safeId = sanitizeId(key).slice(-40);
+
     if (activeOverlayLayers.value[key]) {
-        const layer = activeOverlayLayers.value[key];
-        if (map.hasLayer && map.hasLayer(layer)) {
-            map.removeLayer(layer);
-        } else if (layer.remove) {
-            layer.remove();
-        } else {
-            map.removeLayer(layer);
+        if (map) {
+            const layerEntry = activeOverlayLayers.value[key];
+            if (layerEntry && layerEntry.layers) {
+                layerEntry.layers.forEach(id => {
+                    try { if (map.getLayer(id)) map.removeLayer(id); } catch(e) { console.warn("[Heatmap] Remove layer err", e); }
+                });
+            }
+            try { if (map.getSource(`src-${safeId}`)) map.removeSource(`src-${safeId}`); } catch(e) { console.warn("[Heatmap] Remove source err", e); }
+            
+            // Clean up any custom PMTiles protocol we registered for this specific overlay
+            if (window._pmtilesProtocols && window._pmtilesProtocols[key]) {
+                try { maplibregl.removeProtocol(`pmt-${window._pmtilesProtocols[key]}`); } catch(e) { console.warn("[Heatmap] Remove protocol err", e); }
+                delete window._pmtilesProtocols[key];
+            }
         }
         delete activeOverlayLayers.value[key];
         delete overlayOpacities.value[key];
@@ -706,6 +880,12 @@ const toggleOverlay = async (path, providedSource = null) => {
     let rawPath = overlay.path;
     if (!rawPath.startsWith('/')) rawPath = '/' + rawPath;
 
+    // Ensure map + style are ready
+    if (!map || !map.isStyleLoaded()) {
+        console.warn('[Heatmap] Map not ready yet, waiting...');
+        await new Promise(resolve => map.once('idle', resolve));
+    }
+
     try {
         const cleanSource = recursiveDecode(overlay.source || route.query.source || "");
         const cleanPath = recursiveDecode(rawPath);
@@ -716,93 +896,105 @@ const toggleOverlay = async (path, providedSource = null) => {
             try {
                 const p = new pmtiles.PMTiles(`${location.origin}${url}`);
                 const header = await p.getHeader();
-                console.log(`[Heatmap] Leaflet PMTiles header:`, {
-                    tileType: header.tileType,
-                    minZoom: header.minZoom,
-                    maxZoom: header.maxZoom,
-                    minLon: header.minLon, minLat: header.minLat,
-                    maxLon: header.maxLon, maxLat: header.maxLat,
-                    tileCompression: header.tileCompression,
-                    numAddressedTiles: header.numAddressedTiles
+                const isVector = header.tileType === 1;
+                console.log(`[Heatmap] MapLibre PMTiles: type=${header.tileType}, vector=${isVector}, path=${path}`);
+
+                // Register unique per-overlay protocol so MapLibre can fetch tiles
+                const protocolKey = `pk${Date.now()}`;
+                maplibregl.addProtocol(`pmt-${protocolKey}`, async (params) => {
+                    const clean = params.url.replace(`pmt-${protocolKey}://`, '');
+                    const [z, x, y] = clean.split('/').map(Number);
+                    const data = await p.getZxy(z, x, y);
+                    return { data: data ? data.data : new Uint8Array(0) };
                 });
+                if (!window._pmtilesProtocols) window._pmtilesProtocols = {};
+                window._pmtilesProtocols[key] = protocolKey;
 
-                if (header.tileType !== 2) {
-                    notify.showError(`PMTiles '${cleanPath.split('/').pop()}' is vector type — only raster PMTiles are supported on the Leaflet map.`);
-                    return;
-                }
+                const tileUrl = `pmt-${protocolKey}://{z}/{x}/{y}`;
 
-                const layer = pmtiles.leafletRasterLayer(p, {
-                    attribution: overlay.name || cleanPath.split('/').pop(),
-                    opacity: 1,
-                    minZoom: header.minZoom ?? 0,
-                    maxNativeZoom: header.maxZoom ?? 18,
-                    maxZoom: 22,
-                });
-                activeOverlayLayers.value[key] = layer;
-                layer.addTo(map);
-                
-                overlayOpacities.value[key] = 1;
-
-                // PMTiles raster must be in FRONT of the base map tiles, not behind them
-                if (layer.bringToFront) layer.bringToFront();
-
-                // Fit map to tile bounds then log current state
                 try {
-                    if (header.minLat !== undefined) {
-                        const bounds = L.latLngBounds(
-                            [header.minLat, header.minLon],
-                            [header.maxLat, header.maxLon]
-                        );
-                        console.log(`[Heatmap] PMTiles bounds valid=${bounds.isValid()}, sw=${bounds.getSouthWest()}, ne=${bounds.getNorthEast()}`);
-                        if (bounds.isValid() && map) {
-                            map.fitBounds(bounds, { padding: [50, 50], animate: false });
-                            console.log(`[Heatmap] After fitBounds: zoom=${map.getZoom()}, center=${JSON.stringify(map.getCenter())}`);
-                        }
-                    }
-                } catch (err) {
-                    console.warn('[Heatmap] PMTiles bounds error:', err);
+                    const b = [header.minLon, header.minLat, header.maxLon, header.maxLat];
+                    if (b[0] !== 0 || b[2] !== 0) map.fitBounds(b, { padding: 50 });
+                } catch (_) {}
+
+                if (isVector) {
+                    map.addSource(`src-${safeId}`, { type: 'vector', tiles: [tileUrl] });
+                    let sourceLayer = '';
+                    try {
+                        const meta = await p.getMetadata();
+                        const layers = meta?.vector_layers || meta?.tilestats?.layers;
+                        if (layers && layers.length > 0) sourceLayer = layers[0].id || layers[0].layer;
+                    } catch(_) {}
+                    if (!sourceLayer) sourceLayer = cleanPath.split('/').pop().replace('.pmtiles', '');
+
+                    map.addLayer({ id: `lyr-fill-${safeId}`, type: 'fill', source: `src-${safeId}`, 'source-layer': sourceLayer,
+                        paint: { 'fill-color': '#ff7800', 'fill-opacity': 0.4 } });
+                    map.addLayer({ id: `lyr-line-${safeId}`, type: 'line', source: `src-${safeId}`, 'source-layer': sourceLayer,
+                        paint: { 'line-color': '#ff7800', 'line-width': 2 } });
+                    map.addLayer({ id: `lyr-circle-${safeId}`, type: 'circle', source: `src-${safeId}`, 'source-layer': sourceLayer,
+                        paint: { 'circle-radius': 4, 'circle-color': '#ff7800', 'circle-stroke-color': '#fff', 'circle-stroke-width': 1 } });
+
+                    activeOverlayLayers.value[key] = { layers: [`lyr-fill-${safeId}`, `lyr-line-${safeId}`, `lyr-circle-${safeId}`] };
+                } else {
+                    map.addSource(`src-${safeId}`, { type: 'raster', tiles: [tileUrl], tileSize: 256 });
+                    map.addLayer({ id: `lyr-raster-${safeId}`, type: 'raster', source: `src-${safeId}` });
+                    // Explicitly track the raster layer so toggle off works
+                    activeOverlayLayers.value[key] = { layers: [`lyr-raster-${safeId}`] };
                 }
+
+                overlayOpacities.value[key] = 1;
+                nextTick(() => updateOverlayOpacity(path, 1, providedSource));
                 return;
             } catch (e) {
-                console.error("PMTiles error", e);
-                notify.showError("Failed to load PMTiles: " + e.message);
-                return;
+                console.error("PMTiles load error", e);
+                throw e;
             }
         }
 
-
+        // GeoJSON
         const res = await fetch(url);
-        if (!res.ok) throw new Error("Status: " + res.status);
-        const geojson = await res.json();
-        
-        const layer = L.geoJSON(geojson, {
-            style: (feature) => ({ color: "#ff7800", weight: 5, opacity: 0.65, fillOpacity: 0.2 }),
-            onEachFeature: (feature, layer) => {
-                 if (feature.properties) {
-                     const name = feature.properties.name || feature.properties.Name || feature.properties.title;
-                     if (name) layer.bindPopup(`<div style='font-weight:bold'>${name}</div>`);
-                 }
-            }
-        }).addTo(map);
-        
-        activeOverlayLayers.value[key] = layer;
-        overlayOpacities.value[key] = 1;
-        
-        if (layer.bringToFront) layer.bringToFront();
+        if (!res.ok) throw new Error("Fetch failed: " + res.status);
+        let geojson = await res.json();
 
-        // Use animate:false to prevent the map from triggering an animation that
-        // crashes with null-project when the container is not fully idle
-        try {
-            const bounds = layer.getBounds();
-            if (bounds && bounds.isValid() && map) {
-                map.fitBounds(bounds, { padding: [50, 50], animate: false });
-            }
-        } catch (err) {
-            console.warn('[Heatmap] GeoJSON bounds error:', err);
+        if (geojson.type === 'Feature') {
+            geojson = { type: 'FeatureCollection', features: [geojson] };
+        } else if (!geojson.features) {
+            geojson = { type: 'FeatureCollection', features: [] };
         }
-        
-        updateOverlayOpacity(path, 1, providedSource);
-        setTimeout(() => { if (map) map.invalidateSize(); }, 200);
+
+        console.log(`[Heatmap] GeoJSON features: ${geojson.features.length}, safeId=${safeId}`);
+
+        map.addSource(`src-${safeId}`, { type: 'geojson', data: geojson });
+
+        // NO filter expressions — avoid ANY 'geometry-type' expression which crashes MapLibre v5
+        map.addLayer({ id: `lyr-fill-${safeId}`, type: 'fill', source: `src-${safeId}`,
+            paint: { 'fill-color': '#ff7800', 'fill-opacity': 0.4 } });
+        map.addLayer({ id: `lyr-line-${safeId}`, type: 'line', source: `src-${safeId}`,
+            paint: { 'line-color': '#ff7800', 'line-width': 3 } });
+        map.addLayer({ id: `lyr-circle-${safeId}`, type: 'circle', source: `src-${safeId}`,
+            paint: { 'circle-radius': 6, 'circle-color': '#ff7800', 'circle-stroke-color': '#fff', 'circle-stroke-width': 1 } });
+
+        activeOverlayLayers.value[key] = {
+            layers: [`lyr-fill-${safeId}`, `lyr-line-${safeId}`, `lyr-circle-${safeId}`]
+        };
+        overlayOpacities.value[key] = 1;
+        nextTick(() => updateOverlayOpacity(path, 1, providedSource));
+
+        try {
+            const bounds = new maplibregl.LngLatBounds();
+            const addCoords = (c) => {
+                if (!c) return;
+                if (typeof c[0] === 'number') { bounds.extend([c[0], c[1]]); }
+                else { c.forEach(addCoords); }
+            };
+            (geojson.features || []).forEach(f => {
+                if (f.geometry && f.geometry.coordinates) addCoords(f.geometry.coordinates);
+            });
+            if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 50 });
+        } catch (boundsErr) {
+            console.warn('[Heatmap] Could not fit bounds:', boundsErr);
+        }
+
     } catch (e) {
         notify.showError("Overlay error: " + e.message);
     }
@@ -817,16 +1009,18 @@ const updateOverlayOpacity = (path, value, sourceArg = null) => {
     
     if (!map || !activeOverlayLayers.value[key]) return;
     
-    const layer = activeOverlayLayers.value[key];
-    if (layer.eachLayer) {
-        layer.eachLayer(l => {
-            if (l.setOpacity) l.setOpacity(val);
-            if (l.setStyle) l.setStyle({ opacity: val, fillOpacity: val });
-        });
-    } else {
-        if (layer.setOpacity) layer.setOpacity(val);
-        if (layer.setStyle) layer.setStyle({ opacity: val, fillOpacity: val });
-    }
+    activeOverlayLayers.value[key].layers.forEach(id => {
+        if (map.getLayer(id)) {
+            const type = map.getLayer(id).type;
+            if (type === 'raster') map.setPaintProperty(id, 'raster-opacity', val);
+            else if (type === 'line') map.setPaintProperty(id, 'line-opacity', val);
+            else if (type === 'fill') map.setPaintProperty(id, 'fill-opacity', val);
+            else if (type === 'circle') {
+                map.setPaintProperty(id, 'circle-opacity', val);
+                map.setPaintProperty(id, 'circle-stroke-opacity', val);
+            }
+        }
+    });
 };
 
 const getOverlayOpacity = (path, sourceArg = null) => {
@@ -1447,7 +1641,7 @@ const showErrorNotification = () => {
 
 // Stores for dynamic reshuffling
 const clusterDataStore = new Map(); // Key: `${lat},${lon}`, Value: Array of all points for that location
-const renderedMarkerStore = new Map(); // Key: `${lat},${lon}`, Value: Array of L.Marker objects currently rendered for that location
+const renderedMarkerStore = new Map(); // Key: `${lat},${lon}`
 const goBack = () => {
     // Handle Overlay Back Navigation
     // Priority: Explicit Overlay Param -> Implicit Overlay Context (Siblings) -> Path Param
@@ -1758,66 +1952,95 @@ watch(() => [route.query.source, route.query.path], () => {
 });
 
 const initMap = async () => {
-    if (map) return;
+    if (initMapPromise) return initMapPromise;
     await nextTick();
     
     // Ensure container exists
     const container = document.getElementById('heatmap-container');
     if (!container) return;
 
-    map = L.map('heatmap-container', {
-        worldCopyJump: true // Enable infinite scrolling
+    initMapPromise = new Promise((resolve) => {
+        map = new maplibregl.Map({
+            container: 'heatmap-container',
+            style: {
+                version: 8,
+                sources: {
+                    'google-hybrid': {
+                        type: 'raster',
+                        tiles: ['https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}'],
+                        tileSize: 256,
+                        maxNativeZoom: 18,
+                    }
+                },
+                layers: [
+                    {
+                        id: 'google-hybrid',
+                        type: 'raster',
+                        source: 'google-hybrid',
+                        minzoom: 0,
+                        maxzoom: 22,
+                        paint: {
+                            'raster-fade-duration': 0
+                        },
+                        metadata: {
+                            'mapbox:group': 'background'
+                        },
+                        zIndex: 650
+                    }
+                ]
+            },
+            center: [0, 20],
+            zoom: 2,
+            antialias: true,
+            glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf'
+        });
+
+        map.addControl(new maplibregl.NavigationControl(), 'top-left');
+        map.addControl(new maplibregl.FullscreenControl(), 'top-left');
+
+        map.on('load', () => {
+            debugStatus.value = "Map loaded";
+            setupMapEventHandlers();
+            resolve();
+        });
     });
+
+    return initMapPromise;
+};
+
+const setupMapEventHandlers = () => {
+    if (!map) return;
     
-
-
-    // GeoJSON Overlay Layer definitions moved to top level
-
-
-    map.setView([0, 0], 2);
-    
-    // Invalidate size to ensure it knows its dimensions
-    map.invalidateSize();
-
-    // Debug Listeners: Update zoom and coordinates
-    currentZoom.value = map.getZoom();
     map.on('zoomend', () => {
-        currentZoom.value = map.getZoom();
+        currentZoom.value = Math.round(map.getZoom());
     });
+
+    map.on('moveend', updateViewportData);
+
     map.on('mousemove', (e) => {
-        // Wrap for infinite scrolling
-        const wrapped = e.latlng.wrap();
-        
-        // Strict Display Bounds
+        const wrapped = e.lngLat.wrap();
         if (Math.abs(wrapped.lat) <= 90 && Math.abs(wrapped.lng) <= 180) {
-            cursorCoords.value = wrapped;
-            // Also update validity flag if implemented, or just use null checks in template
+            cursorCoords.value = { lat: wrapped.lat, lng: wrapped.lng };
         } else {
-             // Out of bounds - maybe set to null or a specific flag to hide?
-             // Since we use cursorCoords for display, let's keep it but template will hide it?
-             // Or set a flag "coordsValid"
-             // Simplest: Check bounds in template or set to null? 
-             // Ref is object, cannot set to null easily without breaking prop access.
-             // Let's set lat/lng to > 999 to indicate invalid? 
-             // Or better:
-             cursorCoords.value = { lat: 999, lng: 999 };
+            cursorCoords.value = { lat: 999, lng: 999 };
         }
     });
+
     map.on('click', (e) => {
-        const wrapped = e.latlng.wrap();
-        cursorCoords.value = wrapped;
+        const wrapped = e.lngLat.wrap();
+        cursorCoords.value = { lat: wrapped.lat, lng: wrapped.lng };
     });
-    
-    // Right-click / Long-press Context Menu for Copying
+
+    // Right-click Context Menu
     map.on('contextmenu', (e) => {
-        const lat = e.latlng.lat.toFixed(5);
-        const lng = e.latlng.lng.toFixed(5);
-        const zoom = map.getZoom();
+        const lat = e.lngLat.lat.toFixed(5);
+        const lng = e.lngLat.lng.toFixed(5);
         
-        L.popup()
-            .setLatLng(e.latlng)
-            .setContent(`
-                <div style="text-align:center; font-size:12px;">
+        // Show context menu using a popup (MapLibre style)
+        new maplibregl.Popup()
+            .setLngLat(e.lngLat)
+            .setHTML(`
+                <div style="text-align:center; font-size:12px; color: #333;">
                     <b>Lat:</b> ${lat}<br>
                     <b>Lon:</b> ${lng}<br>
                     <div style="display:flex; flex-direction:column; gap:5px; margin-top:5px;">
@@ -1826,1101 +2049,282 @@ const initMap = async () => {
                             style="padding:2px 8px; font-size:11px; cursor:pointer;">
                             Toggle Debug Window
                         </button>
-                        <button onclick="window.copyLeafletCoords('${lat}', '${lng}')" 
+                        <button onclick="window.copyText('${lat}, ${lng}')" 
                             class="button button--flat" 
                             style="padding:2px 8px; font-size:11px; cursor:pointer;">
                             Copy Coordinates
                         </button>
-                        <button onclick="window.copyText('${lat}')" 
-                            class="button button--flat" 
-                            style="padding:2px 8px; font-size:11px; cursor:pointer;">
-                            Copy Latitude
-                        </button>
-                        <button onclick="window.copyText('${lng}')" 
-                            class="button button--flat" 
-                            style="padding:2px 8px; font-size:11px; cursor:pointer;">
-                            Copy Longitude
-                        </button>
                     </div>
-                    <div id="copy-status-${lat.replace('.','-')}" style="color:green; display:none; font-size:10px; margin-top:2px;">Copied!</div>
                 </div>
             `)
-            .openOn(map);
+            .addTo(map);
     });
 
-    // Global helper for the popup button
+    // Global helpers
     window.toggleDebugInfo = () => {
         showDebugInfo.value = !showDebugInfo.value;
-        // Close popup? Maybe keep it open.
     };
 
-    window.copyLeafletCoords = (lat, lng) => {
-        const text = `${lat}, ${lng}`;
-        window.copyText(text, lat); // Reuse helper
-    };
-
-    window.copyText = (text, latKey) => {
+    window.copyText = (text) => {
         navigator.clipboard.writeText(text).then(() => {
-            // Try to find status element. If latKey is provided, use it for ID (legacy support for copyLeafletCoords)
-            // Otherwise we might need a more generic way to show status in the popup.
-            // But popups are transient.
-            // The existing ID logic used lat.replace('.','-').
-            // Let's rely on finding any copy-status element in the current popup if we can?
-            // Actually, for simplicity, Copy Latitude/Longitude buttons in the SAME popup can share the SAME status message div.
-            // The ID is based on ${lat} which is constant for this popup instance.
-            // So we need to pass that 'lat' value to finding the element.
-            
-            // Hack: search for the status element in the document (it's in the leaflet popup pane)
-            const statusEls = document.querySelectorAll('[id^="copy-status-"]');
-            statusEls.forEach(el => {
-                if (el.offsetParent !== null) { // visible-ish
-                     el.style.display = 'block';
-                     el.innerText = "Copied: " + (text.length > 20 ? text.substring(0,17)+"..." : text);
-                     setTimeout(() => { el.style.display = 'none'; }, 2000);
-                }
-            });
-
+            notify.showSuccess("Copied to clipboard");
         }).catch(err => console.error('Failed to copy', err));
     };
 
-    // Global helper for inspecting location
     window.inspectLocationGlobal = (path, source) => {
         inspectLocation(path, source);
     };
-    
-    window._tempInspectItems = [];
-    window.inspectLocationDirect = () => {
-        if (window._tempInspectItems && window._tempInspectItems.length > 0) {
-            inspectLocation(null, null, window._tempInspectItems);
-        }
-    };
-    
-    // Global helper for Coords Inspection (Backend)
-    window.inspectLocationByCoords = (lat, lon, path, source, bounds) => {
-        let extra = null;
-        if (bounds) {
-            extra = { lat: parseFloat(lat), lon: parseFloat(lon), ...bounds };
-        } else {
-             extra = { lat: parseFloat(lat), lon: parseFloat(lon) };
-        }
-        inspectLocation(path, source, null, extra);
+
+    window.inspectLocationDirect = (items, source) => {
+        const finalItems = items || window._tempInspectItems || [];
+        const finalSource = source || (finalItems.length > 0 ? finalItems[0].source : "");
+        inspectLocation(null, finalSource, finalItems);
+        if (!items) window._tempInspectItems = null;
     };
 
-
-    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { 
-        attribution: '&copy; OpenStreetMap contributors',
-        noWrap: false
-    });
-    const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { 
-        attribution: 'Tiles &copy; Esri',
-        noWrap: false
-    });
-    const topo = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', { 
-        attribution: 'Tiles &copy; Esri',
-        noWrap: false
-    });
-    const dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { 
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>', 
-        subdomains: 'abcd', 
-        maxZoom: 20,
-        noWrap: false
-    });
-    
-    // Google Basemaps
-    const googleStreets = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
-        maxZoom: 20,
-        attribution: 'Google',
-        noWrap: false
-    });
-    const googleHybrid = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
-        maxZoom: 20,
-        attribution: 'Google',
-        noWrap: false
-    });
-
-    const baseMaps = {
-        "Standard (OSM)": osm,
-        "Satellite (Esri)": satellite,
-        "Hybrid (Esri)": topo,
-        "Dark Mode": dark,
-        "Google Streets": googleStreets,
-        "Google Hybrid": googleHybrid
-    };
-    
-    osm.addTo(map);
-
-
-    // Custom Browser Fullscreen Control
-    L.Control.BrowserFullscreen = L.Control.extend({
-        onAdd: function(map) {
-            var container = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
-            var className = 'leaflet-control-fullscreen-button';
-            if (!document.fullscreenElement) {
-                className += ' flash-on-load';
-            }
-            var button = L.DomUtil.create('a', className, container);
-            button.href = '#';
-            button.title = 'Full Screen';
-            button.innerHTML = '<i class="material-icons" style="font-size:18px; line-height:30px;">fullscreen</i>';
-            button.style.width = '30px';
-            button.style.height = '30px';
-            button.style.textAlign = 'center';
-            button.style.backgroundColor = 'white';
-            button.style.cursor = 'pointer';
-            button.style.display = 'block';
-
-            L.DomEvent.on(button, 'click', function(e) {
-                L.DomEvent.preventDefault(e);
-                if (!document.fullscreenElement) {
-                    document.documentElement.requestFullscreen();
-                    button.innerHTML = '<i class="material-icons" style="font-size:18px; line-height:30px;">fullscreen_exit</i>';
-                    button.title = 'Exit Full Screen';
-                } else {
-                    if (document.exitFullscreen) {
-                        document.exitFullscreen();
-                        button.innerHTML = '<i class="material-icons" style="font-size:18px; line-height:30px;">fullscreen</i>';
-                        button.title = 'Full Screen';
-                    }
-                }
-            });
-
-            return container;
-        },
-        onRemove: function(map) {}
-    });
-
-    // Add custom control to map
-    new L.Control.BrowserFullscreen({ position: 'topleft' }).addTo(map);
-
-    // Basemaps (Added LAST to be at the bottom of the stack)
-    L.control.layers(baseMaps, null, { position: 'topleft' }).addTo(map);
-
-    // Use MarkerClusterGroup to enable Spiderfy effect
-    markers = L.markerClusterGroup({
-        spiderfyOnMaxZoom: false, // CHANGED: Disable spiderfy at max zoom to allow direct inspection
-        showCoverageOnHover: true, // Enable coverage (blue area) on hover
-        zoomToBoundsOnClick: false, // CHANGED: Manual control in clusterclick
-        maxClusterRadius: 50, // Slightly larger radius to catch overlaps
-        disableClusteringAtZoom: 20, // CHANGED: Always cluster overlaps (until max zoom + 1)
-        spiderfyDistanceMultiplier: 2, 
-        spiderLegPolylineOptions: { weight: 1.5, color: '#222', opacity: 0.5 },
-        iconCreateFunction: function(cluster) {
-            var childCount = cluster.getChildCount();
-            var children = cluster.getAllChildMarkers();
-            
-            // Find a representative thumbnail
-            var thumbPath = null;
-            var thumbSource = null;
-            
-            // Try to find a valid thumb path in children
-            for (var i = 0; i < children.length; i++) {
-                if (children[i].options.thumbPath) {
-                    thumbPath = children[i].options.thumbPath;
-                    thumbSource = children[i].options.thumbSource;
-                    break;
-                }
-            }
-            
-            // Count Aggregation
-            var totalCount = 0;
-            children.forEach(m => {
-                totalCount += (m.options.photoCount || 1);
-            });
-
-            // Calculate Border Color based on Folder (using representative path)
-            let borderColor = '#555';
-            if (thumbPath) {
-                 let folderPath = "/";
-                const lastSlash = thumbPath.lastIndexOf('/');
-                if (lastSlash > 0) {
-                    folderPath = thumbPath.substring(0, lastSlash);
-                }
-                borderColor = getClusterColor(folderPath); // Use existing helper
-            }
-
-            // Generate HTML
-            let innerHtml = '';
-            if (thumbPath) {
-                 // Force small size preview with cache bust
-                const url = '/api/preview?path=' + encodeURIComponent(thumbPath) + '&source=' + encodeURIComponent(thumbSource || '') + '&size=small';
-                
-                innerHtml = `<div class="cluster-thumb-container" style="border:3px solid ${borderColor} !important; box-shadow:0 2px 5px rgba(0,0,0,0.5); background-color: #555; width:48px !important; height:48px !important; border-radius:50%; overflow:hidden; position:relative; box-sizing:border-box;">
-                    <img src="${url}" class="fan-thumb-img" style="width:100% !important; height:100% !important; max-width:100% !important; max-height:100% !important; object-fit:cover !important; border-radius:50%; display:block;" onerror="window.fileBrowserHeatmapImageError(this, '${thumbPath.replace(/\'/g, "\\\'")}')" />
-                    <span style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); background:rgba(0,0,0,0.7); border-radius:10px; padding:1px 5px; color:white; font-size:11px; font-weight:bold; white-space:nowrap;">${totalCount}</span>
-                </div>`;
-            } else {
-                // Fallback (Generic Number)
-                 innerHtml = `<div style="background-color:rgba(100,100,100,0.8);border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;border:2px solid white;"><span style="color:white;text-shadow:0 0 2px black;font-weight:bold;">${totalCount}</span></div>`;
-            }
-
-            return new L.DivIcon({ 
-                html: innerHtml, 
-                className: 'custom-cluster-marker', 
-                iconSize: new L.Point(48, 48),
-                iconAnchor: [24, 24]
-            });
-        }
-    });
-
-    // Custom Handle for Max Zoom Click (instead of Spiderfy)
-    markers.on('clusterclick', function (a) {
-        // Fix: Use map.getZoom() instead of a.layer.getZoom()
-        // OR if the cluster is fully contained in a small area (same location)
-        // a.layer.getBounds() might be a single point.
-        // We generally want "Inspection" if we are at max zoom OR if zooming won't help.
-        
-        const zoom = map.getZoom();
-        const cluster = a.layer;
-        // Check if zooming in would actually help
-        // If current zoom is max, OR if the cluster bounds are effectively a point
-        // (But MarkerClusterGroup handles "spiderfy" for same-location points usually)
-        // Since we disabled spiderfyOnMaxZoom, we catch it here.
-        
-        if (zoom >= 18) { // Max Zoom Logic
-             const children = cluster.getAllChildMarkers();
-             
-             // Collect items for inspection
-             const directItems = [];
-             children.forEach(m => {
-                 let p = m.options.thumbPath || m.options.clusterPath; 
-                 let s = m.options.thumbSource || m.options.clusterSource;
-                 let c = m.options.photoCount || 1;
-                 let cid = m.options.clusterID || "";
-                 
-                 if (p) {
-                     directItems.push({ path: p, source: s, name: p.split('/').pop(), count: c, clusterID: cid });
-                 }
-             });
-             
-             if (directItems.length > 0) {
-                 // Open Inspection Panel DIRECTLY
-                 // Do not use inspectLocationDirect (helper ignores args)
-                 inspectLocation(null, null, directItems);
-             }
-        } else {
-             // Standard behavior: Zoom to cluster bounds
-             a.layer.zoomToBounds();
-        }
-    });
-    
-    markers.on('click', function (a) {
-        // console.log("DEBUG: marker click fired. Is it a cluster?", false);
-    });
-
-    // CRITICAL: Ensure context menu bubbles up if individual binding fails (common in MarkerCluster)
-    // This catches right-clicks on any marker (including our custom badges) inside the group
-    markers.on('contextmenu', function (e) {
-        // e.layer is the marker that was clicked
-        if (e.layer && e.layer.options && e.layer.options.photoCount) {
-             // It's one of our badges
-             // Re-use the handler if we can, or just inspect
-             // We need path and source from options?
-             // We didn't save path/source to marker options explicitly in createTile, 
-             // we bound it via closure in on('contextmenu').
-             // But if that failed, we need data here.
-             // We should attach path/source to marker options in createTile to be safe.
-             
-             // For now, let's rely on the direct bind working, but if MCG swallows it...
-             // MCG docs say it propagates.
-             // Let's force it on the group just in case.
-        }
-    });
-
-    // CRITICAL: Handle interactions on CLUSTERS (the "Grey Circles")
-    // When many items are at the EXACT same location, they cluster even at max zoom.
-    // We need to allow right-click on these too.
-    markers.on('clustercontextmenu', function (e) {
-        console.log("Cluster Context Menu", e);
-        const cluster = e.layer;
-        const children = cluster.getAllChildMarkers();
-        if (children.length > 0) {
-            // Collect all items in this cluster
-            const directItems = [];
-            children.forEach(m => {
-                 let p = m.options.thumbPath || m.options.clusterPath; // clusterPath from badge, thumbPath from fan leaf
-                 let s = m.options.thumbSource || m.options.clusterSource;
-                 let c = m.options.photoCount || 1;
-                 // Capture Cluster ID from options (added in addMarkersForTile)
-                 let cid = m.options.clusterID || ""; // Ensure string
-                 
-                 if (p) {
-                     directItems.push({ path: p, source: s, name: p.split('/').pop(), count: c, clusterID: cid });
-                 }
-            });
-            
-            // Use cluster bounds for context
-            const bounds = cluster.getBounds();
-            
-            // Use first child for reference coords key
-            const lat = e.latlng.lat.toFixed(5);
-            const lng = e.latlng.lng.toFixed(5);
-             
-             let content = `
-                <div style="text-align:center; font-size:12px;">
-                    <b>Lat:</b> ${lat}<br>
-                    <b>Lon:</b> ${lng}<br>
-                    <div style="margin-top:5px; display:flex; flex-direction:column; gap:4px;">
-                        <button onclick="window.copyLeafletCoords('${lat}', '${lng}')" class="button button--flat" style="font-size:11px; cursor:pointer;">Copy Coordinates</button>
-                    `;
-             
-             // If we have items, we can inspect
-             if (directItems.length > 0) {
-                 // Client-side cluster with items ready
-                 window._tempInspectItems = directItems;
-                 content += `<button onclick="window.inspectLocationDirect()" class="button button--flat" style="font-size:11px; cursor:pointer; background:rgba(0,100,200,0.3);">Inspect Files (${directItems.length})</button>`;
-             }
-             
-             content += `</div><div id="copy-status-${lat.replace('.','-')}" style="color:green; display:none; font-size:10px; margin-top:2px;">Copied!</div></div>`;
-
-             L.popup().setLatLng(e.latlng).setContent(content).openOn(map);
-        }
-    });
-
-    map.addLayer(markers);
+    window.inspectLocationByCoords = inspectLocationByCoords;
 };
 
-const loadData = async () => {
-    // wait for map
-    if (!map) { 
-        await initMap(); 
-        if (!map) return;
-    }
+const inspectLocationByCoords = (lat, lon, path, source, bounds) => {
+    let extra = { lat: parseFloat(lat), lon: parseFloat(lon) };
+    if (bounds) extra = { ...extra, ...bounds };
+    inspectLocation(path, source, null, extra);
+};
 
-    // Cancel any ongoing requests from previous load
-    if (abortController) {
-        abortController.abort();
-    }
+// Function to fetch and update data based on current viewport
+const updateViewportData = async () => {
+    if (!map) return;
+
+    // Debounce: Clear previous timer
+    if (updateDebounceTimer) clearTimeout(updateDebounceTimer);
+    
+    updateDebounceTimer = setTimeout(async () => {
+        await executeUpdateViewportData();
+    }, 150);
+};
+
+const executeUpdateViewportData = async () => {
+    if (!map) return;
+    
+    const bounds = map.getBounds();
+    const zoom = map.getZoom();
+    const source = currentSource.value;
+    const path = currentPath.value;
+    
+    const center = map.getCenter();
+    const lat2tile = (lat, z) => Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, z));
+    const lon2tile = (lon, z) => Math.floor((lon + 180) / 360 * Math.pow(2, z));
+    
+    const z = Math.floor(Math.min(zoom, 18));
+    const x = lon2tile(center.lng, z);
+    const y = lat2tile(center.lat, z);
+    
+    const features = [];
+    const seenPaths = new Set();
+    const fetchPromises = [];
+
+    if (abortController) abortController.abort();
     abortController = new AbortController();
 
-    // Clean up existing layers
-    markers.clearLayers();
-    if (heatLayer) {
-        map.removeLayer(heatLayer);
-        heatLayer = null;
+    for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+            const tx = x + dx;
+            const ty = y + dy;
+            if (tx < 0 || ty < 0) continue;
+            
+            const url = `/api/heatmap/tiles/${z}/${tx}/${ty}?source=${encodeURIComponent(source)}&path=${encodeURIComponent(path)}`;
+            fetchPromises.push(fetch(url, { signal: abortController.signal })
+                .then(res => res.json())
+                .catch(() => null));
+        }
     }
-    if (tileLayer) {
-        map.removeLayer(tileLayer);
-        tileLayer = null;
-    }
     
-    // Event Listeners
-    map.on('move', () => {
-         updateVisibleMarkers();
-         updateLeaderLine(); // Keep line attached during pan/zoom
-    });
-    map.on('zoomend', () => {
-        updateVisibleMarkers();
-        updateLeaderLine();
-    });
-    map.on('resize', () => {
-        updateLeaderLine();
-    });
-
-    // Clear stores
-    clusterDataStore.clear();
-    renderedMarkerStore.clear();
-
-    const source = recursiveDecode(route.query.source || "");
-    const path = recursiveDecode(route.query.path || "");
+    const results = await Promise.all(fetchPromises);
     
-    // Determine if folder or global
-    if (path) {
-        isFolderMode.value = true;
-    } else {
-        isFolderMode.value = false;
-    }
-
-    debugStatus.value = "Loading tiles...";
-    
-    // Instead of loading all data at once, we'll load tiles as needed
-    // Create a custom tile layer that fetches our JSON tiles
-    tileLayer = L.gridLayer({
-        tileSize: 256,
-        minZoom: 1,
-        maxZoom: 18,
-        updateWhenIdle: true, // Only update tiles after zoom/pan completes
-        updateWhenZooming: false, // Don't update during zoom animation
-        keepBuffer: 0, // Don't keep extra tiles in buffer
-        noWrap: true // Fix duplicate markers on world wrap
-    });
-
-    // Store loaded tiles to avoid reloading
-    const loadedTiles = new Map();
-    const tileMarkers = new Map(); // Map of tile key -> markers
-    const renderedPaths = new Set(); // Global registry of rendered paths to prevent duplication
-    
-    // Aggressive cleanup on zoom end to prevent doubling
-    // MODIFIED: Keep tiles from adjacent zoom levels (±1) for smoother transitions
-    // Marker Management
-    // We bind markers to tiles. When a tile unloads (panned out/zoomed out), we remove its markers.
-    tileLayer.on('tileunload', (e) => {
-        const key = `${e.coords.z}-${e.coords.x}-${e.coords.y}`;
-        if (tileMarkers.has(key)) {
-            const layers = tileMarkers.get(key);
-            // Cleanup markers
-            layers.forEach(m => {
-                 if (m.options.clusterPath) {
-                     const renderKey = `${m.options.clusterPath}:${e.coords.z}`;
-                     renderedPaths.delete(renderKey);
-                 }
+    const rawClusters = [];
+    results.forEach(data => {
+        if (data && data.clusters) {
+            data.clusters.forEach(c => {
+                 if (typeof c.lon !== 'number' || typeof c.lat !== 'number') return;
+                 rawClusters.push(c);
             });
-            markers.removeLayers(layers);
-            tileMarkers.delete(key);
         }
     });
 
-    // Helper to render markers for a tile
-    const addMarkersForTile = (data, coords, tileKey) => {
-        // Strict Zoom Guard: Don't add markers if map has zoomed away during load
-        if (map && Math.round(map.getZoom()) !== coords.z) {
-            return;
-        }
+    const processedClusters = [];
+    const pixelRadius = 80; // Increased from 50 to spread them out more
+    
+    rawClusters.forEach(c => {
+         const pt = map.project([c.lon, c.lat]);
+         let merged = false;
+         
+         for (let current of processedClusters) {
+             const dx = current.px.x - pt.x;
+             const dy = current.px.y - pt.y;
+             if (dx * dx + dy * dy < pixelRadius * pixelRadius) {
+                 current.count += c.count;
+                 current.ids.push(c.id); // Accumulate IDs for Backend Inspect
+                 
+                 const minLat = c.min ? c.min[0] : c.lat;
+                 const minLon = c.min ? c.min[1] : c.lon;
+                 const maxLat = c.max ? c.max[0] : c.lat,
+                       maxLon = c.max ? c.max[1] : c.lon;
+                 current.bounds.minLat = Math.min(current.bounds.minLat, minLat);
+                 current.bounds.minLon = Math.min(current.bounds.minLon, minLon);
+                 current.bounds.maxLat = Math.max(current.bounds.maxLat, maxLat);
+                 current.bounds.maxLon = Math.max(current.bounds.maxLon, maxLon);
+                 merged = true;
+                 break;
+             }
+         }
+         
+         if (!merged) {
+             processedClusters.push({
+                 id: c.id,
+                 ids: [c.id], // Initialize ID list
+                 path: c.path,
+                 source: c.source || source,
+                 count: c.count,
+                 lat: c.lat,
+                 lon: c.lon,
+                 px: pt,
+                 bounds: {
+                     minLat: c.min ? c.min[0] : c.lat,
+                     minLon: c.min ? c.min[1] : c.lon,
+                     maxLat: c.max ? c.max[0] : c.lat,
+                     maxLon: c.max ? c.max[1] : c.lon,
+                     clusterID: c.id
+                 }
+             });
+         }
+    });
 
-        const tileMarkerList = [];
-        let clusters = data.clusters || [];
+    processedClusters.forEach(c => {
+        const renderKey = `cluster_${c.id}_${z}`;
+        if (seenPaths.has(renderKey)) return;
+        seenPaths.add(renderKey);
         
-        clusters.forEach(c => {
-            // STRICT DEDUPLICATION (Scoped by Zoom):
-            const renderKey = `${c.path}:${coords.z}`;
-            if (renderedPaths.has(renderKey)) {
-                return; 
-            }
-            renderedPaths.add(renderKey);
-
-            try {
-                // UNIFIED LOGIC: Always create a marker with thumbnail metadata
-                // This allows L.markerCluster to handle everything.
-                
-                // 1. Determine Preview Path
-                // Use c.previewID if available (Server Cluster), else c.path (Leaf)
-                let previewPath = c.path; 
-                // NOTE: We rely on c.path being the representative path.
-                
-                if (c.points && c.points.length > 0) {
-                     // Add individual markers for points
-                    c.points.forEach(p => {
-                         const marker = L.marker([p.lat, p.lon], { 
-                             icon: generateMarkerIcon(p.path, c.source || source, 1), // Single item icon (Fan Leaf Style)
-                             thumbPath: p.path,
-                             thumbSource: c.source || source,
-                             clusterID: c.id,
-                             photoCount: 1
-                         });
-                         
-                         // CHANGED: No popup, direct click inspect
-                         // marker.bindPopup(generatePopupHtml(p.path, c.source || source, 1));
-                         marker.on('click', (e) => {
-                             L.DomEvent.stopPropagation(e);
-                             const safePath = (p.path || "");
-                             const safeSource = (c.source || source);
-                             const boundsObj = {minLat: p.lat, minLon: p.lon, maxLat: p.lat, maxLon: p.lon, clusterID: c.id};
-                             // Direct open
-                             inspectLocationByCoords(p.lat, p.lon, safePath, safeSource, boundsObj);
-                         });
-                         
-                         // Context Menu
-                         marker.on('contextmenu', (e) => {
-                             L.DomEvent.stopPropagation(e);
-                              const lat = e.latlng.lat.toFixed(5);
-                              const lng = e.latlng.lng.toFixed(5);
-                              const safePath = (p.path || "").replace(/'/g, "\\'");
-                              const safeSource = (c.source || source).replace(/'/g, "\\'");
-                              // Bounds for single item are just its point
-                              const boundsObj = {minLat: p.lat, minLon: p.lon, maxLat: p.lat, maxLon: p.lon, clusterID: c.id};
-                              const boundsJson = JSON.stringify(boundsObj).replace(/"/g, "&quot;");
-                              
-                              L.popup().setLatLng(e.latlng).setContent(`
-                                <div style="text-align:center; font-size:12px;">
-                                    <b>Lat:</b> ${lat}<br><b>Lon:</b> ${lng}<br>
-                                    <div style="margin-top:5px; display:flex; flex-direction:column; gap:4px;">
-                                        <button onclick="window.copyLeafletCoords('${lat}', '${lng}')" class="button button--flat" style="font-size:11px; cursor:pointer;">Copy</button>
-                                        <button onclick='window.inspectLocationByCoords("${lat}", "${lng}", "${safePath}", "${safeSource}", ${boundsJson})' class="button button--flat" style="font-size:11px; cursor:pointer; background:rgba(0,100,200,0.3);">Inspect File</button>
-                                    </div>
-                                </div>`).openOn(map);
-                         });
-
-                         tileMarkerList.push(marker);
-                    });
-                } else {
-                    // Add single marker for the Cluster itself (Server Aggregation)
-                    
-                    const marker = L.marker([c.lat, c.lon], {
-                        icon: generateMarkerIcon(c.path, c.source || source, c.count),
-                        thumbPath: c.path,
-                        thumbSource: c.source || source,
-                        clusterID: c.id,
-                        photoCount: c.count,
-                        totalCount: c.count, // Ensure totalCount is set for selection logic
-                        clusterPath: c.path,
-                        clusterSource: c.source || source
-                    });
-                     
-                     // CHANGED: No popup, direct click inspect (if count is small or user clicks it)
-                     // If it's a cluster, the ClusterGroup usually handles click (zoom or spiderfy).
-                     // BUT if it's a single item cluster (count=1), it behaves like a marker.
-                     // Or if max zoom. 
-                     // We add the click handler here to be safe. 
-                     // If L.markerClusterGroup captures it, this might not fire unless spiderfy is off?
-                     // Actually, individual markers inside a cluster don't receive click events if they are clustered.
-                     // But if they are NOT clustered (e.g. single item in that area), they do.
-                     marker.on('click', (e) => {
-                         // Only if not clustered? 
-                         // No, if it's visible as a marker, we want this.
-                         L.DomEvent.stopPropagation(e);
-                         const safePath = (c.path || "");
-                         const safeSource = (c.source || source);
-                         const boundsObj = {minLat: c.min ? c.min[0] : c.lat, minLon: c.min ? c.min[1] : c.lon, maxLat: c.max ? c.max[0] : c.lat, maxLon: c.max ? c.max[1] : c.lon, clusterID: c.id};
-                         inspectLocationByCoords(c.lat, c.lon, safePath, safeSource, boundsObj);
-                     });
-
-                     // Context Menu for Cluster Marker
-                      marker.on('contextmenu', (e) => {
-                         L.DomEvent.stopPropagation(e);
-                          const lat = e.latlng.lat.toFixed(5);
-                          const lng = e.latlng.lng.toFixed(5);
-                          const safePath = (c.path || "").replace(/'/g, "\\'");
-                          const safeSource = (c.source || source).replace(/'/g, "\\'");
-                          const boundsObj = {minLat: c.min ? c.min[0] : c.lat, minLon: c.min ? c.min[1] : c.lon, maxLat: c.max ? c.max[0] : c.lat, maxLon: c.max ? c.max[1] : c.lon, clusterID: c.id};
-                          const boundsJson = JSON.stringify(boundsObj).replace(/"/g, "&quot;");
-                          
-                          L.popup().setLatLng(e.latlng).setContent(`
-                            <div style="text-align:center; font-size:12px;">
-                                <b>Lat:</b> ${lat}<br><b>Lon:</b> ${lng}<br>
-                                <div style="margin-top:5px; display:flex; flex-direction:column; gap:4px;">
-                                    <button onclick="window.copyLeafletCoords('${lat}', '${lng}')" class="button button--flat" style="font-size:11px; cursor:pointer;">Copy</button>
-                                    <button onclick='window.inspectLocationByCoords("${lat}", "${lng}", "${safePath}", "${safeSource}", ${boundsJson})' class="button button--flat" style="font-size:11px; cursor:pointer; background:rgba(0,100,200,0.3);">Inspect Files</button>
-                                </div>
-                            </div>`).openOn(map);
-                      });
-
-                    tileMarkerList.push(marker);
-                }
-
-            } catch (err) {
-                console.error("Error creating marker for tile:", err);
+        const isThumbMarker = zoom >= 4;
+        
+        features.push({
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [c.lon, c.lat] },
+            properties: {
+                id: c.ids.join(','), // Send ALL merged IDs to GeoJSON
+                path: c.path,
+                source: c.source,
+                count: c.count,
+                count_str: c.count > 1 ? c.count.toString() : "",
+                bounds: JSON.stringify(c.bounds)
             }
         });
         
-        tileMarkers.set(tileKey, tileMarkerList);
-        markers.addLayers(tileMarkerList);
-    };
-
-    tileLayer.createTile = function(coords, done) {
-        const tile = document.createElement('div');
-        const tileKey = `${coords.z}-${coords.x}-${coords.y}`;
-        
-        if (loadedTiles.has(tileKey)) {
-            if (!tileMarkers.has(tileKey)) {
-                addMarkersForTile(loadedTiles.get(tileKey), coords, tileKey);
-            }
-            done(null, tile);
-            return tile;
-        }
-        
-        // Build tile URL
-        let tileUrl = `/api/heatmap/tiles/${coords.z}/${coords.x}/${coords.y}`;
-        if (source || path) {
-            const params = new URLSearchParams();
-            if (source) params.append('source', source);
-            if (path) params.append('path', path);
-            tileUrl += '?' + params.toString();
-        }
-
-        // Load tile data with abort signal
-        fetch(tileUrl, { signal: abortController.signal })
-            .then(r => r.ok ? r.json() : {clusters:[]})
-            .then(data => {
-                loadedTiles.set(tileKey, data);
-                addMarkersForTile(data, coords, tileKey);
-                // Trigger heatmap update (debounced) to include this new tile's data
-                updateHeatmap();
-                done(null, tile);
-            })
-            .catch(() => done(null, tile));
-
-        return tile;
-    };
-
-    /* Deprecated Logic Block (Ghost Code from Refactor) */
-    const _deprecated_logic = () => {
-            const tileMarkerList = [];
-            // Sort clusters by count (descending) so we show the most important ones if we limit
-            let clusters = data.clusters || [];
-            
-            // PERFORMANCE SAFETY: Limit total markers per tile?
-            // User requested to see ALL data ("Inspect matches cache"). 
-            // Arbitrary limiting causes "disappearing" data inconsistency.
-            // We now rely on backend aggregation (SimpifyClustersByZoom) or just render them.
-            // Removing the limit to ensure 1:1 match with data.
-            /*
-            if (clusters.length > 500) {
-                 clusters.sort((a, b) => b.count - a.count);
-                 clusters = clusters.slice(0, 500);
-            }
-            */
-            
-            clusters.forEach(c => {
-                try {
-                    // Determine how many markers to show based on zoom
-                    const zoom = coords.z;
-                    
-                    // AGGRESSIVE optimization: very few thumbnails at all zoom levels
-                    if (zoom < 15) {
-                        // Low/Medium zoom: show cluster badge only (NO thumbnails)
-                        // Also add to heatmap data
-                        const marker = L.marker([c.lat, c.lon], {
-                            icon: L.divIcon({
-                                html: `<div style="background:rgba(0,0,0,0.7);color:white;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;border:2px solid white;">${c.count}</div>`,
-                                className: 'tile-cluster-badge',
-                                iconSize: [30, 30]
-                            }),
-                            photoCount: c.count,
-                            clusterPath: c.path,
-                            clusterSource: c.source || source
-                        });
-                        // Shared Context Menu Handler for Badges (Backend Tiles)
-                        const onBadgeContextMenu = (e, clusterPath, clusterSource, minLat, minLon, maxLat, maxLon, clusterID) => {
-                             L.DomEvent.stopPropagation(e); // Prevent map context menu
-                             const lat = e.latlng.lat.toFixed(5);
-                             const lng = e.latlng.lng.toFixed(5);
-                             const safePath = (clusterPath || "").replace(/'/g, "\\'");
-                             const safeSource = (clusterSource || source).replace(/'/g, "\\'");
-                             const cID = clusterID || "";
-                             
-                             // Construct bounds object for the button call
-                             const boundsObj = {minLat, minLon, maxLat, maxLon, clusterID: cID};
-                             const boundsJson = JSON.stringify(boundsObj).replace(/"/g, "&quot;");
-                             
-                             L.popup()
-                                .setLatLng(e.latlng)
-                                .setContent(`
-                                    <div style="text-align:center; font-size:12px;">
-                                        <b>Lat:</b> ${lat}<br>
-                                        <b>Lon:</b> ${lng}<br>
-                                        <div style="margin-top:5px; display:flex; flex-direction:column; gap:4px;">
-                                            <button onclick="window.copyLeafletCoords('${lat}', '${lng}')" class="button button--flat" style="font-size:11px; cursor:pointer;">Copy Coordinates</button>
-                                            <button onclick='window.inspectLocationByCoords("${lat}", "${lng}", "${safePath}", "${safeSource}", ${boundsJson})' class="button button--flat" style="font-size:11px; cursor:pointer; background:rgba(0,100,200,0.3);">Inspect Files</button>
-                                        </div>
-                                        <div id="copy-status-${lat.replace('.','-')}" style="color:green; display:none; font-size:10px; margin-top:2px;">Copied!</div>
-                                    </div>
-                                `)
-                                .openOn(map);
-                        };
-
-                        marker.bindPopup(`<b>${c.count} photos</b><br>Zoom in for details<br><span style="font-size:10px;color:#aaa">Right-click for Options</span>`);
-                        
-                        // Pass bounds (Min/Max) AND ID from backend cluster 'c'
-                        if (c.min && c.max) {
-                            marker.on('contextmenu', (e) => onBadgeContextMenu(e, c.path, c.source || source, c.min[0], c.min[1], c.max[0], c.max[1], c.id));
-                        } else {
-                             marker.on('contextmenu', (e) => onBadgeContextMenu(e, c.path, c.source || source, 0, 0, 0, 0, c.id));
-                        }
-                        
-                        markers.addLayer(marker);
-                        tileMarkerList.push(marker);
-                    } else if (c.count > 15) {
-                        // Large cluster badge
-                        const marker = L.marker([c.lat, c.lon], {
-                            icon: L.divIcon({
-                                html: `<div style="background:rgba(255,100,0,0.8);color:white;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.3);">${c.count}</div>`,
-                                className: 'tile-cluster-badge-large',
-                                iconSize: [36, 36]
-                            }),
-                            photoCount: c.count,
-                            totalCount: c.count, 
-                            clusterID: c.id
-                        });
-                        
-                        marker.bindPopup(`<b>${c.count} photos</b><br>Location: ${c.path}<br><span style="font-size:10px;color:#aaa">Right-click for Options</span>`);
-                        
-                        marker.bindPopup(`<b>${c.count} photos</b><br>Location: ${c.path}<br><span style="font-size:10px;color:#aaa">Right-click for Options</span>`);
-                        
-                        // Attach context menu handler for specific badge
-                        // Attach context menu handler for specific badge
-                        if (c.min && c.max) {
-                            marker.on('contextmenu', (e) => onBadgeContextMenu(e, c.path, c.source || source, c.min[0], c.min[1], c.max[0], c.max[1], c.id));
-                        } else {
-                             marker.on('contextmenu', (e) => onBadgeContextMenu(e, c.path, c.source || source, 0, 0, 0, 0, c.id));
-                        }
-
-                        // Remove "Direct Click to Inspect" to match request "Right click... should not immediately open inspect"
-                        // But wait, user said "Right click and long press should not immediately open...".
-                        // Left click is fine to open Popup.
-                        // I will REMOVE the left-click override I added.
-                        
-                        markers.addLayer(marker);
-                        tileMarkerList.push(marker);
-                    } else {
-                        // Small clusters: show thumbnails in FAN LAYOUT (Zoom 15+)
-                        let maxFanSize = 3; // Default: 3 thumbnails
-                        if (zoom >= 16 && zoom < 17) {
-                            maxFanSize = 5; // Zoom 16: 5 thumbnails
-                        } else if (zoom >= 17) {
-                            maxFanSize = 12; // Zoom 17+: 12 thumbnails (Spiderfy will handle clutter)
-                        }
-                        
-                        if (c.points && c.points.length > 0) {
-                            // Show individual points
-                            const pointsToShow = c.points.slice(0, maxFanSize);
-                            
-                            // FORCE FAN LAYOUT: Always apply offset if count is small, to ensure visibility
-                            // Instead of checking zoom >= 17, we check if we *should* spiderfy.
-                            // But user wants to SEE them.
-                            // If we use 0 radius at zoom 17+, they stack and need click to spiderfy.
-                            // If we use 0.0002, they are separate. 
-                            // User request: "I do not see the photo thumbnail fan... when zoomed in at zoom level 18".
-                            // So we MUST use offset.
-                            const fanRadius = 0.0002; 
-                            const angleStep = (2 * Math.PI) / pointsToShow.length;
-                            
-                            pointsToShow.forEach((p, idx) => {
-                                // Calculate position in circle around cluster center
-                                const angle = idx * angleStep;
-                                const offsetLat = fanRadius * Math.cos(angle);
-                                const offsetLon = fanRadius * Math.sin(angle);
-                                
-                                const marker = L.marker([c.lat + offsetLat, c.lon + offsetLon], {
-                                    icon: generateMarkerIcon(p.path, c.source || source, 1),
-                                    thumbPath: p.path,
-                                    thumbSource: c.source || source,
-                                    clusterID: c.id, 
-                                    totalCount: c.count, // Capture total count of the cluster this leaf belongs to
-                                    riseOnHover: true, 
-                                });
-                                marker.bindPopup(generatePopupHtml(p.path, c.source || source, 1));
-                                
-                                // Add context menu handler to marker
-                                marker.on('contextmenu', () => {
-                                    // Open side panel for this file's folder
-                                    let parent = p.path.substring(0, p.path.lastIndexOf('/'));
-                                    inspectLocation(parent, c.source || source);
-                                });
-
-                                markers.addLayer(marker);
-                                tileMarkerList.push(marker);
-                            });
-                        } else {
-                            // Single cluster marker
-                            const marker = L.marker([c.lat, c.lon], {
-                                 icon: generateMarkerIcon(c.path, c.source || source, c.count),
-                                 thumbPath: c.path,
-                                 thumbSource: c.source || source,
-                                 clusterID: c.id, // Explicitly Store Cluster ID
-                                 totalCount: c.count // Capture count
-                            });
-                            marker.bindPopup(generatePopupHtml(c.path, c.source || source, c.count));
-                            markers.addLayer(marker);
-                            tileMarkerList.push(marker);
-                        }
-                    }
-                } catch (err) {
-                    console.warn('Failed to create marker:', err);
+        if (isThumbMarker) {
+            if (!clusterMarkers[renderKey]) {
+                const el = document.createElement('div');
+                
+                let borderColor = '#f1c40f';
+                let folderPath = "/";
+                const lastSlash = c.path.lastIndexOf('/');
+                if (lastSlash > 0) folderPath = c.path.substring(0, lastSlash);
+                borderColor = getClusterColor(folderPath);
+                
+                let innerHtml = '';
+                if (c.path) {
+                    const url = '/api/preview?path=' + encodeURIComponent(c.path) + '&source=' + encodeURIComponent(c.source) + '&size=small';
+                    innerHtml = `<div class="cluster-thumb-container" style="border:3px solid ${borderColor}; box-shadow:0 2px 5px rgba(0,0,0,0.5); background-color: #555; width:48px; height:48px; border-radius:50%; overflow:hidden; position:relative; box-sizing:border-box; cursor:pointer;">
+                        <img src="${url}" class="fan-thumb-img" style="width:100%; height:100%; object-fit:cover; display:block;" onerror="window.fileBrowserHeatmapImageError(this, '${c.path.replace(/\'/g, "\\\'")}')" />
+                        <span style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); background:rgba(0,0,0,0.7); border-radius:10px; padding:1px 5px; color:white; font-size:11px; font-weight:bold; white-space:nowrap; pointer-events:none;">${c.count}</span>
+                    </div>`;
+                } else {
+                    innerHtml = `<div style="background-color:rgba(100,100,100,0.8);border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;border:2px solid ${borderColor}; cursor:pointer;"><span style="color:white;text-shadow:0 0 2px black;font-weight:bold;">${c.count}</span></div>`;
                 }
-            });
-            
-            tileMarkers.set(tileKey, tileMarkerList);
-            debugClusterCount.value = loadedTiles.size;
-            debugStatus.value = `Loaded ${loadedTiles.size} tiles`;
-            
-            done(null, tile);
-    };
-    // End of deprecated logic
-
-    // Remove tile markers when tile is removed
-    tileLayer.on('tileunload', (e) => {
-        const coords = e.coords;
-        const tileKey = `${coords.z}-${coords.x}-${coords.y}`;
-        const layers = tileMarkers.get(tileKey);
-        if (layers) {
-            layers.forEach(marker => {
-                 if (marker.options.clusterPath) renderedPaths.delete(marker.options.clusterPath);
-                 try { markers.removeLayer(marker); } catch(e){}
-            });
-            tileMarkers.delete(tileKey);
-        }
-        // NOTE: We do NOT delete from loadedTiles here, to allow cache hits (re-render) later.
-        // But we MUST allow re-rendering in addMarkersForTile by clearing renderedPaths above.
-    });
-
-    // Add tile layer to map (this will trigger tile loading)
-    map.addLayer(tileLayer);
-    
-    // Add heatmap layer for low zoom levels
-    const heatPoints = [];
-    
-    // Function to collect all cluster points for heatmap (Debounced)
-    let heatmapTimeout;
-    const updateHeatmap = () => {
-        if (heatmapTimeout) clearTimeout(heatmapTimeout);
-        heatmapTimeout = setTimeout(() => {
-            // Only update if at desired zoom
-            if (map.getZoom() > 17) {
-                if (heatLayer && map.hasLayer(heatLayer)) {
-                    map.removeLayer(heatLayer);
-                }
-                return;
-            }
-
-            heatPoints.length = 0; // Clear array
-            heatPoints.length = 0; // Clear array
-            const currentZoom = Math.round(map.getZoom());
-            
-            loadedTiles.forEach((tileData, key) => {
-                // Ensure we only use tiles from current zoom level
-                const tileZ = parseInt(key.split('-')[0]);
-                if (tileZ !== currentZoom) return;
-
-                if (tileData.clusters) {
-                    tileData.clusters.forEach(c => {
-                        // Intensity Logic:
-                        // Gradient starts at 0.4.
-                        // We want single items to be VISIBLE (e.g. 0.5).
-                        // Large clusters should hit 1.0 quickly.
-                        // Formula: 0.4 (base) + (count / 10) * 0.6
-                        // Count 1 => 0.4 + 0.06 = 0.46 (Blue)
-                        // Count 5 => 0.4 + 0.3 = 0.7 (Lime)
-                        // Count 10 => 1.0 (Red)
-                        let intensity = 0.4 + (c.count / 10) * 0.6;
-                        if (intensity > 1.0) intensity = 1.0;
-                         
-                        // Sanity check to prevent canvas glitches
-                        if (!isNaN(c.lat) && !isNaN(c.lon)) {
-                            heatPoints.push([c.lat, c.lon, intensity]);
-                        }
-                    });
-                }
-            });
-            
-            const zoom = map.getZoom();
-            // REQUESTED VALUES (User Specified):
-            // Low Zoom (< 10): Radius 80 (Blur 50)
-            // Mid Zoom (< 13): Radius 75 (Blur 40)
-            // High Zoom (>= 13): Radius 50 (Blur 35)
-            const radius = zoom < 10 ? 80 : (zoom < 13 ? 75 : 50);
-            const blur = zoom < 10 ? 50 : (zoom < 13 ? 40 : 35);
-
-            if (!heatLayer) {
-                // Initialize if missing
-                heatLayer = L.heatLayer(heatPoints, {
-                    radius: radius,
-                    blur: blur,
-                    maxZoom: 17, // Enable heatmap up to zoom 17 (inclusive)
-                    max: 1.0, 
-                    gradient: {0.4: 'blue', 0.6: 'cyan', 0.7: 'lime', 0.8: 'yellow', 1.0: 'red'}
+                
+                el.innerHTML = innerHtml;
+                
+                el.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    inspectLocationByCoords(c.lat, c.lon, c.path, c.source, c.bounds);
                 });
                 
-                // Apply CSS class for GPU stability
-                if (heatLayer._canvas) {
-                    heatLayer._canvas.classList.add('heatmap-canvas');
-                }
-                
-                map.addLayer(heatLayer);
-            } else {
-                // EFFICIENT UPDATE: Reuse layer
-                // FIX: Only set options if layer is on map to avoid _animating null error
-                if (map.hasLayer(heatLayer)) {
-                     heatLayer.setOptions({
-                        radius: radius,
-                        blur: blur
-                    });
-                } else {
-                    map.addLayer(heatLayer); 
-                    // Re-adding might reset options, so set them again safely
-                    heatLayer.setOptions({
-                        radius: radius,
-                        blur: blur
-                    });
-                }
-                
-                // Ensure canvas class is set
-                if (heatLayer._canvas && !heatLayer._canvas.classList.contains('heatmap-canvas')) {
-                    heatLayer._canvas.classList.add('heatmap-canvas');
-                }
-
-                heatLayer.setLatLngs(heatPoints);
-                
-                if (!map.hasLayer(heatLayer)) {
-                    map.addLayer(heatLayer);
-                }
+                const marker = new maplibregl.Marker({ element: el })
+                    .setLngLat([c.lon, c.lat])
+                    .addTo(map);
+                    
+                clusterMarkers[renderKey] = marker;
             }
-        }, 50); // 50ms debounce for better responsiveness
-    };
-    
-    // Update heatmap when zoom changes
-    map.on('zoomend', () => {
-        updateHeatmap(); // Trigger refresh to update radius/data
-    });
-    
-    // Update heatmap when tiles load
-    tileLayer.on('load', () => {
-        updateHeatmap();
-    });
-
-    // Set initial view
-    if (path) {
-        // For folder view, try to fit bounds if we have data
-        // For now, just use a default view
-        map.setView([0, 0], 2);
-    } else {
-        map.setView([0, 0], 2);
-    }
-
-    debugStatus.value = "Tile-based loading active";
-};
-
-
-// Box Selection Logic
-const toggleSelectionMode = () => {
-    isBoxSelectMode.value = !isBoxSelectMode.value;
-    if (isBoxSelectMode.value) {
-        // Disable map interaction? Leaflet usually handles this if we consume events.
-        // The overlay has touch-action: none.
-        map.dragging.disable();
-    } else {
-        map.dragging.enable();
-        selectionBox.value.visible = false;
-    }
-};
-
-const startSelection = (e) => {
-    if (!isBoxSelectMode.value) return;
-    
-    // Get coords relative to overlay itself for perfect visual alignment
-    const rect = e.currentTarget.getBoundingClientRect();
-    
-    let clientX, clientY;
-    if (e.type.startsWith('touch')) {
-        clientX = e.touches[0].clientX;
-        clientY = e.touches[0].clientY;
-    } else {
-        clientX = e.clientX;
-        clientY = e.clientY;
-    }
-    
-    const x = clientX - rect.left;
-    const y = clientY - rect.top;
-    
-    selectionBox.value.startX = x;
-    selectionBox.value.startY = y;
-    selectionBox.value.currentX = x;
-    selectionBox.value.currentY = y;
-    selectionBox.value.visible = true;
-    selectionBox.value.style = {
-        left: x + 'px',
-        top: y + 'px',
-        width: '0px',
-        height: '0px'
-    };
-};
-
-const updateSelection = (e) => {
-    if (!isBoxSelectMode.value || !selectionBox.value.visible) return;
-    
-    // Prevent scrolling on touch
-    if (e.type.startsWith('touch')) e.preventDefault();
-    
-    const rect = e.currentTarget.getBoundingClientRect();
-    
-    let clientX, clientY;
-    if (e.type.startsWith('touch')) {
-        clientX = e.touches[0].clientX;
-        clientY = e.touches[0].clientY;
-    } else {
-        clientX = e.clientX;
-        clientY = e.clientY;
-    }
-    
-    const x = clientX - rect.left;
-    const y = clientY - rect.top;
-    
-    selectionBox.value.currentX = x;
-    selectionBox.value.currentY = y;
-    
-    const minX = Math.min(selectionBox.value.startX, x);
-    const maxX = Math.max(selectionBox.value.startX, x);
-    const minY = Math.min(selectionBox.value.startY, y);
-    const maxY = Math.max(selectionBox.value.startY, y);
-    
-    selectionBox.value.style = {
-        left: minX + 'px',
-        top: minY + 'px',
-        width: (maxX - minX) + 'px',
-        height: (maxY - minY) + 'px'
-    };
-};
-
-const endSelection = (e) => {
-    if (!isBoxSelectMode.value || !selectionBox.value.visible) return;
-    
-    selectionBox.value.visible = false;
-    
-    // Calculate Bounds
-    const overlay = e.currentTarget;
-    const overlayRect = overlay.getBoundingClientRect();
-    
-    const mapContainer = map.getContainer();
-    const mapRect = mapContainer.getBoundingClientRect();
-    
-    // Calculate Offset: Overlay Relative -> Map Relative
-    // MapPoint = OverlayPoint + OverlayAbs - MapAbs
-    const offsetX = overlayRect.left - mapRect.left;
-    const offsetY = overlayRect.top - mapRect.top;
-    
-    // We already calculated relative x/y in updateSelection (which are Overlay Relative)
-    // Apply offset to make them Map Relative
-    const startPt = L.point(
-        selectionBox.value.startX + offsetX, 
-        selectionBox.value.startY + offsetY
-    );
-    const endPt = L.point(
-        selectionBox.value.currentX + offsetX, 
-        selectionBox.value.currentY + offsetY
-    );
-    
-    // Convert to LatLng (Leaflet expects Map Relative points)
-    const startLatLng = map.containerPointToLatLng(startPt);
-    const endLatLng = map.containerPointToLatLng(endPt);
-    
-    const bounds = L.latLngBounds(startLatLng, endLatLng);
-    
-    // Query Markers
-    const selectedItems = [];
-    
-    // Iterate ALL layers in the cluster group
-    // Note: markers.eachLayer iterates specific markers (leaves), not clusters.
-    markers.eachLayer(layer => {
-        if (bounds.contains(layer.getLatLng())) {
-             let p = layer.options.thumbPath || layer.options.clusterPath;
-             let s = layer.options.thumbSource || layer.options.clusterSource;
-             // Count: Prefer totalCount (from Cluster data) over photoCount (Badge) over 1
-             let c = layer.options.totalCount || layer.options.photoCount || 1;
-             let cid = layer.options.clusterID || ""; // Now populated for all types
-             
-             if (p) {
-                 selectedItems.push({ 
-                     path: p, 
-                     source: s, 
-                     name: p.split('/').pop(), 
-                     count: c, 
-                     clusterID: cid 
-                 });
-             }
         }
     });
     
-    // Auto-disable mode
-    toggleSelectionMode();
+    // Cleanup old markers
+    Object.keys(clusterMarkers).forEach(key => {
+        if (!seenPaths.has(key) || zoom < 4) {
+            clusterMarkers[key].remove();
+            delete clusterMarkers[key];
+        }
+    });
     
-    if (selectedItems.length > 0) {
-        // Feed to Inspection Panel
-        // Use inspectLocation with directItems. 
-        // The items now have valid 'clusterID', so openFolderView will work correctly.
-        inspectLocation(null, null, selectedItems);
-    } else {
-        notify.showInfo("No items selected in area");
+    if (map.getSource('heatmap-data')) {
+        console.log(`[Heatmap] updateViewportData pushed ${features.length} features to heatmap-data source.`);
+        map.getSource('heatmap-data').setData({
+            type: 'FeatureCollection',
+            features: features
+        });
     }
 };
 
+const loadData = async () => {
+    // Wait for map to be fully loaded before doing anything
+    await initMap();
+    if (!map) return;
+
+    // Update refs so updateViewportData uses current context
+    currentSource.value = recursiveDecode(route.query.source || "");
+    currentPath.value = recursiveDecode(route.query.path || "");
+    isFolderMode.value = !!currentPath.value;
+
+    debugStatus.value = "Loading data...";
+
+    // Setup MapLibre Sources and Layers if not already present
+    if (!map.getSource('heatmap-data')) {
+        map.addSource('heatmap-data', {
+            type: 'geojson',
+            data: { type: 'FeatureCollection', features: [] }
+        });
+
+        // Heatmap Layer
+        map.addLayer({
+            id: 'heatmap-layer',
+            type: 'heatmap',
+            source: 'heatmap-data',
+            maxzoom: 18,
+            paint: {
+                'heatmap-weight': ['interpolate', ['linear'], ['get', 'count'], 1, 1, 50, 10],
+                'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 0, 1, 15, 3],
+                'heatmap-color': [
+                    'interpolate',
+                    ['linear'],
+                    ['heatmap-density'],
+                    0, 'rgba(0,0,255,0)',
+                    0.1, 'rgba(0,255,255,0.5)',
+                    0.3, 'rgba(0,255,0,0.6)',
+                    0.5, 'rgba(255,255,0,0.7)',
+                    0.7, 'rgba(255,165,0,0.8)',
+                    1.0, 'rgba(255,0,0,0.9)'
+                ],
+                'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 0, 5, 8, 30],
+                'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 6, 1, 15, 1, 18, 0]
+            }
+        });
+    }
+
+    updateViewportData(); // Initial load
+};
+
+
+const handleResize = () => {
+    isDesktop.value = window.innerWidth > 1024;
+};
 
 onMounted(() => {
     // Setup global error handler
@@ -2950,8 +2354,8 @@ onMounted(() => {
         }
         
         if (isFolder) {
-            console.log(`[Heatmap] Navigating to heatmap folder: ${targetPath}`);
-            router.push({ path: '/heatmap', query: { path: targetPath, source: sourceName } })
+            console.log(`[Heatmap] Navigating to heatmap folder (MapLibre): ${targetPath}`);
+            router.push({ path: '/heatmap-v2', query: { path: targetPath, source: sourceName } })
               .catch(err => console.error("Router push error:", err));
         } else {
             // For file browsing, we want /files/{path}
@@ -3026,11 +2430,16 @@ onMounted(() => {
             loadOverlay();
         }
     });
+
+    window.addEventListener('resize', handleResize);
+    handleResize();
 });
 
 // CRITICAL: Cleanup when component unmounts to STOP requests
 onBeforeUnmount(() => {
     console.log('Heatmap component unmounting - stopping all requests...');
+    
+    window.removeEventListener('resize', handleResize);
     
     // 0. Prevent error notifications from firing
     if (errorNotificationTimeout) {
@@ -3062,26 +2471,9 @@ onBeforeUnmount(() => {
         abortController = null;
     }
     
-    // 2. Remove tile layer immediately
-    if (map && tileLayer) {
-        map.removeLayer(tileLayer);
-        tileLayer = null;
-    }
-
-    // 3. Remove heatmap layer
-    if (map && heatLayer) {
-        map.removeLayer(heatLayer);
-        heatLayer = null;
-    }
+    // 2. Clear sources and layers (Optional but good for cleanliness)
+    // Most resources are freed by map.remove()
     
-    if (markers) {
-        markers.clearLayers();
-        if (map) map.removeLayer(markers);
-        markers = null;
-    }
-    
-
-
     // 5. Destroy map
     if (map) {
         map.remove();

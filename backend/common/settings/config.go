@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -353,6 +354,7 @@ func setDefaults() Settings {
 			NameToSource:       map[string]Source{},
 			MaxArchiveSizeGB:   50,
 			CacheDir:           "tmp",
+			ServerStart:        time.Now(),
 		},
 		Auth: Auth{
 			AdminUsername:        "admin",
@@ -499,6 +501,20 @@ func ConvertToFrontendScopes(scopes []users.SourceScope) []users.SourceScope {
 			})
 		}
 	}
+
+	// Sort so that physical sources come first, followed by virtual sources (like ALL_SOURCES)
+	sort.Slice(newScopes, func(i, j int) bool {
+		iVirtual := IsVirtualSource(newScopes[i].Alias) || IsVirtualSource(newScopes[i].Name)
+		jVirtual := IsVirtualSource(newScopes[j].Alias) || IsVirtualSource(newScopes[j].Name)
+		
+		if iVirtual == jVirtual {
+			// If both are virtual or both are physical, preserve relative order (or sort alphabetically if preferred)
+			return newScopes[i].Name < newScopes[j].Name
+		}
+		// Physical sources (< false) should come before virtual sources (< true)
+		return !iVirtual && jVirtual
+	})
+
 	return newScopes
 }
 

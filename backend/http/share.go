@@ -441,7 +441,7 @@ func serviceSharePostHandler(w http.ResponseWriter, r *http.Request, d *requestC
 
 	// 4. Create the Service User
 	var scopes []users.SourceScope
-	if sourceName == "ALL" {
+	if settings.IsVirtualSource(sourceName) {
 		// Inherit and Scope: Access the SAME shared path across all visible sources
 		for _, s := range d.user.Scopes {
 			// We skip restricted scopes that don't match the path if we wanted to be even more strict,

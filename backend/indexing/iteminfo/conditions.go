@@ -125,6 +125,8 @@ var textTypes = []string{
 	".tex",     // LaTeX
 	".bib",     // BibTeX
 	".geojson", // GeoJSON
+	".pmtiles", // PMTiles
+	".pmtile",  // PMTiles (singular)
 }
 
 // Compressed file extensions

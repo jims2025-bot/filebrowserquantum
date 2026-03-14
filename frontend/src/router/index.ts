@@ -25,6 +25,7 @@ const titles = {
   NotFound: "errors.notFound",
   InternalServerError: "errors.internal",
   Heatmap: "sidebar.heatmap",
+  HeatmapV2: "New Map (MapLibre)",
   FaceDatabase: "Face Database",
 };
 
@@ -78,6 +79,14 @@ const routes = [
     path: "/heatmap",
     name: "Heatmap",
     component: () => import("@/views/Heatmap.vue"),
+    meta: {
+      requiresAuth: true,
+    },
+  },
+  {
+    path: "/heatmap-v2",
+    name: "HeatmapV2",
+    component: () => import("@/views/HeatmapV2.vue"),
     meta: {
       requiresAuth: true,
     },
