@@ -23,12 +23,17 @@ const passwordAvailable = window.FileBrowser.PasswordAvailable;
 const mediaAvailable = window.FileBrowser.MediaAvailable;
 const origin = window.location.origin;
 
+const siteTesting = window.FileBrowser.SiteTesting || false;
+const siteTestingMessage = window.FileBrowser.SiteTestingMessage || "";
+const siteTestingBackground = window.FileBrowser.SiteTestingBackground || "";
+
 const settings = [
   { id: 'profile', label: i18n.global.t('settings.profileSettings'), component: 'ProfileSettings' },
   { id: 'shares', label: i18n.global.t('settings.shareSettings'), component: 'SharesSettings', permissions: { share: true } },
   { id: 'api', label: i18n.global.t('api.title'), component: 'ApiKeys', permissions: { api: true } },
   { id: 'global', label: 'Global', component: 'GlobalSettings', permissions: { admin: true } },
   { id: 'users', label: i18n.global.t('settings.userManagement'), component: 'UserManagement', permissions: { admin: true } },
+  { id: 'debug', label: 'System Debug', component: 'DebugSettings', permissions: { admin: true, siteTesting: true }, anyPermission: true },
 ];
 
 export {
@@ -54,4 +59,7 @@ export {
   darkMode,
   settings,
   onlyOfficeUrl,
+  siteTesting,
+  siteTestingMessage,
+  siteTestingBackground,
 };

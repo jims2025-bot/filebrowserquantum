@@ -36,13 +36,17 @@ export default {
       const requiredPerms = setting?.permissions || {};
       if (Object.keys(requiredPerms).length === 0) return true;
       
-      return Object.keys(requiredPerms).every((key) => {
+      const checkPerm = (key) => {
         const lowerKey = key.toLowerCase();
-        // Check exact match, lowercase match, and capitalized match
         return permObj[key] === true || 
                permObj[lowerKey] === true || 
                permObj[key.charAt(0).toUpperCase() + key.slice(1)] === true;
-      });
+      };
+
+      if (setting.anyPermission) {
+        return Object.keys(requiredPerms).some(checkPerm);
+      }
+      return Object.keys(requiredPerms).every(checkPerm);
     },
     active: (view) => state.activeSettingsView === view,
     setView(view) {

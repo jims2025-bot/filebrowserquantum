@@ -182,28 +182,31 @@ func HandleGetOverlays(w http.ResponseWriter, r *http.Request, d *requestContext
 		targetPath = "/"
 	}
 
-	// Fix: Resolve path relative to User Scope for "Current Folder" mode
-	if mode != "all" && d.user != nil {
-		resolvedPath, _, err := ResolveScopePath(d.user, sourceName, targetPath)
-		if err == nil {
-			targetPath = resolvedPath
-		} else {
-			logger.Error("HandleGetOverlays: ResolveScopePath failed: " + err.Error())
-		}
-	}
-
-	if mode == "all" {
-		targetPath = "/"
-
-		// Use the User's Scope Root if available
-		// This ensures that "All Overlays" respects the user's view (e.g. starting at /PHOTOCOLLECTIONS)
-		// rather than always showing the physical root of the Source.
-		if d.user != nil {
+	// Resolve the target path based on user permissions and scope
+	if d.user != nil {
+		if mode == "all" {
+			// GLOBAL MODE: Pull overlays from the absolute root of this specific user scope.
+			// Example: if User scope is "/PHOTOCOLLECTIONS", we want the aggregated mapoverlays.json
+			// located at "/PHOTOCOLLECTIONS", NOT whatever subfolder they clicked. 
+			// So we ignore `targetPath` entirely and use their scope root.
 			userScope, _, err := settings.GetScopeFromSourceString(d.user.Scopes, sourceName)
-			if err == nil && userScope != "" {
+			if err == nil {
 				targetPath = userScope
+			} else {
+				targetPath = "/" // Fallback to physical root if scope lookup fails
+			}
+		} else {
+			// CONTEXT MODE ("Current Folder"): Pull overlays ONLY for the specific folder they are viewing.
+			// We must resolve the virtual UI path down to the physical/scope path.
+			resolvedPath, _, err := ResolveScopePath(d.user, sourceName, targetPath)
+			if err == nil {
+				targetPath = resolvedPath
+			} else {
+				logger.Error("HandleGetOverlays: ResolveScopePath failed: " + err.Error())
 			}
 		}
+	} else if mode == "all" {
+		targetPath = "/"
 	}
 
 	// Manual Scan Trigger (Debugging)

@@ -49,6 +49,9 @@
         label="Folder Options"
         @action="showFolderMenu = !showFolderMenu"
       />
+      <!-- Invisible full-screen overlay to catch clicks outside the menu -->
+      <div v-if="showFolderMenu" class="folder-options-overlay" @click="showFolderMenu = false"></div>
+
       <div v-if="showFolderMenu" class="folder-dropdown" @click="showFolderMenu = false">
         <div class="dropdown-item" @click="openFolderDetails">
           <i class="material-icons">info</i>
@@ -802,6 +805,16 @@ header {
     cursor: pointer;
     outline: none;
     max-width: 150px;
+}
+
+/* Invisible overlay for the Folder Options menu */
+.folder-options-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 1000; /* Must be below the dropdown dropdown (1001) */
 }
 
 .dark-mode-header .map-overlays-select {

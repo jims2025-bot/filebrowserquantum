@@ -41,6 +41,7 @@ type Permissions struct {
 	RebuildThumbnails   bool `json:"rebuildThumbnails"`
 	ViewMapLibre        bool `json:"viewMapLibre"`
 	ManageOverlays      bool `json:"manageOverlays"`
+	SiteTesting         bool `json:"siteTesting"`
 }
 
 // SortingSettings represents the sorting settings.

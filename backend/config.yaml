@@ -42,6 +42,9 @@ server:
   internalUrl: ""
   cacheDir: tmp
   maxArchiveSize: 50
+  siteTesting: true
+  siteTestingMessage: Site is down for maintenance
+  siteTestingBackground: ""
   virtualSources: []
 auth:
   tokenExpirationHours: 2
@@ -91,6 +94,24 @@ frontend:
   - text: Help
     title: ""
     url: https://github.com/jims2025-bot/filebrowserquantum/wiki
+  - text: (untracked)
+    title: untracked
+    url: https://github.com/jims2025-bot/filebrowserquantum/releases/
+  - text: Help
+    title: ""
+    url: https://github.com/jims2025-bot/filebrowserquantum/wiki
+  - text: (untracked)
+    title: untracked
+    url: https://github.com/jims2025-bot/filebrowserquantum/releases/
+  - text: Help
+    title: ""
+    url: https://github.com/jims2025-bot/filebrowserquantum/wiki
+  - text: (untracked)
+    title: untracked
+    url: https://github.com/jims2025-bot/filebrowserquantum/releases/
+  - text: Help
+    title: ""
+    url: https://github.com/jims2025-bot/filebrowserquantum/wiki
 userDefaults:
   stickySidebar: true
   darkMode: true
@@ -121,6 +142,11 @@ userDefaults:
     manageServiceShares: false
     manageFaces: false
     runFaceScan: false
+    viewACDSee: false
+    rebuildThumbnails: false
+    viewMapLibre: false
+    manageOverlays: false
+    siteTesting: false
   loginMethod: password
 integrations:
   office:

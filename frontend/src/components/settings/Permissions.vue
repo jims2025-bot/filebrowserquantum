@@ -94,6 +94,14 @@
       />
       <p class="description">{{ $t("settings.permissions.manageOverlaysDescription") }}</p>
     </div>
+    <div class="permission-group">
+      <ToggleSwitch
+        class="item"
+        v-model="permissions.siteTesting"
+        :name="$t('settings.permissions.siteTesting')"
+      />
+      <p class="description">{{ $t("settings.permissions.siteTestingDescription") }}</p>
+    </div>
   </div>
 </template>
 

@@ -127,6 +127,18 @@ func withAdminHelper(fn handleFunc) handleFunc {
 	})
 }
 
+// Middleware to ensure the user is an admin or has SiteTesting permission
+func withAdminOrTesterHelper(fn handleFunc) handleFunc {
+	return withUserHelper(func(w http.ResponseWriter, r *http.Request, data *requestContext) (int, error) {
+		// Ensure the user has admin or site testing permissions
+		if !data.user.Permissions.Admin && !data.user.Permissions.SiteTesting {
+			logger.Debugf("forbidden: user %s is not an admin or tester for %s", data.user.Username, r.URL.Path)
+			return http.StatusForbidden, nil
+		}
+		return fn(w, r, data)
+	})
+}
+
 func withoutUserHelper(fn handleFunc) handleFunc {
 	return func(w http.ResponseWriter, r *http.Request, data *requestContext) (int, error) {
 		// This middleware is used when no user authentication is required
@@ -308,6 +320,10 @@ func withHashFile(fn handleFunc) http.HandlerFunc {
 
 func withAdmin(fn handleFunc) http.HandlerFunc {
 	return wrapHandler(withAdminHelper(fn))
+}
+
+func withAdminOrTester(fn handleFunc) http.HandlerFunc {
+	return wrapHandler(withAdminOrTesterHelper(fn))
 }
 
 func withUser(fn handleFunc) http.HandlerFunc {

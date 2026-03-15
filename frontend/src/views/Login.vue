@@ -1,5 +1,13 @@
 <template>
-  <div id="login" :class="{ recaptcha: recaptcha, 'dark-mode': isDarkMode }">
+  <div v-if="maintenanceMode" class="maintenance-screen" :style="{ backgroundImage: 'url(' + maintenanceBackground + ')' }">
+    <div class="maintenance-content card">
+      <h2>Site Maintenance</h2>
+      <p>{{ maintenanceMessage }}</p>
+      <button class="button button--flat" @click="maintenanceMode = false">Return to Login</button>
+    </div>
+  </div>
+
+  <div v-else id="login" :class="{ recaptcha: recaptcha, 'dark-mode': isDarkMode }">
     <form class="card login-card" @submit="submit">
       <div class="login-brand">
         <Icon mimetype="directory" />
@@ -71,6 +79,8 @@ import {
   darkMode,
   oidcAvailable,
   passwordAvailable,
+  siteTestingMessage,
+  siteTestingBackground,
 } from "@/utils/constants";
 
 export default {
@@ -101,6 +111,9 @@ export default {
       recaptcha: recaptcha,
       passwordConfirm: "",
       isShareAccess: false,
+      maintenanceMode: false,
+      maintenanceMessage: siteTestingMessage,
+      maintenanceBackground: siteTestingBackground,
     };
   },
   async mounted() {
@@ -211,6 +224,10 @@ export default {
           });
         } else if (e.message == 409) {
           this.error = this.$t("login.usernameTaken");
+        } else if (e.message.includes("site_testing_mode")) {
+          console.warn("[Login] Site Testing Mode is active and user lacks permission.");
+          this.maintenanceMode = true;
+          this.error = "";
         } else {
           console.error("[Login] Login failed:", e.status || e.message || e);
           this.error = this.$t("login.wrongCredentials");
@@ -282,5 +299,39 @@ export default {
 
 .or::after {
   right: 0;
+}
+
+.maintenance-screen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-size: cover;
+  background-position: center;
+  background-color: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.maintenance-content {
+  padding: 3em;
+  max-width: 500px;
+  text-align: center;
+  background: rgba(var(--surfacePrimary-rgb), 0.9);
+  backdrop-filter: blur(10px);
+}
+
+.maintenance-content h2 {
+  margin-bottom: 1em;
+  font-size: 2em;
+}
+
+.maintenance-content p {
+  font-size: 1.2em;
+  line-height: 1.5;
+  margin-bottom: 2em;
 }
 </style>

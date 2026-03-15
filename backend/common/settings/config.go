@@ -92,15 +92,32 @@ func Update(s *Settings) error {
 
 func setupFrontend() {
 	if !Config.Frontend.DisableDefaultLinks {
-		Config.Frontend.ExternalLinks = append(Config.Frontend.ExternalLinks, ExternalLink{
-			Text:  fmt.Sprintf("(%v)", version.Version),
-			Title: version.CommitSHA,
-			Url:   "https://github.com/jims2025-bot/filebrowserquantum/releases/",
-		})
-		Config.Frontend.ExternalLinks = append(Config.Frontend.ExternalLinks, ExternalLink{
-			Text: "Help",
-			Url:  "https://github.com/jims2025-bot/filebrowserquantum/wiki",
-		})
+		// Only add default links if they don't already exist to prevent duplication on config updates
+		hasVersionLink := false
+		hasHelpLink := false
+		for _, link := range Config.Frontend.ExternalLinks {
+			if link.Text == "Help" {
+				hasHelpLink = true
+			}
+			if link.Title == version.CommitSHA {
+				hasVersionLink = true
+			}
+		}
+
+		if !hasVersionLink {
+			Config.Frontend.ExternalLinks = append(Config.Frontend.ExternalLinks, ExternalLink{
+				Text:  fmt.Sprintf("(%v)", version.Version),
+				Title: version.CommitSHA,
+				Url:   "https://github.com/jims2025-bot/filebrowserquantum/releases/",
+			})
+		}
+		
+		if !hasHelpLink {
+			Config.Frontend.ExternalLinks = append(Config.Frontend.ExternalLinks, ExternalLink{
+				Text: "Help",
+				Url:  "https://github.com/jims2025-bot/filebrowserquantum/wiki",
+			})
+		}
 	}
 }
 
@@ -130,9 +147,16 @@ func setupSources(generate bool) {
 		for k, source := range Config.Server.Sources {
 			realPath := getRealPath(source.Path)
 			name := filepath.Base(realPath)
-			if name == "\\" {
-				name = strings.Split(realPath, ":")[0]
+			
+			// Fallback: If Base returns a slash (e.g. root '/' in Linux Docker mount)
+			// or a backslash (Windows root drive like 'C:\'), use a cleaner string.
+			if name == "\\" || name == "/" || name == "." || name == "" {
+				name = strings.Split(strings.ReplaceAll(realPath, "\\", "/"), ":")[0]
+				if name == "" || name == "/" {
+					name = "root"
+				}
 			}
+			
 			if generate {
 				source.Path = generatorPath // use placeholder path
 			} else {

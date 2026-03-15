@@ -40,6 +40,9 @@ type Server struct {
 	InternalUrl                  string      `json:"internalUrl"`    // used by integrations if set, this is the url that an integration service will use to communicate with filebrowser
 	CacheDir                     string      `json:"cacheDir"`       // path to the cache directory, used for thumbnails and other cached files
 	MaxArchiveSizeGB             int64       `json:"maxArchiveSize"` // max pre-archive combined size of files/folder that are allowed to be archived (in GB)
+	SiteTesting                  bool        `json:"siteTesting"`
+	SiteTestingMessage           string      `json:"siteTestingMessage"`
+	SiteTestingBackground        string      `json:"siteTestingBackground"`
 	// not exposed to config
 	VirtualSources []string          `json:"virtualSources"`
 	SourceMap      map[string]Source `json:"-" yaml:"-" validate:"omitempty"` // uses realpath as key

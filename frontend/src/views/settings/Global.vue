@@ -11,6 +11,38 @@
         {{ $t('settings.showDebugInfo') }}
       </p>
 
+      <h3 style="margin-top: 2rem;">Site Testing & Maintenance</h3>
+      <p class="small">Limits log ins to users who have the <strong>Site Testing</strong> permission. Useful for maintenance.</p>
+      
+      <p v-if="selectedSettings && selectedSettings.server">
+        <input type="checkbox" id="site-testing-enabled" v-model="selectedSettings.server.siteTesting" />
+        <label for="site-testing-enabled">Enable Site Testing Mode</label>
+      </p>
+
+      <div v-if="selectedSettings && selectedSettings.server && selectedSettings.server.siteTesting" style="margin-bottom: 2em;">
+        <p>
+          <label for="site-testing-bg">Background Image URL:</label>
+          <input
+            class="input input--block"
+            type="text"
+            id="site-testing-bg"
+            v-model="selectedSettings.server.siteTestingBackground"
+            placeholder="/api/public/dl/xxxxx (or any external URL)"
+          />
+        </p>
+        <p>
+          <label for="site-testing-msg">Maintenance Message:</label>
+          <textarea
+            class="input input--block"
+            id="site-testing-msg"
+            v-model="selectedSettings.server.siteTestingMessage"
+            placeholder="The site is currently down for maintenance. We will be back shortly."
+            rows="3"
+            style="resize: vertical;"
+          ></textarea>
+        </p>
+      </div>
+
       <h3 style="margin-top: 2rem;">Facial Recognition Storage & API</h3>
       <p class="small">Configure the connection to the standalone Python facial recognition microservice.</p>
       

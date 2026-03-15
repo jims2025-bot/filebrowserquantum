@@ -8,8 +8,8 @@
 
     <div class="buffer"></div>
     <div class="credits">
-      <span v-for="item in externalLinks" :key="item.title">
-        <a :href="item.url" target="_blank" :title="item.title">{{ item.text }}</a>
+      <span>
+        <a href="#" @click.prevent="showChangelog" title="View latest changes">v5.0.9 Changelog</a>
       </span>
       <span v-if="name != ''">
         <h4 style="margin: 0">{{ name }}</h4>
@@ -47,6 +47,9 @@ export default {
     // Show the help overlay
     help() {
       mutations.showHover("help");
+    },
+    showChangelog() {
+      mutations.showHover("Changelog");
     },
   },
 };

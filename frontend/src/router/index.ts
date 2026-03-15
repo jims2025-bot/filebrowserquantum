@@ -109,6 +109,11 @@ const routes = [
         name: "User",
         component: Settings,
       },
+      {
+        path: "debug",
+        name: "Debug",
+        component: () => import("@/views/settings/Debug.vue"),
+      },
     ],
   },
   {
@@ -170,6 +175,12 @@ router.beforeResolve(async (to, from, next) => {
   const title = i18n.global.t(titles[to.name as keyof typeof titles]);
   document.title = name + " - " + title;
   mutations.setRoute(to);
+
+  // Bypass Vue router for static changelog so it doesn't load Filebrowser
+  if (to.path === '/changelog.html') {
+      window.location.href = '/changelog.html';
+      return;
+  }
 
   if (to.matched.some((record) => record.meta.requiresAuth)) {
     if (!state?.user?.username) {

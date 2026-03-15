@@ -113,6 +113,9 @@ func StartHttp(ctx context.Context, storage *storage.Storage, shutdownComplete c
 	api.HandleFunc("GET /public/share", withHashFile(publicShareHandler))
 	api.HandleFunc("GET /public/preview", withHashFile(publicPreviewHandler))
 
+	// Debug route
+	api.HandleFunc("GET /debug", withAdminOrTester(debugHandler))
+
 	// Settings routes
 	api.HandleFunc("GET /settings", withAdmin(settingsGetHandler))
 	api.HandleFunc("PUT /settings", withAdmin(settingsPutHandler))

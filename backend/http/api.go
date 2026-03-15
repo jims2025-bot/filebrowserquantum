@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
-	"os"
 
 	"github.com/jims2025-bot/filebrowserquantum/backend/adapters/fs/files"
 	"github.com/jims2025-bot/filebrowserquantum/backend/auth"
@@ -375,4 +376,37 @@ func resourceInstructionsHandler(w http.ResponseWriter, r *http.Request, d *requ
 		Message: "XMP/IPTC Instructions updated successfully",
 	}
 	return renderJSON(w, r, response)
+}
+
+// debugHandler returns comprehensive system configuration to help diagnose scope matching/mounting errors in Docker.
+func debugHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (int, error) {
+	if !d.user.Permissions.Admin && !d.user.Permissions.SiteTesting {
+		return http.StatusForbidden, fmt.Errorf("user does not have permission to access debug information")
+	}
+
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+
+	debugData := map[string]interface{}{
+		"Environment": map[string]interface{}{
+			"GOOS":        runtime.GOOS,
+			"GOARCH":      runtime.GOARCH,
+			"GoVersion":   runtime.Version(),
+			"ConfigPath":  settings.ConfigPath,
+			"NumCPU":      runtime.NumCPU(),
+			"Goroutines":  runtime.NumGoroutine(),
+			"MemAlloc_MB": m.Alloc / 1024 / 1024,
+			"MemSys_MB":   m.Sys / 1024 / 1024,
+		},
+		"User": map[string]interface{}{
+			"Username":    d.user.Username,
+			"Permissions": d.user.Permissions,
+			"RawScopes":   d.user.Scopes,
+		},
+		"ServerConfiguration": map[string]interface{}{
+			"ServerSettings": settings.Config.Server,
+		},
+	}
+
+	return renderJSON(w, r, debugData)
 }

@@ -132,6 +132,12 @@ func loginHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (in
 		// Don't fail login if timestamp update fails, just log it
 	}
 
+	// Site Testing Maintenance Mode Check
+	if config.Server.SiteTesting && !d.user.Permissions.Admin && !d.user.Permissions.SiteTesting {
+		logger.Debugf("login forbidden: site testing mode is active and user %s is not an admin or tester", d.user.Username)
+		return http.StatusForbidden, fmt.Errorf("site_testing_mode")
+	}
+
 	return printToken(w, r, d.user) // Pass the data object
 }
 

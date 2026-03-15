@@ -56,8 +56,11 @@ func handleWithStaticData(w http.ResponseWriter, r *http.Request, file, contentT
 		"OnlyOfficeUrl":     settings.Config.Integrations.OnlyOffice.Url,
 		"SourceCount":       len(config.Server.SourceMap),
 		"OidcAvailable":     config.Auth.Methods.OidcAuth.Enabled,
-		"PasswordAvailable": config.Auth.Methods.PasswordAuth.Enabled,
-		"MediaAvailable":    config.Integrations.Media.FfmpegPath != "",
+		"PasswordAvailable":     config.Auth.Methods.PasswordAuth.Enabled,
+		"MediaAvailable":        config.Integrations.Media.FfmpegPath != "",
+		"SiteTesting":           config.Server.SiteTesting,
+		"SiteTestingMessage":    config.Server.SiteTestingMessage,
+		"SiteTestingBackground": config.Server.SiteTestingBackground,
 	}
 
 	b, err := json.Marshal(data)
