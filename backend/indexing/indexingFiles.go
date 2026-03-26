@@ -382,7 +382,7 @@ func (idx *Index) RefreshFileInfo(opts iteminfo.FileOptions) (string, error) {
 	// logger.Debugf("RefreshFileInfo: Checking path %s against Source %s", refreshOptions.Path, idx.Source.Path)
 	// naivePath might have mixed separators (e.g. E:\Foo/bar)
 	// filepath.Clean should fix this for the OS
-	naivePath := filepath.Clean(strings.TrimRight(idx.Source.Path, "/") + refreshOptions.Path)
+	naivePath, _, _ := idx.GetRealPath(refreshOptions.Path)
 	if _, err := os.Stat(naivePath); os.IsNotExist(err) {
 
 		// logger.Debugf("RefreshFileInfo: Naive path %s does not exist. Attempting deduplication...", naivePath)

@@ -1835,7 +1835,9 @@ const openFolderView = async (folderGroup) => {
 
          // Use Inspect API to show items from these clusters. KEEP HISTORY.
          // Pass totalImageCount from the folder group so it can be preserved
-         inspectLocation(targetPath, targetSource, null, finalCID, true, folderGroup.totalImageCount);
+         // FIX: When explicitly drilling into a folder path, do NOT pass the parent cluster ID.
+         // This ensures the backend returns ALL items in the targeted folder.
+         inspectLocation(targetPath, targetSource, null, null, true, folderGroup.totalImageCount);
     } else {
          // No ID -> Fallback to Resource API (Show All)
          console.log(`[Heatmap] Drilling down via Resource API (Show All) for: ${targetPath}`);
