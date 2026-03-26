@@ -84,7 +84,7 @@
       
       <!-- Results Grid Tab -->
       <div v-show="activeTab === 'results'" class="tab-pane results-pane">
-        <div class="search-results" @click.stop>
+        <div class="search-results" @scroll="handleScroll" @click.stop>
           <div v-if="ongoing" class="search-status">
             <i class="material-icons spin">autorenew</i>
             <span>Searching...</span>
@@ -222,7 +222,7 @@ export default {
       pulseResults: false,
       // Pagination state
       offset: 0,
-      limit: 100,
+      limit: 200,
       hasMore: true,
       loadingMore: false,
     };
@@ -293,15 +293,6 @@ export default {
     });
     window.addEventListener("keydown", this.keyEvent);
     
-    // Ensure clean state on open
-    mutations.setSearchResults([]);
-    
-    // Add scroll listener for infinite scroll
-    const resultsPane = this.$el.querySelector('.results-pane');
-    if (resultsPane) {
-      resultsPane.addEventListener('scroll', this.handleScroll);
-    }
-    
     // Initial fetch if starting on search tab
     if (this.activeTab === 'search' && this.people.length === 0) {
       this.fetchPeople();
@@ -312,10 +303,6 @@ export default {
   },
   beforeUnmount() {
     window.removeEventListener("keydown", this.keyEvent);
-    const resultsPane = this.$el.querySelector('.results-pane');
-    if (resultsPane) {
-      resultsPane.removeEventListener('scroll', this.handleScroll);
-    }
     // Unsubscribe from face updates
     FaceEvents.off(FaceEvents.FACE_UPDATED, this.handleFaceUpdate);
   },
@@ -1272,7 +1259,7 @@ export default {
   display: flex;
   flex-direction: column;
   height: 100%;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .results-pane {

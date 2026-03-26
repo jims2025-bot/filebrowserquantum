@@ -199,3 +199,12 @@ export async function remove(id) {
     throw err
   }
 }
+
+export async function markMapUsage() {
+  try {
+    const apiPath = getApiPath('api/usage/map')
+    await fetchURL(apiPath, { method: 'POST' })
+  } catch (err) {
+    console.warn("Failed to mark map usage", err)
+  }
+}

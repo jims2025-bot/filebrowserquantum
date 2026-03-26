@@ -1,0 +1,58 @@
+[
+  {
+    "id": "civil_war_battles",
+    "name": "Civil War Battles",
+    "category": "National Park Service",
+    "url": "https://services1.arcgis.com/0MSEUqKaxRlEPj5g/ArcGIS/rest/services/Civil_War_Battles/FeatureServer/0/query?where=1=1&outFields=*&outSR=4326&f=geojson",
+    "type": "arcgis-geojson",
+    "timeAware": true,
+    "timeFieldStart": "Start_Date",
+    "timeFieldEnd": "End_Date"
+  },
+  {
+    "id": "civil_war_states",
+    "name": "Civil War States",
+    "category": "National Park Service",
+    "url": "https://services1.arcgis.com/0MSEUqKaxRlEPj5g/ArcGIS/rest/services/Civil_War_States/FeatureServer/0/query?where=1=1&outFields=*&outSR=4326&f=geojson",
+    "type": "arcgis-geojson",
+    "timeAware": false
+  },
+  {
+    "id": "historic_city_populations",
+    "name": "Historic City Populations",
+    "category": "National Park Service",
+    "url": "https://services1.arcgis.com/0MSEUqKaxRlEPj5g/ArcGIS/rest/services/Historic_Population_of_US_Cities_Sbogner_1/FeatureServer/0/query?where=1=1&outFields=*&outSR=4326&f=geojson",
+    "type": "arcgis-geojson",
+    "timeAware": true,
+    "timeFieldStart": "PopDate",
+    "timeFieldEnd": "PopDate"
+  },
+  {
+    "id": "nps_park_polygons",
+    "name": "National Parks (Polygons)",
+    "category": "National Park Service",
+    "url": "https://services1.arcgis.com/0MSEUqKaxRlEPj5g/ArcGIS/rest/services/National_Parks/FeatureServer/0/query?where=1=1&outFields=*&outSR=4326&f=geojson",
+    "type": "arcgis-geojson"
+  },
+  {
+    "id": "nps_park_points_1",
+    "name": "National Parks Points (A)",
+    "category": "National Park Service",
+    "url": "https://services1.arcgis.com/0MSEUqKaxRlEPj5g/ArcGIS/rest/services/National_Parks/FeatureServer/1/query?where=1=1&outFields=*&outSR=4326&f=geojson",
+    "type": "arcgis-geojson"
+  },
+  {
+    "id": "nps_park_points_2",
+    "name": "National Parks Points (B)",
+    "category": "National Park Service",
+    "url": "https://services1.arcgis.com/0MSEUqKaxRlEPj5g/ArcGIS/rest/services/National_Parks/FeatureServer/2/query?where=1=1&outFields=*&outSR=4326&f=geojson",
+    "type": "arcgis-geojson"
+  },
+  {
+    "id": "nps_unit_boundaries",
+    "name": "Park Unit Boundaries",
+    "category": "National Park Service",
+    "url": "https://services1.arcgis.com/0MSEUqKaxRlEPj5g/ArcGIS/rest/services/National_Parks/FeatureServer/3/query?where=1=1&outFields=*&outSR=4326&f=geojson",
+    "type": "arcgis-geojson"
+  }
+]

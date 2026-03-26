@@ -161,6 +161,10 @@ func StartHttp(ctx context.Context, storage *storage.Storage, shutdownComplete c
 	// IPTC Index routes
 	api.HandleFunc("GET /iptcindex", withUser(getIPTCIndexHandler))
 
+	// Usage Tracker routes
+	api.HandleFunc("GET /usage", withAdmin(getUsageHandler))
+	api.HandleFunc("POST /usage/map", withUser(markMapUsedHandler))
+
 	// Admin Jobs routes
 	api.HandleFunc("GET /admin/jobs", withAdmin(getJobsStatusHandler))
 	api.HandleFunc("POST /admin/jobs/{jobname}/run", withAdmin(runJobHandler))

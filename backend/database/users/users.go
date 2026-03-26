@@ -110,6 +110,7 @@ type NonAdminEditable struct {
 	DisableOnlyOfficeExt string          `json:"disableOnlyOfficeExt"` // comma separated list of file extensions to disable onlyoffice preview for
 	SavedLocations       []SavedLocation `json:"savedLocations"`
 	PinnedLocation       *SavedLocation  `json:"pinnedLocation"`
+	MapBasemap           string          `json:"mapBasemap"`           // selected maplibre basemap
 }
 
 var PublicUser = User{

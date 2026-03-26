@@ -35,6 +35,7 @@ import AdminJobs from "./AdminJobs.vue";
 import SearchPrompt from "./SearchPrompt.vue";
 import OverlayEditor from "./OverlayEditor.vue";
 import Changelog from "./Changelog.vue";
+import UsageLog from "./UsageLog.vue";
 import { state, getters, mutations } from "@/store"; // Import your custom store
 
 export default {
@@ -64,6 +65,7 @@ export default {
     SearchPrompt,
     OverlayEditor,
     Changelog,
+    UsageLog,
   },
   data() {
     return {

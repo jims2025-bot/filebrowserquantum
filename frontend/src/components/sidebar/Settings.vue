@@ -50,8 +50,16 @@ export default {
     },
     active: (view) => state.activeSettingsView === view,
     setView(view) {
-      if (state.route.path != "/settings") {
-        router.push({ path: "/settings", hash: "#" + view }, () => {});
+      if (view === "usage-main") {
+        mutations.showHover("usageLog");
+        return;
+      }
+      const currentPath = state.route.path;
+      if (currentPath !== "/settings" && currentPath !== "/settings/") {
+        router.push({ path: "/settings", hash: "#" + view }, () => {
+          // Callback after push is completed
+          mutations.setActiveSettingsView(view);
+        });
       } else {
         mutations.setActiveSettingsView(view);
       }

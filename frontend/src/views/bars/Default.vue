@@ -30,12 +30,14 @@
         <!-- Map Overlays Dropdown REMOVED -->
     </div>
     
+    <!-- Hidden by User Request 2026-03-26 - Keep code for legacy support
     <action
       v-if="isListingView"
       icon="map"
       :label="$t('sidebar.heatmap')"
       @action="openHeatmap"
     />
+    -->
     <action
       v-if="isListingView && canViewMapLibre"
       icon="explore"
@@ -76,6 +78,10 @@
         <div class="dropdown-item" v-if="isAdmin" @click="openAdminJobs">
           <i class="material-icons">schedule</i>
           <span>Jobs</span>
+        </div>
+        <div class="dropdown-item" v-if="isAdmin" @click="openUsageLog">
+          <i class="material-icons">history</i>
+          <span>Usage Logs</span>
         </div>
         <div class="dropdown-item" v-if="showThumbnailFix" @click="confirmThumbnailFix">
           <i class="material-icons">build</i>
@@ -600,6 +606,10 @@ export default {
           const targetPath = this.req.path || "/";
           router.push({ path: '/heatmap-v2', query: { source: this.req.source, path: targetPath } });
       }
+    },
+    openUsageLog() {
+      mutations.showHover("usageLog");
+      this.showFolderMenu = false;
     },
     openFolderDetails() {
       mutations.showHover({ name: "FolderDetails" });

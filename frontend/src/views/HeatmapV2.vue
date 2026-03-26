@@ -41,8 +41,17 @@
   </svg>
   
   <!-- Map Header Toolbar -->
-  <div style="position:absolute; top:10px; right:10px; z-index:2000; display:flex; gap:10px;">
-      <!-- REMOVED: Map Overlays Button (Moved to Side Tab) -->
+  <div style="position:absolute; top:10px; right:10px; z-index:2000; display:flex; gap:10px; align-items:center;">
+      <!-- Toggle Clusters Switch -->
+      <div style="background:rgba(255,255,255,0.9); padding:5px 12px; border-radius:20px; box-shadow:0 2px 4px rgba(0,0,0,0.2); display:flex; align-items:center; gap:8px; cursor:pointer;" @click="showImageClusters = !showImageClusters">
+          <i class="material-icons" :style="{ color: showImageClusters ? '#42a5f5' : '#777', fontSize: '20px' }">
+              {{ showImageClusters ? 'layers' : 'layers_clear' }}
+          </i>
+          <span style="font-size:12px; font-weight:bold; color:#333; white-space:nowrap;">{{ showImageClusters ? 'Clusters On' : 'Clusters Off' }}</span>
+          <div style="width:34px; height:18px; background:#ccc; border-radius:10px; position:relative; transition:background 0.3s;" :style="{ background: showImageClusters ? '#42a5f5' : '#ccc' }">
+              <div style="width:14px; height:14px; background:white; border-radius:10px; position:absolute; top:2px; left:2px; transition:transform 0.3s;" :style="{ transform: showImageClusters ? 'translateX(16px)' : 'translateX(0)' }"></div>
+          </div>
+      </div>
 
       <button @click="toggleSelectionMode" :title="isBoxSelectMode ? 'Cancel Selection' : 'Select Area'" class="button button--flat" :style="isBoxSelectMode ? 'background:rgba(255,100,0,0.8); color:white;' : 'background:rgba(255,255,255,0.9); color:#333; box-shadow:0 2px 4px rgba(0,0,0,0.2);'">
           <i class="material-icons">{{ isBoxSelectMode ? 'close' : 'select_all' }}</i>
@@ -133,18 +142,26 @@
           <div class="panel-tabs" style="display:flex; justify-content:space-around; background:#2c3e50; padding:5px 0 0 0; margin-bottom:0;">
               <div @click="currentInspectionFolder ? backToFolders() : activeTab = 'inspection'"
                    :title="currentInspectionFolder ? 'Back to Folder List' : 'Inspection'"
-                   :style="{ borderBottom: activeTab === 'inspection' ? '3px solid #fbc02d' : '3px solid transparent', opacity: activeTab === 'inspection' ? 1 : 0.6, flex: 1, textAlign:'center', padding:'8px', cursor:'pointer', color:'white', position:'relative' }">
+                   :style="{ borderBottom: activeTab === 'inspection' ? '3px solid #fbc02d' : '3px solid transparent', opacity: activeTab === 'inspection' ? 1 : 0.6, flex: 1, textAlign:'center', padding:'8px', cursor:'pointer', color:'white', position:'relative', fontSize: '12px' }">
                    <!-- When a folder is selected: overlay a back arrow on the folder icon -->
                    <span v-if="currentInspectionFolder" style="position:relative; display:inline-flex; align-items:center; justify-content:center;">
-                     <i class="material-icons" style="font-size: 24px; color: #fbc02d;">folder</i>
-                     <i class="material-icons" style="font-size: 14px; color: white; position:absolute; bottom:-2px; right:-4px; background:#fbc02d; border-radius:50%; padding:1px;">arrow_back</i>
+                     <i class="material-icons" style="font-size: 20px; color: #fbc02d;">folder</i>
+                     <i class="material-icons" style="font-size: 12px; color: white; position:absolute; bottom:-2px; right:-4px; background:#fbc02d; border-radius:50%; padding:1px;">arrow_back</i>
                    </span>
-                   <i v-else class="material-icons" style="font-size: 24px; color: #fbc02d;">folder</i>
+                   <div v-else style="display:flex; flex-direction:column; align-items:center;">
+                       <i class="material-icons" style="font-size: 20px; color: #fbc02d;">folder</i>
+                       <b>Folders</b>
+                   </div>
               </div>
-              <div @click="activeTab = 'overlays'" title="Overlays"
-                   :style="{ borderBottom: activeTab === 'overlays' ? '3px solid #4f83cc' : '3px solid transparent', opacity: activeTab === 'overlays' ? 1 : 0.6, flex: 1, textAlign:'center', padding:'8px', cursor:'pointer', color:'white', display:'flex', alignItems:'center', justifyContent:'center' }">
-                   <i class="material-icons" style="font-size: 20px; color: #42a5f5; margin-right: 6px;">map</i>
+              <div @click="activeTab = 'overlays'" title="File Overlays"
+                   :style="{ borderBottom: activeTab === 'overlays' ? '3px solid #4f83cc' : '3px solid transparent', opacity: activeTab === 'overlays' ? 1 : 0.6, flex: 1, textAlign:'center', padding:'8px', cursor:'pointer', color:'white', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', fontSize: '12px' }">
+                   <i class="material-icons" style="font-size: 20px; color: #42a5f5;">map</i>
                    <span style="font-weight: bold;">Overlays</span>
+              </div>
+              <div @click="activeTab = 'external'" title="External Maps"
+                   :style="{ borderBottom: activeTab === 'external' ? '3px solid #66bb6a' : '3px solid transparent', opacity: activeTab === 'external' ? 1 : 0.6, flex: 1, textAlign:'center', padding:'8px', cursor:'pointer', color:'white', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', fontSize: '12px' }">
+                   <i class="material-icons" style="font-size: 20px; color: #81c784;">public</i>
+                   <span style="font-weight: bold;">External</span>
               </div>
           </div>
           
@@ -200,6 +217,74 @@
               </div>
           </div>
 
+           <!-- External Maps View -->
+           <div v-else-if="activeTab === 'external'" class="overlay-section" style="padding:10px;">
+               <div v-for="(group, categoryName) in Object.groupBy(externalMaps, m => m.category || 'Uncategorized')" :key="categoryName" style="margin-bottom:15px;">
+                   <div @click="collapsedCategories.has(categoryName) ? collapsedCategories.delete(categoryName) : collapsedCategories.add(categoryName)"
+                        style="font-weight:bold; color:#aaa; font-size:12px; margin-bottom:5px; border-bottom:1px solid #444; display:flex; align-items:center; cursor:pointer; padding:4px 0;">
+                      <i class="material-icons" style="font-size:16px; margin-right:4px;">{{ collapsedCategories.has(categoryName) ? 'chevron_right' : 'expand_more' }}</i>
+                      <i class="material-icons" style="font-size:14px; margin-right:4px;">folder</i>
+                      {{ categoryName }}
+                   </div>
+                   <div v-if="!collapsedCategories.has(categoryName)">
+                       <div v-for="mapItem in group" :key="mapItem.id" 
+                            class="overlay-item" 
+                            style="display:flex; align-items:center; padding:8px; cursor:pointer; border-radius:4px; margin-bottom:2px;"
+                            :style="activeExternalMaps[mapItem.id] ? 'background:rgba(102, 187, 106, 0.3); border:1px solid #66bb6a;' : 'background:rgba(255,255,255,0.05);'"
+                            @click="toggleExternalMap(mapItem)">
+                           <i class="material-icons" style="margin-right:10px; color:#81c784;">{{ activeExternalMaps[mapItem.id] ? 'check_box' : 'check_box_outline_blank' }}</i>
+                           <div style="flex:1; overflow:hidden;">
+                               <div class="overlay-name" style="font-weight:500; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                  {{ mapItem.name }}
+                               </div>
+                               <div v-if="mapItem.description" style="font-size:11px; opacity:0.7; word-break: break-word;">
+                                   {{ mapItem.description }}
+                               </div>
+                           </div>
+                       </div>
+                   </div>
+               </div>
+               
+               <div v-if="externalMaps.length === 0" style="text-align:center; opacity:0.6; margin-top:20px;">
+                   No external maps configured.
+               </div>
+
+               <!-- Dynamic Time Slider (Dual Range) -->
+               <div v-if="activeExternalMapTimeSlider.visible" 
+                    id="ext-range-slider"
+                    style="margin-top:20px; padding:15px; background:rgba(255,255,255,0.05); border-radius:8px; border:1px solid #444;">
+                   <div style="font-size:12px; font-weight:bold; color:#81c784; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
+                       <span>Temporal Range Selector</span>
+                       <i class="material-icons" style="font-size:16px;">date_range</i>
+                   </div>
+                   
+                   <div style="display:flex; gap:10px; align-items:center;">
+                       <div style="flex:1;">
+                           <div style="font-size:10px; color:#aaa; margin-bottom:4px; text-align:center;">From: <b style="color:#eee;">{{ activeExternalMapTimeSlider.lowDisplay }}</b></div>
+                           <input type="range" 
+                                  style="width:100%; height:4px; border-radius:2px; accent-color:#81c784; cursor:pointer;"
+                                  :min="activeExternalMapTimeSlider.min" 
+                                  :max="activeExternalMapTimeSlider.high" 
+                                  step="86400000"
+                                  v-model.number="activeExternalMapTimeSlider.low">
+                       </div>
+                       <div style="flex:1;">
+                           <div style="font-size:10px; color:#aaa; margin-bottom:4px; text-align:center;">To: <b style="color:#eee;">{{ activeExternalMapTimeSlider.highDisplay }}</b></div>
+                           <input type="range" 
+                                  style="width:100%; height:4px; border-radius:2px; accent-color:#81c784; cursor:pointer;"
+                                  :min="activeExternalMapTimeSlider.low" 
+                                  :max="activeExternalMapTimeSlider.max" 
+                                  step="86400000"
+                                  v-model.number="activeExternalMapTimeSlider.high">
+                       </div>
+                   </div>
+
+                   <div style="margin-top:10px; text-align:center; font-size:10px; opacity:0.6;">
+                       Adjust sliders to filter features by date
+                   </div>
+               </div>
+           </div>
+
           <!-- Inspection View (Existing Content wrapped) -->
           <div v-else-if="activeTab === 'inspection'">
 
@@ -218,9 +303,11 @@
              <div v-for="grp in displayedFolders" :key="grp.path" class="folder-item" @click="openFolderView(grp)"
                   @mouseenter="grp.lat && grp.lon ? drawLeaderLine($event, grp.lat, grp.lon) : null"
                   @mouseleave="clearLeaderLine">
-                <i class="material-icons">folder</i>
+                                 <img v-if="grp.thumbnailUrl" :src="grp.thumbnailUrl" class="folder-thumb-icon" loading="lazy">
+                 <i v-else class="material-icons">folder</i>
+
                 <div class="folder-info">
-                    <span class="folder-name">{{ grp.path.split('/').pop() }}</span>
+                    <span class="folder-name">{{ grp.displayName }}</span>
                     <span class="folder-count">{{ grp.count }} items</span>
                 </div>
                 <i class="material-icons chevron">chevron_right</i>
@@ -244,9 +331,10 @@
                       <div class="cluster-items-grid">
                           <div v-for="file in group.items" :key="file.path" class="panel-item" 
                                :class="{ 'active-preview': quickViewFile && (quickViewFile.path === file.path || quickViewFile.path.endsWith(file.path) || file.path.endsWith(quickViewFile.path)) }"
-                               @click="openQuickView(file)">
+                               @click="file.type === 'folder' ? openFolderView(file) : openQuickView(file)">
                               <img :src="file.thumbUrl" class="panel-thumb" loading="lazy">
                               <span class="panel-item-name">{{ file.name }}</span>
+                               <i v-if="file.type === 'folder'" class="material-icons folder-badge">folder</i>
                           </div>
                       </div>
                   </div>
@@ -316,6 +404,8 @@ import { state } from "@/store";
 import { fetchJSON } from "@/api/utils";
 import { notify } from "@/notify";
 import { processDirectItems } from "@/utils/heatmapInspector";
+import { usersApi } from "@/api";
+import { staticURL } from "@/utils/constants";
 
 // Register the global PMTiles protocol once (MapLibre GL v5 compatible)
 if (!window._pmtilesProtocolRegistered) {
@@ -324,6 +414,46 @@ if (!window._pmtilesProtocolRegistered) {
     maplibregl.addProtocol('pmtiles', (params) => protocol.tile(params));
     window._pmtilesProtocolRegistered = true;
 }
+
+const civilWarIcons = {
+    'union': `
+        <svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+            <radialGradient id="expGradU" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" style="stop-color:#fffce0;stop-opacity:1" />
+                <stop offset="70%" style="stop-color:#ffcc00;stop-opacity:1" />
+                <stop offset="100%" style="stop-color:#ff3300;stop-opacity:1" />
+            </radialGradient>
+            <path d="M50 25 L54 38 L68 33 L60 44 L78 50 L60 56 L68 67 L54 62 L50 75 L46 62 L32 67 L40 56 L22 50 L40 44 L32 33 L46 38 Z" fill="url(#expGradU)" stroke="#b32400" stroke-width="2.5"/>
+            <g transform="translate(35, 12) scale(0.9)">
+                <rect width="45" height="27" fill="#fff" stroke="#000" stroke-width="1"/>
+                <rect width="45" height="2.1" y="0" fill="#B22234"/><rect width="45" height="2.1" y="4.2" fill="#B22234"/><rect width="45" height="2.1" y="8.4" fill="#B22234"/><rect width="45" height="2.1" y="12.6" fill="#B22234"/><rect width="45" height="2.1" y="16.8" fill="#B22234"/><rect width="45" height="2.1" y="21" fill="#B22234"/>
+                <rect width="18" height="13" fill="#3C3B6E"/>
+            </g>
+        </svg>`,
+    'confederate': `
+        <svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+            <radialGradient id="expGradC" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" style="stop-color:#fffce0;stop-opacity:1" />
+                <stop offset="70%" style="stop-color:#ffcc00;stop-opacity:1" />
+                <stop offset="100%" style="stop-color:#ff3300;stop-opacity:1" />
+            </radialGradient>
+            <path d="M50 25 L54 38 L68 33 L60 44 L78 50 L60 56 L68 67 L54 62 L50 75 L46 62 L32 67 L40 56 L22 50 L40 44 L32 33 L46 38 Z" fill="url(#expGradC)" stroke="#b32400" stroke-width="2.5"/>
+            <g transform="translate(35, 12) scale(0.9)">
+                <rect width="45" height="27" fill="#B22234" stroke="#000" stroke-width="1"/>
+                <path d="M0 0 L45 27 M45 0 L0 27" stroke="#fff" stroke-width="5"/>
+                <path d="M0 0 L45 27 M45 0 L0 27" stroke="#3C3B6E" stroke-width="2.5"/>
+            </g>
+        </svg>`,
+    'inconclusive': `
+        <svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+            <radialGradient id="expGradI" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" style="stop-color:#fffce0;stop-opacity:1" />
+                <stop offset="70%" style="stop-color:#ffcc00;stop-opacity:1" />
+                <stop offset="100%" style="stop-color:#ff3300;stop-opacity:1" />
+            </radialGradient>
+            <path d="M50 25 L54 38 L68 33 L60 44 L78 50 L60 56 L68 67 L54 62 L50 75 L46 62 L32 67 L40 56 L22 50 L40 44 L32 33 L46 38 Z" fill="url(#expGradI)" stroke="#b32400" stroke-width="2.5"/>
+        </svg>`
+};
 
 const route = useRoute();
 const router = useRouter();
@@ -342,6 +472,7 @@ const isDesktop = ref(window.innerWidth > 1024);
 const showDebugInfo = ref(isDesktop.value); 
 const currentZoom = ref(0);
 const cursorCoords = ref({ lat: 999, lng: 999 });
+const showImageClusters = ref(true); // Toggle for image bubbles/clusters
 
 // Debounce timer for viewport updates
 let updateDebounceTimer = null;
@@ -364,12 +495,179 @@ const availableOverlays = ref([]); // List of overlay objects
 const activeOverlayLayers = ref({}); // Map path -> Leaflet Layer
 const overlayOpacities = ref({}); // Map path -> Opacity (0-1)
 
+// External Maps State
+const externalMaps = ref([]);
+const activeExternalMaps = ref({});
+const activeExternalMapTimeSlider = ref({ 
+    min: 0, 
+    max: 100, 
+    low: 0, 
+    high: 100, 
+    visible: false, 
+    fieldScale: '', 
+    minDisplay: '', 
+    maxDisplay: '', 
+    lowDisplay: '', 
+    highDisplay: '',
+    sourceId: ''
+});
+const collapsedCategories = ref(new Set()); // Sub-folders in External Maps tab
+
 const isBoxSelectMode = ref(false); // Box Selection Mode State
 const selectionBox = ref({ visible: false, startX: 0, startY: 0, currentX: 0, currentY: 0, style: {} });
 const itemsPerPage = 50;
 const displayedCount = ref(itemsPerPage);
 const leaderLine = ref({ visible: false, x1: 0, y1: 0, x2: 0, y2: 0, targetLat: null, targetLon: null, startEl: null, svgWidth: 0, svgHeight: 0 });
 const leaderLineSvg = ref(null);
+
+const currentBasemap = ref('carto-light');
+
+const mapStyles = {
+    'google-hybrid': {
+        name: 'Google Satellite Hybrid',
+        tiles: ['https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}'],
+        maxZoom: 20
+    },
+    'google-roadmap': {
+        name: 'Google Map',
+        tiles: ['https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}'],
+        maxZoom: 20
+    },
+    'google-terrain': {
+        name: 'Google Terrain',
+        tiles: ['https://mt1.google.com/vt/lyrs=p&x={x}&y={y}&z={z}'],
+        maxZoom: 20
+    },
+    'osm': {
+        name: 'OpenStreetMap',
+        tiles: ['https://a.tile.openstreetmap.org/{z}/{x}/{y}.png', 'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png', 'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png'],
+        maxZoom: 19
+    },
+    'opentopo': {
+        name: 'OpenTopoMap',
+        tiles: ['https://a.tile.opentopomap.org/{z}/{x}/{y}.png', 'https://b.tile.opentopomap.org/{z}/{x}/{y}.png', 'https://c.tile.opentopomap.org/{z}/{x}/{y}.png'],
+        maxZoom: 17
+    },
+    'esri-world': {
+        name: 'Esri Satellite',
+        tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+        maxZoom: 18
+    },
+    'carto-light': {
+         name: 'Carto Light',
+         tiles: ['https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', 'https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png'],
+         maxZoom: 20
+    },
+    'carto-dark': {
+         name: 'Carto Dark',
+         tiles: ['https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', 'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'],
+         maxZoom: 20
+    }
+};
+
+const setBasemap = (key) => {
+    currentBasemap.value = key;
+    
+    // Save to user settings
+    if (state.user) {
+        state.user.mapBasemap = key;
+        usersApi.update(state.user, ['mapBasemap']).catch(err => {
+            console.error("Failed to save basemap preference", err);
+        });
+    }
+
+    if (map) {
+        Object.keys(mapStyles).forEach(k => {
+            if (map.getLayer(k)) {
+                map.setLayoutProperty(k, 'visibility', k === key ? 'visible' : 'none');
+            }
+        });
+    }
+};
+
+class BasemapControl {
+    onAdd(map) {
+        this.container = document.createElement('div');
+        this.container.className = 'maplibregl-ctrl maplibregl-ctrl-group';
+        this.container.style.position = 'relative';
+
+        const btn = document.createElement('button');
+        btn.className = 'maplibregl-ctrl-icon';
+        btn.type = 'button';
+        btn.title = 'Change Basemap';
+        btn.style.display = 'flex';
+        btn.style.alignItems = 'center';
+        btn.style.justifyContent = 'center';
+        btn.innerHTML = '<span class="material-icons" style="font-size: 18px;">layers</span>';
+        
+        const dropdown = document.createElement('div');
+        dropdown.style.display = 'none';
+        dropdown.style.position = 'absolute';
+        dropdown.style.top = '0';
+        dropdown.style.left = '100%';
+        dropdown.style.marginLeft = '5px';
+        dropdown.style.background = '#333';
+        dropdown.style.borderRadius = '4px';
+        dropdown.style.padding = '5px 0';
+        dropdown.style.minWidth = '170px';
+        dropdown.style.boxShadow = '0 2px 10px rgba(0,0,0,0.5)';
+        dropdown.style.zIndex = '1000';
+
+        Object.keys(mapStyles).forEach(key => {
+            const opt = document.createElement('div');
+            opt.style.padding = '8px 16px';
+            opt.style.cursor = 'pointer';
+            opt.style.color = 'white';
+            opt.style.display = 'flex';
+            opt.style.alignItems = 'center';
+            opt.style.gap = '8px';
+            opt.style.fontSize = '13px';
+            
+            const updateOpt = () => {
+                opt.style.background = currentBasemap.value === key ? '#555' : 'transparent';
+                opt.innerHTML = `<i class="material-icons" style="opacity: ${currentBasemap.value === key ? 1 : 0}; font-size: 16px;">check</i> <span>${mapStyles[key].name}</span>`;
+            };
+            updateOpt();
+            
+            opt.onclick = (e) => {
+                e.stopPropagation();
+                setBasemap(key);
+                dropdown.style.display = 'none';
+                Array.from(dropdown.children).forEach(c => c._updateOpt && c._updateOpt());
+            };
+            opt._updateOpt = updateOpt;
+            dropdown.appendChild(opt);
+        });
+
+        // Close when clicking outside
+        const closeDropdown = (e) => {
+             if (!this.container.contains(e.target)) {
+                 dropdown.style.display = 'none';
+             }
+        };
+        document.addEventListener('click', closeDropdown);
+        this.closeDropdown = closeDropdown;
+
+        btn.onclick = (e) => {
+            e.stopPropagation();
+            dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+            Array.from(dropdown.children).forEach(c => c._updateOpt && c._updateOpt());
+        };
+
+        this.container.appendChild(btn);
+        this.container.appendChild(dropdown);
+
+        return this.container;
+    }
+    
+    onRemove() {
+        if (this.closeDropdown) {
+            document.removeEventListener('click', this.closeDropdown);
+        }
+        this.container.parentNode.removeChild(this.container);
+        this.map = undefined;
+    }
+}
 
 const displayedItems = computed(() => {
     // If viewing a folder, show its items
@@ -615,49 +913,25 @@ const endSelection = (e) => {
     const p2 = [Math.max(startX, endX), Math.max(startY, endY)];
     
     // Convert screen coordinates to LngLat bounds
-    // sw (SouthWest) = minX, maxY; ne (NorthEast) = maxX, minY
+    // sw (SouthWest) = minX, maxY (lowest Lng/Lat)
+    // ne (NorthEast) = maxX, minY (highest Lng/Lat)
     const sw = map.unproject([p1[0], p2[1]]);
     const ne = map.unproject([p2[0], p1[1]]);
 
-    // Get features from the source directly (more reliable than queryRenderedFeatures for heatmaps)
-    const finalFeatures = map.querySourceFeatures('heatmap-data');
-    console.log(`[Heatmap] endSelection: unprojected sw=${sw.lng},${sw.lat} ne=${ne.lng},${ne.lat}`);
-    console.log(`[Heatmap] endSelection: source features count=${finalFeatures.length}`);
-
-    const selectedItems = [];
-    const seenItems = new Set();
-
-    finalFeatures.forEach(f => {
-        const coords = f.geometry.coordinates; // [lon, lat]
-        // Check if point is within our LngLat bounds
-        const inBounds = coords[0] >= sw.lng && coords[0] <= ne.lng && coords[1] >= sw.lat && coords[1] <= ne.lat;
-        console.log(`[Heatmap] Checking feature ${f.properties.id}: Lng=${coords[0]}, Lat=${coords[1]}. In bounds? ${inBounds}`);
-        
-        if (inBounds) {
-            const props = f.properties;
-            const key = `cluster:${props.id}`;
-            if (!seenItems.has(key)) {
-                selectedItems.push({
-                    path: props.path || "",
-                    source: props.source || "",
-                    name: (props.path || "").split('/').pop(),
-                    count: parseInt(props.count) || 1,
-                    clusterID: props.id || "",
-                    lat: coords[1], // Capture Lat
-                    lon: coords[0]  // Capture Lon
-                });
-                seenItems.add(key);
-            }
-        }
-    });
+    console.log("[Heatmap] REBUILT endSelection: Requesting backend cluster search for bbox:", { sw, ne });
 
     toggleSelectionMode();
     
-    if (selectedItems.length > 0) {
-        inspectLocation(null, null, selectedItems);
-    } else {
-        notify.showSuccess("No items selected in area");
-    }
+    // Perform robust backend-driven bounding box inspection
+    // This handles all underlying clustered folders correctly, matching Leaflet behavior.
+    inspectLocation(null, currentSource.value, null, { 
+        lat: (sw.lat + ne.lat) / 2, 
+        lon: (sw.lng + ne.lng) / 2, 
+        minLat: sw.lat, 
+        maxLat: ne.lat, 
+        minLon: sw.lng, 
+        maxLon: ne.lng 
+    });
 };
 
 
@@ -853,7 +1127,13 @@ const toggleOverlay = async (path, providedSource = null) => {
                     try { if (map.getLayer(id)) map.removeLayer(id); } catch(e) { console.warn("[Heatmap] Remove layer err", e); }
                 });
             }
-            try { if (map.getSource(`src-${safeId}`)) map.removeSource(`src-${safeId}`); } catch(e) { console.warn("[Heatmap] Remove source err", e); }
+            if (layerEntry && layerEntry.sources) {
+                layerEntry.sources.forEach(id => {
+                    try { if (map.getSource(id)) map.removeSource(id); } catch(e) { console.warn("[Heatmap] Remove source err", e); }
+                });
+            } else {
+                try { if (map.getSource(`src-${safeId}`)) map.removeSource(`src-${safeId}`); } catch(e) { console.warn("[Heatmap] Remove source err", e); }
+            }
             
             // Clean up any custom PMTiles protocol we registered for this specific overlay
             if (window._pmtilesProtocols && window._pmtilesProtocols[key]) {
@@ -964,19 +1244,60 @@ const toggleOverlay = async (path, providedSource = null) => {
 
         console.log(`[Heatmap] GeoJSON features: ${geojson.features.length}, safeId=${safeId}`);
 
-        map.addSource(`src-${safeId}`, { type: 'geojson', data: geojson });
-
-        // NO filter expressions — avoid ANY 'geometry-type' expression which crashes MapLibre v5
-        map.addLayer({ id: `lyr-fill-${safeId}`, type: 'fill', source: `src-${safeId}`,
-            paint: { 'fill-color': '#ff7800', 'fill-opacity': 0.4 } });
-        map.addLayer({ id: `lyr-line-${safeId}`, type: 'line', source: `src-${safeId}`,
-            paint: { 'line-color': '#ff7800', 'line-width': 3 } });
-        map.addLayer({ id: `lyr-circle-${safeId}`, type: 'circle', source: `src-${safeId}`,
-            paint: { 'circle-radius': 6, 'circle-color': '#ff7800', 'circle-stroke-color': '#fff', 'circle-stroke-width': 1 } });
-
-        activeOverlayLayers.value[key] = {
-            layers: [`lyr-fill-${safeId}`, `lyr-line-${safeId}`, `lyr-circle-${safeId}`]
+        // Split GeoJSON by geometry type to avoid MapLibre v5 layer filter bugs
+        const points = [], lines = [], polys = [];
+        
+        const processGeometry = (geom, props) => {
+            if (!geom) return;
+            const t = geom.type;
+            if (t === 'GeometryCollection') {
+                (geom.geometries || []).forEach(g => processGeometry(g, props));
+            } else if (t === 'Point' || t === 'MultiPoint') {
+                points.push({ type: 'Feature', geometry: geom, properties: props });
+            } else if (t === 'LineString' || t === 'MultiLineString') {
+                lines.push({ type: 'Feature', geometry: geom, properties: props });
+            } else if (t === 'Polygon' || t === 'MultiPolygon') {
+                polys.push({ type: 'Feature', geometry: geom, properties: props });
+            }
         };
+
+        (geojson.features || []).forEach(f => {
+            processGeometry(f.geometry, f.properties);
+        });
+
+        const activeLyrs = [];
+        const activeSrcs = [];
+
+        if (polys.length > 0) {
+            map.addSource(`src-poly-${safeId}`, { type: 'geojson', data: { type: 'FeatureCollection', features: polys } });
+            map.addLayer({ id: `lyr-fill-${safeId}`, type: 'fill', source: `src-poly-${safeId}`,
+                paint: { 'fill-color': '#ff7800', 'fill-opacity': 0.4 } });
+            activeLyrs.push(`lyr-fill-${safeId}`);
+            activeSrcs.push(`src-poly-${safeId}`);
+        }
+        if (lines.length > 0) {
+            map.addSource(`src-line-${safeId}`, { type: 'geojson', data: { type: 'FeatureCollection', features: lines } });
+            map.addLayer({ id: `lyr-line-${safeId}`, type: 'line', source: `src-line-${safeId}`,
+                paint: { 'line-color': '#ff7800', 'line-width': 3 } });
+            activeLyrs.push(`lyr-line-${safeId}`);
+            activeSrcs.push(`src-line-${safeId}`);
+        }
+        if (points.length > 0) {
+            map.addSource(`src-point-${safeId}`, { type: 'geojson', data: { type: 'FeatureCollection', features: points } });
+            map.addLayer({ id: `lyr-circle-${safeId}`, type: 'circle', source: `src-point-${safeId}`,
+                paint: { 'circle-radius': 6, 'circle-color': '#ff7800', 'circle-stroke-color': '#fff', 'circle-stroke-width': 1 } });
+            activeLyrs.push(`lyr-circle-${safeId}`);
+            activeSrcs.push(`src-point-${safeId}`);
+        }
+
+        activeOverlayLayers.value[key] = { layers: activeLyrs, sources: activeSrcs };
+        
+        // Add Hover Handlers for cursor
+        activeLyrs.forEach(id => {
+            map.on('mouseenter', id, () => { if (map) map.getCanvas().style.cursor = 'pointer'; });
+            map.on('mouseleave', id, () => { if (map) map.getCanvas().style.cursor = ''; });
+        });
+
         overlayOpacities.value[key] = 1;
         nextTick(() => updateOverlayOpacity(path, 1, providedSource));
 
@@ -998,6 +1319,254 @@ const toggleOverlay = async (path, providedSource = null) => {
     } catch (e) {
         notify.showError("Overlay error: " + e.message);
     }
+};
+
+const loadExternalMapsConfig = async () => {
+    try {
+        const res = await fetch(`${staticURL}/external_maps.json`);
+        if (res.ok) {
+            externalMaps.value = await res.json();
+            console.log("[Heatmap] Loaded external maps config:", externalMaps.value);
+        } else {
+            console.warn("[Heatmap] No external_maps.json found");
+        }
+    } catch(err) {
+        console.warn("[Heatmap] Error loading external maps:", err);
+    }
+};
+
+const showOverlayInfo = (item) => {
+    if (!map) return;
+    
+    const center = map.getCenter();
+    const props = {
+        'Name': item.name,
+        'Path': item.path,
+        'Description': item.description || 'No description provided.',
+        'Type': item.type || (item.path.endsWith('.pmtiles') ? 'PMTiles' : 'GeoJSON')
+    };
+    
+    showFeaturePopup(center, props, 'Overlay Details', 'info');
+};
+
+const toggleExternalMap = async (mapItem) => {
+    const layerId = `ext-${mapItem.id}`;
+    
+    // Toggle Off
+    if (activeExternalMaps.value[mapItem.id]) {
+        if (map) {
+            const layers = activeExternalMaps.value[mapItem.id].layers || [];
+            layers.forEach(l => {
+                if (map.getLayer(l)) map.removeLayer(l);
+            });
+            if (map.getSource(layerId)) {
+                map.removeSource(layerId);
+            }
+        }
+        delete activeExternalMaps.value[mapItem.id];
+        activeExternalMapTimeSlider.value.visible = false;
+        return;
+    }
+
+    // Toggle On
+    activeExternalMaps.value[mapItem.id] = { layers: [], sourceId: layerId };
+    sidePanelLoading.value = true;
+    notify.showSuccess(`Loading ${mapItem.name}...`);
+
+    try {
+        const res = await fetch(mapItem.url);
+        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+        const geojson = await res.json();
+        
+        if (!map) return;
+        
+        map.addSource(layerId, { type: 'geojson', data: geojson });
+
+        // Add Points
+        if (mapItem.id === 'civil_war_battles') {
+            // Register Icons
+            const loadIcon = (id, svg) => {
+                if (map.hasImage(id)) return;
+                const img = new Image(60, 60);
+                const blob = new Blob([svg], { type: 'image/svg+xml' });
+                const url = URL.createObjectURL(blob);
+                img.onload = () => {
+                    map.addImage(id, img);
+                    URL.revokeObjectURL(url);
+                };
+                img.src = url;
+            };
+            loadIcon('cw-union', civilWarIcons.union);
+            loadIcon('cw-confederate', civilWarIcons.confederate);
+            loadIcon('cw-inconclusive', civilWarIcons.inconclusive);
+
+            map.addLayer({
+                id: `${layerId}-points`,
+                type: 'symbol',
+                source: layerId,
+                filter: ['any', ['==', ['geometry-type'], 'Point'], ['==', ['geometry-type'], 'MultiPoint']],
+                layout: {
+                    'icon-image': ['match', ['get', 'Result_s_'], 'Union victory', 'cw-union', 'Confederate victory', 'cw-confederate', 'cw-inconclusive'],
+                    'icon-size': ['interpolate', ['linear'], ['get', 'Casualties_in_Integers'], 0, 0.4, 500, 0.6, 2000, 0.8, 10000, 1.2, 50000, 2.0],
+                    'icon-allow-overlap': true,
+                    'icon-ignore-placement': true
+                }
+            });
+        } else {
+            map.addLayer({
+                id: `${layerId}-points`,
+                type: 'circle',
+                source: layerId,
+                filter: ['any', ['==', ['geometry-type'], 'Point'], ['==', ['geometry-type'], 'MultiPoint']],
+                paint: { 'circle-radius': 6, 'circle-color': '#e53935', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 1 }
+            });
+        }
+
+        // Add Lines (for actual LineStrings)
+        map.addLayer({
+            id: `${layerId}-lines`,
+            type: 'line',
+            source: layerId,
+            filter: ['any', ['==', ['geometry-type'], 'LineString'], ['==', ['geometry-type'], 'MultiLineString']],
+            paint: { 'line-color': '#e53935', 'line-width': 3 }
+        });
+
+        // Add Fills (Polygons)
+        map.addLayer({
+            id: `${layerId}-fills`,
+            type: 'fill',
+            source: layerId,
+            filter: ['any', ['==', ['geometry-type'], 'Polygon'], ['==', ['geometry-type'], 'MultiPolygon']],
+            paint: {
+                'fill-color': mapItem.id === 'civil_war_states' ? [
+                    'match', ['get', 'CW_COUNTRY'], 'USA', '#2196F3', 'CSA', '#F44336', 'Border State - USA', '#90A4AE', 'rgba(0,0,0,0.1)'
+                ] : 'rgba(0,0,0,0.1)',
+                'fill-opacity': 0.5
+            }
+        });
+
+        // Add Outlines (for Polygons)
+        map.addLayer({
+            id: `${layerId}-outlines`,
+            type: 'line',
+            source: layerId,
+            filter: ['any', ['==', ['geometry-type'], 'Polygon'], ['==', ['geometry-type'], 'MultiPolygon']],
+            paint: {
+                'line-color': mapItem.id === 'civil_war_states' ? [
+                    'match', ['get', 'CW_COUNTRY'], 'USA', '#0D47A1', 'CSA', '#B71C1C', 'Border State - USA', '#455A64', '#555'
+                ] : '#555',
+                'line-width': 1
+            }
+        });
+
+        activeExternalMaps.value[mapItem.id].layers.push(`${layerId}-points`, `${layerId}-lines`, `${layerId}-fills`, `${layerId}-outlines`);
+        
+        // Add Hover Handlers for cursor
+        activeExternalMaps.value[mapItem.id].layers.forEach(id => {
+            map.on('mouseenter', id, () => { if (map) map.getCanvas().style.cursor = 'pointer'; });
+            map.on('mouseleave', id, () => { if (map) map.getCanvas().style.cursor = ''; });
+        });
+
+        // Time Slider Setup
+        if (mapItem.timeAware) {
+            setupTimeSlider(geojson.features || [], mapItem, layerId);
+        }
+
+        // Fit Bounds
+        try {
+            const bounds = new maplibregl.LngLatBounds();
+            const addCoords = (c) => {
+                if (!c) return;
+                if (typeof c[0] === 'number') { bounds.extend([c[0], c[1]]); }
+                else { c.forEach(addCoords); }
+            };
+            (geojson.features || []).forEach(f => {
+                if (f.geometry && f.geometry.coordinates) addCoords(f.geometry.coordinates);
+            });
+            if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 50 });
+        } catch(e) {}
+        
+    } catch (e) {
+        console.error("[Heatmap] Failed to load external map:", e);
+        notify.showError(`Failed to load ${mapItem.name}`);
+        delete activeExternalMaps.value[mapItem.id];
+    } finally {
+        sidePanelLoading.value = false;
+    }
+};
+
+const setupTimeSlider = (features, mapItem, sourceId) => {
+    let minTime = Infinity;
+    let maxTime = -Infinity;
+    
+    // Find absolute bounds from features
+    features.forEach(f => {
+        let tStart = f.properties[mapItem.timeFieldStart];
+        let tEnd = f.properties[mapItem.timeFieldEnd] || tStart; // fallback if no end
+        
+        if (tStart) {
+            // ArcGIS dates are often epoch ms
+            const ts = typeof tStart === 'number' ? tStart : new Date(tStart).getTime();
+            if (ts < minTime) minTime = ts;
+            if (ts > maxTime) maxTime = ts;
+        }
+        if (tEnd) {
+            const te = typeof tEnd === 'number' ? tEnd : new Date(tEnd).getTime();
+            if (te < minTime) minTime = te;
+            if (te > maxTime) maxTime = te;
+        }
+    });
+
+    if (minTime === Infinity) return; // No valid time fields found
+
+    activeExternalMapTimeSlider.value = {
+        visible: true,
+        mapItem: mapItem,
+        sourceId: sourceId,
+        mapName: mapItem.name,
+        min: minTime,
+        max: maxTime,
+        low: minTime,
+        high: maxTime,
+        fieldScale: mapItem.timeFieldStart,
+        minDisplay: new Date(minTime).toLocaleDateString(),
+        maxDisplay: new Date(maxTime).toLocaleDateString(),
+        lowDisplay: new Date(minTime).toLocaleDateString(),
+        highDisplay: new Date(maxTime).toLocaleDateString()
+    };
+    
+    applyExternalMapTimeFilter();
+};
+
+watch([() => activeExternalMapTimeSlider.value.low, () => activeExternalMapTimeSlider.value.high], () => {
+    if (!activeExternalMapTimeSlider.value.visible) return;
+    
+    const slider = activeExternalMapTimeSlider.value;
+    slider.lowDisplay = new Date(slider.low).toLocaleDateString();
+    slider.highDisplay = new Date(slider.high).toLocaleDateString();
+    
+    applyExternalMapTimeFilter();
+});
+
+const applyExternalMapTimeFilter = () => {
+    if (!map || !activeExternalMapTimeSlider.value.visible) return;
+    const item = activeExternalMapTimeSlider.value.mapItem;
+    if (!item) return;
+
+    const { low, high } = activeExternalMapTimeSlider.value;
+    
+    // Create a range filter: StartDate >= Low AND StartDate <= High
+    const filter = ['all', 
+        ['>=', ['get', item.timeFieldStart], low],
+        ['<=', ['get', item.timeFieldStart], high]
+    ];
+    
+    const layers = activeExternalMaps.value[item.id].layers || [];
+    layers.forEach(l => {
+        if (map.getLayer(l)) {
+            map.setFilter(l, filter);
+        }
+    });
 };
 
 const isOverlayActive = (path, sourceArg = null) => !!activeOverlayLayers.value[getOverlayKey(path, sourceArg)];
@@ -1366,7 +1935,7 @@ const inspectLocation = async (path, sourceArg, directItems = null, coords = nul
                  }
             }
 
-            console.log(`[Heatmap] inspectLocation called: path='${cleanPath}', source='${cleanSource}', keepHistory=${keepHistory}, preservedTotalImageCount=${preservedTotalImageCount}`);
+            console.log(`[Heatmap] REBUILT inspectLocation: Requesting cluster data from backend for path='${cleanPath}', source='${cleanSource}'`);
             console.log(`[Heatmap] Inspect API URL: ${url}`);
 
             const res = await fetch(url);
@@ -1398,39 +1967,51 @@ const inspectLocation = async (path, sourceArg, directItems = null, coords = nul
                     // Create formatted data: List of Folders
                     const groups = {};
                     sidePanelData.value.forEach(item => {
-                        // Virtual Folder Logic:
-                        // If the item returned is ITSELF a folder (drill-down node),
-                        // treat it as a top-level group that can be clicked.
-                        if (item.type === 'folder') {
-                            groups[item.path] = { 
-                                path: item.path, 
-                                count: item.count, 
-                                items: [], 
-                                isVirtual: true,
-                                clusterID: item.clusterID,
-                                source: item.source,
-                                lat: item.lat,
-                                lon: item.lon
-                            };
-                        } else {
-                            const p = item.parentPath || "Root";
-                            // CAPTURE CLUSTER ID from the item so we can drill down accurately
-                            if (!groups[p]) groups[p] = { 
-                                path: p, 
-                                count: 0, 
-                                items: [], 
-                                clusterID: item.clusterID,
-                                source: item.source,
-                                lat: item.lat,
-                                lon: item.lon
-                            };
-                            // Robust count: If item has count > 1, use that. Otherwise count as 1 item.
-                            groups[p].count += (item.count && item.count > 1 ? item.count : 1);
-                            groups[p].items.push(item);
+                        // GROUPING KEY CALCULATION:
+                        // We want to consolidate all items (files or folder-aggregates) 
+                        // that logically belong to the same directory.
+                        let p = (item.type === 'folder') ? item.path : (item.parentPath || "Root");
+                        
+                        // If it's a folder aggregate but points to a filename, normalize to parent
+                        if (item.type === 'folder' && (p.toLowerCase().endsWith('.jpg') || p.toLowerCase().endsWith('.jpeg') || p.toLowerCase().endsWith('.png'))) {
+                            p = p.substring(0, p.lastIndexOf('/')) || "Root";
+                        }
 
-                            if (item.totalImageCount) {
-                                groups[p].totalImageCount = item.totalImageCount;
-                            }
+                        if (!groups[p]) {
+                            groups[p] = { 
+                                path: p, 
+                                thumbnailPath: item.path, // Keep original path for thumbnail
+                                thumbnailUrl: getPreviewUrl(item.path, item.source, 'small'),
+                                displayName: "", 
+                                count: 0, 
+                                totalImageCount: 0,
+                                items: [], 
+                                isVirtual: (item.type === 'folder' || p !== item.path),
+                                clusterIDs: new Set(),
+                                source: item.source,
+                                lat: item.lat,
+                                lon: item.lon
+                            };
+                            
+                            // DISPLAY NAME: Use the last segment of the FOLDER path
+                            const segments = p.split('/').filter(s => s !== "");
+                            groups[p].displayName = segments.length > 0 ? segments[segments.length - 1] : "Root";
+                        }
+                        
+                        // Sum up counts
+                        groups[p].count += (item.count && item.count > 1 ? item.count : 1);
+                        
+                        // Collect IDs
+                        if (item.clusterID) {
+                            groups[p].clusterIDs.add(item.clusterID);
+                        }
+
+                        // Add all items to the items list for grid display (files AND sub-clusters)
+                        groups[p].items.push(item);
+
+                        // Aggregate total image count (Take max/typical value, don't sum)
+                        if (item.totalImageCount) {
+                            groups[p].totalImageCount = Math.max(groups[p].totalImageCount || 0, item.totalImageCount);
                         }
                     });
                     
@@ -1445,11 +2026,21 @@ const inspectLocation = async (path, sourceArg, directItems = null, coords = nul
                     
                     formattedSidePanelData.value = Object.values(groups);
                     
-                    // If only one folder, auto-open it?
-                    // ONLY if it's NOT a virtual folder (virtual folders require click to drill)
-                    if (formattedSidePanelData.value.length === 1 && !formattedSidePanelData.value[0].isVirtual) {
-                        console.log('[Heatmap] Auto-opening folder. TotalImageCount:', formattedSidePanelData.value[0].totalImageCount);
-                        currentInspectionFolder.value = formattedSidePanelData.value[0];
+                    // If only one folder, manage navigation
+                    if (formattedSidePanelData.value.length === 1) {
+                        const group = formattedSidePanelData.value[0];
+                        const isExplicitDrillDown = (path !== "" || clusterID !== "");
+                        
+                        if (isExplicitDrillDown) {
+                            // Already in a folder? Just show the grid
+                            console.log('[Heatmap] Auto-opening folder grid. TotalImageCount:', group.totalImageCount);
+                            currentInspectionFolder.value = group;
+                        } else if (!group.isVirtual || group.isVirtual) {
+                            // New selection found exactly one folder? Auto-Drill to see images
+                            console.log('[Heatmap] Box selection found single folder. Auto-drilling...');
+                            openFolderView(group);
+                            return;
+                        }
                     }
                     
                     sidePanelTitle.value = `Inspection (${sidePanelData.value.length})`;
@@ -1639,9 +2230,7 @@ const showErrorNotification = () => {
     }, 2000); // 2 second debounce
 };
 
-// Stores for dynamic reshuffling
-const clusterDataStore = new Map(); // Key: `${lat},${lon}`, Value: Array of all points for that location
-const renderedMarkerStore = new Map(); // Key: `${lat},${lon}`
+// Helper for Back Navigation
 const goBack = () => {
     // Handle Overlay Back Navigation
     // Priority: Explicit Overlay Param -> Implicit Overlay Context (Siblings) -> Path Param
@@ -1964,32 +2553,10 @@ const initMap = async () => {
             container: 'heatmap-container',
             style: {
                 version: 8,
-                sources: {
-                    'google-hybrid': {
-                        type: 'raster',
-                        tiles: ['https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}'],
-                        tileSize: 256,
-                        maxNativeZoom: 18,
-                    }
-                },
-                layers: [
-                    {
-                        id: 'google-hybrid',
-                        type: 'raster',
-                        source: 'google-hybrid',
-                        minzoom: 0,
-                        maxzoom: 22,
-                        paint: {
-                            'raster-fade-duration': 0
-                        },
-                        metadata: {
-                            'mapbox:group': 'background'
-                        },
-                        zIndex: 650
-                    }
-                ]
+                sources: {},
+                layers: []
             },
-            center: [0, 20],
+            center: [-18.48507, 38.81225],
             zoom: 2,
             antialias: true,
             glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf'
@@ -1997,8 +2564,36 @@ const initMap = async () => {
 
         map.addControl(new maplibregl.NavigationControl(), 'top-left');
         map.addControl(new maplibregl.FullscreenControl(), 'top-left');
+        map.addControl(new BasemapControl(), 'top-left');
 
         map.on('load', () => {
+            // Add all basemaps explicitly
+            Object.keys(mapStyles).forEach(key => {
+                map.addSource(key, {
+                    type: 'raster',
+                    tiles: mapStyles[key].tiles,
+                    tileSize: 256,
+                    maxzoom: mapStyles[key].maxZoom
+                });
+                
+                map.addLayer({
+                    id: key,
+                    type: 'raster',
+                    source: key,
+                    minzoom: 0,
+                    maxzoom: 22,
+                    layout: {
+                        visibility: key === currentBasemap.value ? 'visible' : 'none'
+                    },
+                    paint: {
+                        'raster-fade-duration': 0
+                    },
+                    metadata: {
+                        'mapbox:group': 'background'
+                    }
+                });
+            });
+
             debugStatus.value = "Map loaded";
             setupMapEventHandlers();
             resolve();
@@ -2006,6 +2601,50 @@ const initMap = async () => {
     });
 
     return initMapPromise;
+};
+
+const showFeaturePopup = (lngLat, props, title = 'Feature Details', icon = 'info', sourceLabel = 'Overlay Data') => {
+    if (!map) return;
+
+    let rows = Object.entries(props).map(([key, val], idx) => {
+        // Format dates if they look like epoch timestamps
+        if (typeof val === 'number' && val > 1000000000 && (key.toLowerCase().includes('date') || key.toLowerCase().includes('time'))) {
+            val = new Date(val).toLocaleString();
+        }
+        // Handle boolean/object
+        if (typeof val === 'boolean') val = val ? 'Yes' : 'No';
+        if (val === null || val === undefined) val = '-';
+        if (typeof val === 'object') val = JSON.stringify(val);
+
+        return `
+            <tr style="background: ${idx % 2 === 0 ? '#f8f9fa' : '#fff'}; border-bottom: 1px solid #edf2f7;">
+                <td style="padding: 6px 10px; color: #718096; font-weight: 600; width: 35%; border-right: 1px solid #edf2f7; vertical-align: top; word-break: break-word;">${key}</td>
+                <td style="padding: 6px 10px; color: #2d3748; font-weight: 400; word-break: break-word; line-height: 1.4;">${val}</td>
+            </tr>
+        `;
+    }).join('');
+
+    let popupContent = `
+        <div class="premium-popup-container">
+            <div class="premium-popup-header">
+                <i class="material-icons" style="font-size: 18px; color: #81c784;">${icon}</i>
+                <span class="premium-popup-title">${title}</span>
+            </div>
+            <div class="premium-popup-body">
+                <table class="premium-popup-table">
+                    ${rows}
+                </table>
+            </div>
+            <div class="premium-popup-footer">
+                Source: ${sourceLabel}
+            </div>
+        </div>
+    `;
+
+    new maplibregl.Popup({ maxWidth: '340px', className: 'premium-popup', offset: [0, -5] })
+        .setLngLat(lngLat)
+        .setHTML(popupContent)
+        .addTo(map);
 };
 
 const setupMapEventHandlers = () => {
@@ -2029,6 +2668,23 @@ const setupMapEventHandlers = () => {
     map.on('click', (e) => {
         const wrapped = e.lngLat.wrap();
         cursorCoords.value = { lat: wrapped.lat, lng: wrapped.lng };
+
+        // Check for clicks on external layers OR local overlays
+        const features = map.queryRenderedFeatures(e.point);
+        const feature = features.find(f => f.layer.id.startsWith('ext-') || f.layer.id.startsWith('lyr-'));
+        
+        if (feature) {
+            const props = feature.properties;
+            
+            // Try to find a header title
+            const titleField = Object.keys(props).find(k => 
+                ['state_name', 'battle_name', 'unit_name', 'name', 'title', 'label'].includes(k.toLowerCase())
+            );
+            const title = titleField ? props[titleField] : 'Feature Details';
+            const isExternal = feature.layer.id.startsWith('ext-');
+
+            showFeaturePopup(e.lngLat, props, title, isExternal ? 'info' : 'layers', isExternal ? 'ArcGIS Feature Service' : 'GeoJSON Overlay');
+        }
     });
 
     // Right-click Context Menu
@@ -2219,7 +2875,7 @@ const executeUpdateViewportData = async () => {
             }
         });
         
-        if (isThumbMarker) {
+        if (isThumbMarker && showImageClusters.value) {
             if (!clusterMarkers[renderKey]) {
                 const el = document.createElement('div');
                 
@@ -2258,7 +2914,7 @@ const executeUpdateViewportData = async () => {
     
     // Cleanup old markers
     Object.keys(clusterMarkers).forEach(key => {
-        if (!seenPaths.has(key) || zoom < 4) {
+        if (!seenPaths.has(key) || zoom < 4 || !showImageClusters.value) {
             clusterMarkers[key].remove();
             delete clusterMarkers[key];
         }
@@ -2282,6 +2938,10 @@ const loadData = async () => {
     currentSource.value = recursiveDecode(route.query.source || "");
     currentPath.value = recursiveDecode(route.query.path || "");
     isFolderMode.value = !!currentPath.value;
+    
+    if (state.user && state.user.mapBasemap) {
+        currentBasemap.value = state.user.mapBasemap;
+    }
 
     debugStatus.value = "Loading data...";
 
@@ -2315,6 +2975,15 @@ const loadData = async () => {
                 'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 0, 5, 8, 30],
                 'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 6, 1, 15, 1, 18, 0]
             }
+        });
+
+        // Watch for cluster toggle to hide/show layer
+        watch(showImageClusters, (val) => {
+            if (map.getLayer('heatmap-layer')) {
+                map.setPaintProperty('heatmap-layer', 'heatmap-opacity', val ? 1 : 0);
+            }
+            // Trigger marker cleanup/rerender
+            executeUpdateViewportData();
         });
     }
 
@@ -2409,10 +3078,16 @@ onMounted(() => {
     };
 
     initMap().then(() => {
+        // Mark map as used for admin usage tracking
+        usersApi.markMapUsage();
+
         loadData();
         
         // Ensure overlays list is fetched immediately, especially for shared links
         fetchOverlays();
+
+        // Load external maps configuration
+        loadExternalMapsConfig();
 
         // Auto-inspect if path is provided (e.g. from a shared link)
         if (route.query.path) {
@@ -2480,9 +3155,7 @@ onBeforeUnmount(() => {
         map = null;
     }
     
-    // 6. Clear stores
-    clusterDataStore.clear();
-    renderedMarkerStore.clear();
+    // 6. Cleanup stores removed (unused)
     
     // 7. Remove global extensions
     delete window.heatmapNavigate;
@@ -2733,6 +3406,13 @@ const openOverlaysTab = () => {
     margin-right: 10px;
     color: #ffca28;
 }
+.folder-thumb-icon {
+    width: 32px;
+    height: 32px;
+    object-fit: cover;
+    border-radius: 4px;
+    margin-right: 10px;
+}
 .folder-info {
     flex: 1;
     display: flex;
@@ -2750,6 +3430,17 @@ const openOverlaysTab = () => {
 .folder-item .chevron {
     color: white;
     opacity: 0.5;
+}
+.folder-badge {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    color: #ffca28;
+    background: rgba(0,0,0,0.6);
+    border-radius: 50%;
+    padding: 2px;
+    font-size: 16px;
+    z-index: 5;
 }
 .panel-sub-header {
     display: flex;
@@ -3020,5 +3711,80 @@ const openOverlaysTab = () => {
 /* Ensure the tab is clickable */
 .panel-expand-tab {
     pointer-events: auto;
+}
+
+/* Premium Popup Styles */
+.premium-popup .maplibregl-popup-content {
+    background: transparent !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+}
+
+.premium-popup .maplibregl-popup-tip {
+    border-top-color: #f7fafc !important; /* Matches footer */
+}
+
+.premium-popup-container {
+    max-width: 320px;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    overflow: hidden;
+    border-radius: 12px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+    background: #fff;
+    border: 1px solid #ddd;
+}
+
+.premium-popup-header {
+    background: linear-gradient(135deg, #2c3e50, #34495e);
+    color: white;
+    padding: 12px 15px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.premium-popup-title {
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.premium-popup-body {
+    max-height: 300px;
+    overflow-y: auto;
+    background: #fff;
+    padding: 2px;
+}
+
+.premium-popup-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+    table-layout: fixed;
+}
+
+.premium-popup-footer {
+    background: #f7fafc;
+    padding: 6px 12px;
+    font-size: 9px;
+    color: #a0aec0;
+    text-align: right;
+    border-top: 1px solid #edf2f7;
+}
+
+/* Custom Scrollbar for Popup Body */
+.premium-popup-body::-webkit-scrollbar {
+    width: 4px;
+}
+.premium-popup-body::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+.premium-popup-body::-webkit-scrollbar-thumb {
+    background: #ccc;
+    border-radius: 10px;
 }
 </style>

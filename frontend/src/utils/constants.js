@@ -46,6 +46,7 @@ export {
   disableExternal,
   externalLinks,
   baseURL,
+  staticURL,
   logoURL,
   recaptcha,
   recaptchaKey,

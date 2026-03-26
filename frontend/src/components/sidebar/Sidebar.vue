@@ -9,7 +9,7 @@
     <div class="buffer"></div>
     <div class="credits">
       <span>
-        <a href="#" @click.prevent="showChangelog" title="View latest changes">v5.0.9 Changelog</a>
+        <a href="#" @click.prevent="showChangelog" title="View latest changes">v5.1.1 Changelog</a>
       </span>
       <span v-if="name != ''">
         <h4 style="margin: 0">{{ name }}</h4>

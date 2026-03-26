@@ -31,9 +31,15 @@ func handleInspect(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 	latStr := r.URL.Query().Get("lat")
 	lonStr := r.URL.Query().Get("lon")
 
-	// VALIDATION RELAXED: If we have Cluster IDs, we can skip lat/lon
+	// 4. Determine Search Mode: Bounding Box vs. Radius/ID
+	minLatStr := r.URL.Query().Get("minLat")
+	maxLatStr := r.URL.Query().Get("maxLat")
+	minLonStr := r.URL.Query().Get("minLon")
+	maxLonStr := r.URL.Query().Get("maxLon")
+
+	// VALIDATION RELAXED: If we have Cluster IDs or Bounds, we can skip lat/lon
 	// But we still need them defined as float64, defaulting to 0 if missing.
-	if (latStr == "" || lonStr == "") && len(targetClusterIDs) == 0 {
+	if (latStr == "" || lonStr == "") && len(targetClusterIDs) == 0 && minLatStr == "" {
 		return http.StatusBadRequest, fmt.Errorf("missing lat/lon parameter")
 	}
 
@@ -54,6 +60,7 @@ func handleInspect(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 	var scopePath, realSource string
 	var userscope string
 	var err error
+	var radius float64
 
 	if path != "/" || source != "" {
 		scopePath, realSource, err = ResolveScopePath(d.user, source, path)
@@ -81,7 +88,7 @@ func handleInspect(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 	// 3. Retrieve Data from Cache (or load it)
 	var data heatmap.HeatmapData
 
-	if path == "/" && source == "" {
+	if (path == "/" || path == "") && source == "" {
 		// Global heatmap
 		userKey := fmt.Sprintf("user:%v", d.user.ID)
 		data, err = getCachedHeatmap(userKey, "global", func() (heatmap.HeatmapData, error) {
@@ -107,7 +114,7 @@ func handleInspect(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 		return http.StatusInternalServerError, err
 	}
 
-	// 4. Calculate Search Radius or Use Tile Bounds
+	// 5. Calculate Search Radius or Use Tile Bounds
 	zoomStr := r.URL.Query().Get("zoom")
 	zoom := 18
 	if zoomStr != "" {
@@ -130,7 +137,104 @@ func handleInspect(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 
 	var matchPoints []heatmap.ClusterPoint
 
-	// CRITICAL: Direct Path Inspection Mode
+	// --- MODE A: Bounding Box Search (Box Selection Tool) ---
+	if minLatStr != "" && maxLatStr != "" && minLonStr != "" && maxLonStr != "" {
+		minLat, _ := strconv.ParseFloat(minLatStr, 64)
+		maxLat, _ := strconv.ParseFloat(maxLatStr, 64)
+		minLon, _ := strconv.ParseFloat(minLonStr, 64)
+		maxLon, _ := strconv.ParseFloat(maxLonStr, 64)
+
+		logger.Info(fmt.Sprintf("Inspect: Bounding Box Search: [%f, %f] to [%f, %f] at Zoom %d (Source: %s, Path: %s)", minLat, minLon, maxLat, maxLon, zoom, realSource, scopePath))
+
+		boxBounds := heatmap.TileBounds{
+			MinLat: minLat,
+			MaxLat: maxLat,
+			MinLon: minLon,
+			MaxLon: maxLon,
+		}
+
+		// Map to track source+path and their index in matchPoints for aggregation
+		// 0 means not visited, >0 means index + 1, -1 means already drilled down
+		visitedPaths := make(map[string]int)
+
+		// Recursive helper to collect all items in the box 
+		var collectRecursive func(clusters []heatmap.Cluster, currentDepth int)
+		collectRecursive = func(clusters []heatmap.Cluster, currentDepth int) {
+			// Safety: Don't recurse too deep
+			if currentDepth > 5 {
+				return
+			}
+
+			for _, c := range clusters {
+				// Check if cluster overlaps selection box 
+				if !heatmap.ClusterOverlapsBounds(&c, boxBounds) {
+					continue
+				}
+
+				cID := getOrGenID(&c)
+				
+				// Dedup/Aggregate based on source and path 
+				pathKey := c.Source + "|" + c.Path
+				if status, exists := visitedPaths[pathKey]; exists {
+					// If it's a folder entry that hasn't been drilled into yet, add the count
+					if status >= 0 && c.Count > 0 && len(c.Points) == 0 {
+						matchPoints[status].Count += c.Count
+					}
+					continue
+				}
+
+				// If it has points, add them
+				if len(c.Points) > 0 {
+					// Mark as visited (storing the index of the first point or a dummy)
+					visitedPaths[pathKey] = len(matchPoints)
+					for _, p := range c.Points {
+						if filepath.Base(p.Path) == "heatmap.json" {
+							continue
+						}
+						p.ID = cID
+						p.TotalImageCount = c.TotalImageCount
+						matchPoints = append(matchPoints, p)
+					}
+				} else if c.Count > 0 && c.Path != "" {
+					// It's a folder or aggregated cluster
+					
+					// DECISION: Should we drill down?
+					// (Zoom check removed - always allow drill down while in depth bounds)
+					if currentDepth < 4 {
+						subData, err := heatmap.GetFolderHeatmap(c.Source, c.Path)
+						if err == nil && len(subData.Clusters) > 0 {
+							// Mark as drilled down before recursing
+							visitedPaths[pathKey] = -1
+							// Recurse into children of this folder
+							collectRecursive(subData.Clusters, currentDepth+1)
+						} else {
+							// Fallback: If no sub-data found, treat as folder leaf
+							visitedPaths[pathKey] = len(matchPoints)
+							matchPoints = append(matchPoints, heatmap.ClusterPoint{
+								Type: "folder", Path: c.Path, Count: c.Count, ID: cID, Source: c.Source, TotalImageCount: c.TotalImageCount,
+							})
+						}
+					} else {
+						// Otherwise, just return the folder itself
+						visitedPaths[pathKey] = len(matchPoints)
+						matchPoints = append(matchPoints, heatmap.ClusterPoint{
+							Type: "folder", Path: c.Path, Count: c.Count, ID: cID, Source: c.Source, TotalImageCount: c.TotalImageCount,
+						})
+					}
+				}
+			}
+		}
+
+		// Use the already loaded 'data' from Step 3 as the entry point
+		collectRecursive(data.Clusters, 0)
+		
+		logger.Debug(fmt.Sprintf("Inspect: Found %d total points in box after recursive search", len(matchPoints)))
+
+		// Skip standard tile-based search if we used the box
+		goto finishMatchPoints
+	}
+
+	// --- MODE B: Direct Path Inspection Mode ---
 	if path != "" && len(targetClusterIDs) == 0 && (targetLat == 0 && targetLon == 0) {
 		// Use manual loading to bypass any cache
 		leafData, err := heatmap.GetFolderHeatmap(realSource, path)
@@ -194,7 +298,6 @@ func handleInspect(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 	}
 
 	// Define radius variable in outer scope for error reporting fallback
-	var radius float64
 
 	if len(targetClusterIDs) > 0 {
 		// EXACT MATCH MODE
@@ -293,21 +396,24 @@ func handleInspect(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 					var currentPoints []heatmap.ClusterPoint
 
 					// Attempt 1: Smart Stripped Path
-					fmt.Println(fmt.Sprintf("INSPECT_DEBUG: Attempt 1 - Loading leaf '%s' (Source: %s)", leafFolder, targetSource))
+					logger.Debug(fmt.Sprintf("INSPECT_DEBUG: Attempt 1 - Loading leaf '%s' (Source: %s)", leafFolder, targetSource))
 					leafData, err := loadData(targetSource, leafFolder)
 					foundMatch := false
 					if err == nil {
-						fmt.Println(fmt.Sprintf("INSPECT_DEBUG: Attempt 1 - Loaded %d clusters from leaf. Searching for %s", len(leafData.Clusters), c.ID))
+						logger.Debug(fmt.Sprintf("INSPECT_DEBUG: Attempt 1 - Loaded %d clusters from leaf. Searching for %s", len(leafData.Clusters), c.ID))
 						var method string
 						currentPoints, foundMatch, method = findMatch(leafData.Clusters, c.ID, c.Path)
 						if foundMatch {
-							fmt.Println(fmt.Sprintf("INSPECT_DEBUG: Hydrated %d points via %s (Attempt 1)", len(currentPoints), method))
+							logger.Debug(fmt.Sprintf("INSPECT_DEBUG: Hydrated %d points via %s (Attempt 1)", len(currentPoints), method))
 						} else {
-							fmt.Println("INSPECT_DEBUG: Attempt 1 - ID/Path Match FAILED.")
+							logger.Debug("INSPECT_DEBUG: Attempt 1 - ID/Path Match FAILED.")
 						}
 					} else {
-						fmt.Println(fmt.Sprintf("INSPECT_DEBUG: Attempt 1 - Load Failed: %v", err))
+						logger.Debug(fmt.Sprintf("INSPECT_DEBUG: Attempt 1 - Load Failed: %v", err))
 					}
+
+					var leafData2 heatmap.HeatmapData
+					var leafData3 heatmap.HeatmapData
 
 					// Attempt 2: Blind Strip (Fallback)
 					if !foundMatch {
@@ -315,17 +421,18 @@ func handleInspect(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 						segments := strings.Split(cleanLeaf, "/")
 						if len(segments) > 1 {
 							blindPath := "/" + strings.Join(segments[1:], "/")
-							fmt.Println(fmt.Sprintf("INSPECT_DEBUG: Attempt 2 - Blind Strip '%s' -> '%s'", originalLeaf, blindPath))
-							leafData2, err2 := loadData(targetSource, blindPath)
+							logger.Debug(fmt.Sprintf("INSPECT_DEBUG: Attempt 2 - Blind Strip '%s' -> '%s'", originalLeaf, blindPath))
+							var err2 error
+							leafData2, err2 = loadData(targetSource, blindPath)
 							if err2 == nil {
-								fmt.Println(fmt.Sprintf("INSPECT_DEBUG: Attempt 2 - Loaded %d clusters", len(leafData2.Clusters)))
+								logger.Debug(fmt.Sprintf("INSPECT_DEBUG: Attempt 2 - Loaded %d clusters", len(leafData2.Clusters)))
 								var method string
 								currentPoints, foundMatch, method = findMatch(leafData2.Clusters, c.ID, c.Path)
 								if foundMatch {
-									fmt.Println(fmt.Sprintf("INSPECT_DEBUG: Hydrated %d points via %s (Attempt 2)", len(currentPoints), method))
+									logger.Debug(fmt.Sprintf("INSPECT_DEBUG: Hydrated %d points via %s (Attempt 2)", len(currentPoints), method))
 								}
 							} else {
-								fmt.Println(fmt.Sprintf("INSPECT_DEBUG: Attempt 2 - Load Failed: %v", err2))
+								logger.Debug(fmt.Sprintf("INSPECT_DEBUG: Attempt 2 - Load Failed: %v", err2))
 							}
 						}
 					}
@@ -333,41 +440,110 @@ func handleInspect(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 					// Attempt 3: Raw Relative Path
 					if !foundMatch {
 						rawRel := strings.TrimLeft(filepath.ToSlash(originalLeaf), "/")
-						fmt.Println(fmt.Sprintf("INSPECT_DEBUG: Attempt 3 - Raw Relative '%s'", rawRel))
-						leafData3, err3 := loadData(targetSource, rawRel)
+						logger.Debug(fmt.Sprintf("INSPECT_DEBUG: Attempt 3 - Raw Relative '%s'", rawRel))
+						var err3 error
+						leafData3, err3 = loadData(targetSource, rawRel)
 						if err3 == nil {
-							fmt.Println(fmt.Sprintf("INSPECT_DEBUG: Attempt 3 - Loaded %d clusters", len(leafData3.Clusters)))
+							logger.Debug(fmt.Sprintf("INSPECT_DEBUG: Attempt 3 - Loaded %d clusters", len(leafData3.Clusters)))
 							var method string
 							currentPoints, foundMatch, method = findMatch(leafData3.Clusters, c.ID, c.Path)
 							if foundMatch {
-								fmt.Println(fmt.Sprintf("INSPECT_DEBUG: Hydrated %d points via %s (Attempt 3)", len(currentPoints), method))
+								logger.Debug(fmt.Sprintf("INSPECT_DEBUG: Hydrated %d points via %s (Attempt 3)", len(currentPoints), method))
 							}
 						} else {
-							fmt.Println(fmt.Sprintf("INSPECT_DEBUG: Attempt 3 - Load Failed: %v", err3))
+							logger.Debug(fmt.Sprintf("INSPECT_DEBUG: Attempt 3 - Load Failed: %v", err3))
 						}
 					}
 
 					// Append found points
 					if foundMatch {
-						for _, p := range currentPoints {
-							if filepath.Base(p.Path) == "heatmap.json" {
-								continue
+												if len(currentPoints) == 0 {
+							// If we matched a folder but have no points, return its children from the leaf
+							var sourceClusters []heatmap.Cluster
+							if len(leafData.Clusters) > 0 { sourceClusters = leafData.Clusters }
+							if len(leafData2.Clusters) > 0 { sourceClusters = leafData2.Clusters }
+							if len(leafData3.Clusters) > 0 { sourceClusters = leafData3.Clusters }
+
+							if len(sourceClusters) > 0 {
+								logger.Debug(fmt.Sprintf("Inspect: Hydrating folder cluster %s with %d child clusters", c.ID, len(sourceClusters)))
+								for _, lc := range sourceClusters {
+									lcID := getOrGenID(&lc)
+									itemType := "file"
+									if len(lc.Points) == 0 && lc.Count > 0 && filepath.Ext(lc.Path) == "" {
+										itemType = "folder"
+									}
+									matchPoints = append(matchPoints, heatmap.ClusterPoint{
+										Type:            itemType,
+										Path:            lc.Path,
+										Count:           lc.Count,
+										ID:              lcID,
+										Source:          lc.Source,
+										TotalImageCount: lc.TotalImageCount,
+										Lat:             lc.Lat,
+										Lon:             lc.Lon,
+										PreviewID:       lc.PreviewID,
+									})
+								}
+							} else {
+								// Fallback: Return folder itself if truly empty
+								matchPoints = append(matchPoints, heatmap.ClusterPoint{
+									Type:            "folder",
+									Path:            c.Path,
+									Count:           c.Count,
+									ID:              c.ID,
+									Source:          c.Source,
+									TotalImageCount: c.TotalImageCount,
+									Lat:             c.Lat,
+									Lon:             c.Lon,
+									PreviewID:       c.PreviewID,
+								})
 							}
-							p.ID = c.ID
-							p.TotalImageCount = c.TotalImageCount
-							matchPoints = append(matchPoints, p)
+						} else {
+							for _, p := range currentPoints {
+								if filepath.Base(p.Path) == "heatmap.json" {
+									continue
+								}
+								p.ID = c.ID
+								p.TotalImageCount = c.TotalImageCount
+								matchPoints = append(matchPoints, p)
+							}
 						}
 					} else {
-						// Hydration failed
-						logger.Error(fmt.Sprintf("Inspect: Failed to hydrate cluster %s - No match found in leaf data", c.ID))
-						matchPoints = append(matchPoints, heatmap.ClusterPoint{
-							Type:            "folder",
-							Path:            c.Path,
-							Count:           c.Count,
-							ID:              c.ID,
-							Source:          c.Source,
-							TotalImageCount: c.TotalImageCount,
-						})
+						// Hydration failed to find the specific cluster ID inside its own leaf heatmap.
+						// NEW LOGIC: If leafData was successfully loaded, return ALL its top-level clusters as "points".
+						// This ensures that clicking a folder cluster expands it into its constituent folders/files.
+						if err == nil && len(leafData.Clusters) > 0 {
+							logger.Debug(fmt.Sprintf("Inspect: Cluster %s not found in leaf, expanding ALL %d leaf clusters", c.ID, len(leafData.Clusters)))
+							for _, lc := range leafData.Clusters {
+								lcID := getOrGenID(&lc)
+								// Determine type (folder if it has sub-clusters or no extension)
+								itemType := "file"
+								if len(lc.Points) == 0 && lc.Count > 0 && filepath.Ext(lc.Path) == "" {
+									itemType = "folder"
+								}
+								matchPoints = append(matchPoints, heatmap.ClusterPoint{
+									Type:            itemType,
+									Path:            lc.Path,
+									Count:           lc.Count,
+									ID:              lcID,
+									Source:          lc.Source,
+									TotalImageCount: lc.TotalImageCount,
+									Lat:             lc.Lat,
+									Lon:             lc.Lon,
+								})
+							}
+						} else {
+							// Final Fallback: Return the cluster itself as a folder entry
+							logger.Error(fmt.Sprintf("Inspect: Failed to hydrate cluster %s - No match found and no leaf data", c.ID))
+							matchPoints = append(matchPoints, heatmap.ClusterPoint{
+								Type:            "folder",
+								Path:            c.Path,
+								Count:           c.Count,
+								ID:              c.ID,
+								Source:          c.Source,
+								TotalImageCount: c.TotalImageCount,
+							})
+						}
 					}
 
 				} else {
@@ -545,6 +721,7 @@ func handleInspect(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 
 	}
 
+finishMatchPoints:
 	if len(matchPoints) == 0 {
 		logger.Info(fmt.Sprintf("Inspect: No matches found for IDs %v (Radius: %f). Returning empty.", targetClusterIDs, radius))
 		w.Header().Set("Content-Type", "application/json")

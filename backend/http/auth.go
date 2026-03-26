@@ -131,6 +131,9 @@ func loginHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (in
 		logger.Debug("Failed to update LastLogin: " + err.Error())
 		// Don't fail login if timestamp update fails, just log it
 	}
+	
+	// Log the usage event
+	LogUsageEvent(d.user.Username)
 
 	// Site Testing Maintenance Mode Check
 	if config.Server.SiteTesting && !d.user.Permissions.Admin && !d.user.Permissions.SiteTesting {

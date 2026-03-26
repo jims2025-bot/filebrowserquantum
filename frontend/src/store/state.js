@@ -52,6 +52,7 @@ export const state = reactive({
     scopes: [],
     permissions: {}, // Default to an empty object for permissions
     darkMode: true, // Default to false, assuming this is a boolean
+    mapBasemap: 'carto-light', // Default Maplibre basemap
     profile: { // Example of additional user properties
       username: '', // Default to an empty string
       email: '', // Default to an empty string

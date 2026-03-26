@@ -28,6 +28,7 @@ export default defineConfig(({ command }) => {
     resolve,
     base: "",
     build: {
+      target: 'es2022',
       rollupOptions: {
         input: {
           index: path.resolve(__dirname, "./public/index.html"),

@@ -8,7 +8,9 @@
         @click="handleClick($event, setting.id + '-main')"
       >
         <!-- Dynamically render the component based on the setting -->
-        <component v-if="shouldShow(setting)" :is="setting.component"></component>
+        <div v-if="shouldShow(setting)" :data-setting-id="setting.id" class="settings-component-wrapper">
+          <component :is="setting.component"></component>
+        </div>
       </div>
     </div>
     <div v-else class="settings-views">
@@ -39,6 +41,7 @@ import SharesSettings from "@/views/settings/Shares.vue";
 import UserManagement from "@/views/settings/Users.vue";
 import UserSettings from "@/views/settings/User.vue";
 import ApiKeys from "@/views/settings/Api.vue";
+// import UsageSettings from "@/views/settings/Usage.vue";
 import DebugSettings from "@/views/settings/Debug.vue";
 
 export default {
@@ -50,6 +53,7 @@ export default {
     ProfileSettings,
     SharesSettings,
     ApiKeys,
+    // UsageSettings,
     DebugSettings,
   },
   data() {
@@ -74,11 +78,42 @@ export default {
       return getters.currentHash();
     },
   },
+  watch: {
+    // Watch for hash changes (e.g., when clicking sidebar items while already on settings page)
+    "$route.hash"(newHash) {
+      if (newHash) {
+        this.checkHash(newHash);
+      }
+    },
+    // Watch for internal state changes to trigger scrolling
+    "state.activeSettingsView"(newView) {
+      if (newView) {
+        this.$nextTick(() => {
+          const el = document.getElementById(newView);
+          if (el) {
+            // Scroll with an offset for the header if necessary, but block: "start" is standard
+            el.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        });
+      }
+    },
+  },
   mounted() {
     mutations.closeHovers();
     mutations.setSearch(false);
+    // Handle initial hash on page load
+    if (this.$route.hash) {
+      this.checkHash(this.$route.hash);
+    }
   },
   methods: {
+    checkHash(hash) {
+      const view = hash.substring(1);
+      // Verify the view exists in our settings allowed list (optional but safer)
+      if (this.settings.some(s => s.id + '-main' === view)) {
+        this.setView(view);
+      }
+    },
     shouldShow(setting) {
       if (!state.user) return false;
       const permObj = state.user.permissions || state.user.perm || {};

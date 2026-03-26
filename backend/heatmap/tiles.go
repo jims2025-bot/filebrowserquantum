@@ -46,12 +46,26 @@ func lat2tile(y float64, z int, n float64) float64 {
 	return latRad * 180.0 / math.Pi
 }
 
-// ClusterInBounds checks if a cluster falls within tile bounds
+// ClusterInBounds checks if a cluster's center point falls within tile bounds
 func ClusterInBounds(cluster *Cluster, bounds TileBounds) bool {
 	return cluster.Lat >= bounds.MinLat &&
 		cluster.Lat <= bounds.MaxLat &&
 		cluster.Lon >= bounds.MinLon &&
 		cluster.Lon <= bounds.MaxLon
+}
+
+// ClusterOverlapsBounds checks if any part of a cluster's geographic extent overlaps the bounds.
+func ClusterOverlapsBounds(cluster *Cluster, bounds TileBounds) bool {
+	// If cluster has no bounds (point-cluster), fallback to center check
+	if cluster.Min[0] == 0 && cluster.Max[0] == 0 {
+		return ClusterInBounds(cluster, bounds)
+	}
+
+	// Range A overlaps Range B if (A.min <= B.max) && (A.max >= B.min)
+	overlapLat := (cluster.Min[0] <= bounds.MaxLat) && (cluster.Max[0] >= bounds.MinLat)
+	overlapLon := (cluster.Min[1] <= bounds.MaxLon) && (cluster.Max[1] >= bounds.MinLon)
+
+	return overlapLat && overlapLon
 }
 
 // FilterClustersByBounds returns only clusters within the tile bounds

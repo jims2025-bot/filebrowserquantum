@@ -5,8 +5,27 @@
     </div>
 
     <div class="card-content" style="max-height: 500px; overflow-y: auto;">
+      <div class="release" style="margin-bottom: 1.5em; padding-bottom: 1em; border-bottom: 2px solid var(--primaryColor);">
+        <h3 style="color: var(--primaryColor); margin-top: 0;">Version 5.1.1</h3>
+        <span class="date" style="color: var(--textSecondary); font-size: 0.9em;">March 2026</span>
+        <ul style="padding-left: 1.25em; margin-top: 0.5em;">
+          <li style="margin-bottom: 0.5em;"><span class="badge update">Update</span> <strong>Map Interactivity:</strong> GeoJSON and PMTiles overlays are now interactive. Click points, lines, or polygons to see detailed property popups.</li>
+          <li style="margin-bottom: 0.5em;"><span class="badge update">Update</span> <strong>Heatmap Inspection:</strong> Resolved navigation loops during cluster drill-downs. Sub-folders are now correctly expanded into the inspection grid.</li>
+          <li style="margin-bottom: 0.5em;"><span class="badge new">New</span> <strong>Premium Map Popups:</strong> Redesigned detail popups with a modern, high-contrast theme compatible with both local and external map services.</li>
+          <li style="margin-bottom: 0.5em;"><span class="badge fix">Fix</span> <strong>Inspection Thumbnails:</strong> Restored missing thumbnails for consolidated folders within the heatmap inspection panel.</li>
+        </ul>
+      </div>
+
+      <div class="release" style="margin-bottom: 1.5em; padding-bottom: 1em; border-bottom: 1px solid var(--surfaceSecondary);">
+        <h3 style="color: var(--primaryColor); margin-top: 0;">Version 5.1.0</h3>
+        <span class="date" style="color: var(--textSecondary); font-size: 0.9em;">March 2026</span>
+        <ul style="padding-left: 1.25em; margin-top: 0.5em;">
+          <li style="margin-bottom: 0.5em;"><span class="badge fix">Security</span> <strong>Scope Enforcement:</strong> Fixed a critical regression where scoped users could gain access to the source root in Linux/Docker environments.</li>
+        </ul>
+      </div>
+
       <div class="release">
-        <h3 style="color: var(--primaryColor); margin-top: 0;">Version 5.0.9</h3>
+        <h3 style="color: var(--textPrimary); margin-top: 0;">Version 5.0.9</h3>
         <span class="date" style="color: var(--textSecondary); font-size: 0.9em;">March 2026</span>
         <ul style="padding-left: 1.25em; margin-top: 0.5em;">
           <li style="margin-bottom: 0.5em;"><span class="badge new">New</span> <strong>System Debug Page:</strong> Added a comprehensive Debug configuration page for administrators.</li>

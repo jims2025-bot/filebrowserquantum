@@ -91,7 +91,9 @@ func ResolveScopePath(user *users.User, source string, path string) (string, str
 	// 5. Handle Absolute Paths vs Root-Relative paths
 	// If path starts with / and we're Admin, or if it explicitly includes the scope,
 	// we avoid re-joining to prevent duplication.
-	isExplicitAbsolute := filepath.IsAbs(cleanPath) || (user.Permissions.Admin && strings.HasPrefix(cleanPath, "/"))
+	// SECURITY FIX: Restricted absolute path resolution to Administrators. 
+	// In Linux, filepath.IsAbs("/") is true, which was allowing scoped users to reach the root.
+	isExplicitAbsolute := user.Permissions.Admin && (filepath.IsAbs(cleanPath) || strings.HasPrefix(cleanPath, "/"))
 
 	cleanScope := filepath.ToSlash(filepath.Clean(userScope))
 	if cleanScope == "" || cleanScope == "." {
