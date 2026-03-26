@@ -11,6 +11,69 @@ import (
 	"github.com/jims2025-bot/filebrowserquantum/backend/indexing"
 )
 
+// GetBestScope finds the most appropriate scope for a user given a source and a requested path.
+// It prioritizes scopes that are prefixes of the path.
+func GetBestScope(user *users.User, source string, path string) (string, string, error) {
+	cleanPath := filepath.ToSlash(filepath.Clean(path))
+	normPath := strings.ToLower(cleanPath)
+
+	// 1. Resolve 'realSource' first
+	_, realSource, err := settings.GetScopeFromSourceString(user.Scopes, source)
+	if err != nil {
+		// Fallback: If the user doesn't have the explicit source, use the first available scope as a hint.
+		if len(user.Scopes) > 0 {
+			realSource = user.Scopes[0].Name
+		} else {
+			return "", "", err
+		}
+	}
+
+	idxSource := indexing.GetIndex(realSource)
+	sourceDiskPath := ""
+	if idxSource != nil {
+		sourceDiskPath = idxSource.Source.Path
+	}
+
+	bestScope := ""
+	firstMatch := ""
+
+	// 2. Iterate all user scopes to find the longest matching prefix
+	for _, s := range user.Scopes {
+		// Is this scope for our target source? (Match by Name, Alias, or physical Path)
+		matchesSource := (s.Name == realSource || s.Alias == source || (sourceDiskPath != "" && strings.EqualFold(s.Name, sourceDiskPath)))
+		if !matchesSource {
+			continue
+		}
+
+		candScope := filepath.ToSlash(filepath.Clean(s.Scope))
+		if candScope == "" || candScope == "." {
+			candScope = "/"
+		}
+
+		if firstMatch == "" {
+			firstMatch = candScope
+		}
+
+		// Check if the path ALREADY starts with this scope (case-insensitive)
+		normCand := strings.ToLower(candScope)
+		if normCand == "/" || strings.HasPrefix(normPath, normCand+"/") || normPath == normCand {
+			// Longest match wins
+			if len(candScope) > len(bestScope) {
+				bestScope = candScope
+			}
+		}
+	}
+
+	if bestScope != "" {
+		return bestScope, realSource, nil
+	}
+	if firstMatch != "" {
+		return firstMatch, realSource, nil
+	}
+
+	return "", "", err
+}
+
 func ResolveScopePath(user *users.User, source string, path string) (string, string, error) {
 	// 1. Double/Triple decode source name (e.g. PHOTOS%253A1 -> PHOTOS:1)
 	for i := 0; i < 3; i++ {
@@ -25,6 +88,7 @@ func ResolveScopePath(user *users.User, source string, path string) (string, str
 	// Only enter this block if the source isn't explicitly a physical source or alias in the config.
 	_, _, errKnown := settings.GetScopeFromSourceString(user.Scopes, source)
 	if settings.IsVirtualSource(source) && errKnown != nil {
+		// ... (virtual source logic remains same)
 		// A. Try resolving via source name prefix (e.g. /PHOTOS/folder)
 		if realSrc, relPath, found := settings.GetSourceFromPath(path); found {
 			source = realSrc
@@ -60,21 +124,8 @@ func ResolveScopePath(user *users.User, source string, path string) (string, str
 		source = settings.Config.Server.DefaultSource.Name
 	}
 
-	userScope, realSource, err := settings.GetScopeFromSourceString(user.Scopes, source)
+	userScope, realSource, err := GetBestScope(user, source, path)
 	if err != nil {
-		// Fallback: If the user doesn't have the default source, use the first available scope.
-		if len(user.Scopes) > 0 {
-			firstScope := user.Scopes[0]
-			if firstScope.Alias != "" {
-				return ResolveScopePath(user, firstScope.Alias, path)
-			}
-			for name, src := range settings.Config.Server.NameToSource {
-				if src.Path == firstScope.Name {
-					return ResolveScopePath(user, name, path)
-				}
-			}
-			return firstScope.Scope, firstScope.Name, nil
-		}
 		return "", "", err
 	}
 

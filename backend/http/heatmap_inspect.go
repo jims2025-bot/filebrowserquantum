@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"github.com/gtsteffaniak/go-logger/logger"
-	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
 	"github.com/jims2025-bot/filebrowserquantum/backend/heatmap"
 )
 
@@ -77,7 +76,7 @@ func handleInspect(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 			scopePath = filepath.ToSlash(scopePath)
 		}
 
-		userscope, _, _ = settings.GetScopeFromSourceString(d.user.Scopes, source)
+		userscope, _, _ = GetBestScope(d.user, source, path)
 	} else {
 		// Global view
 		realSource = ""
