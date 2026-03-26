@@ -121,7 +121,7 @@ func rawFileHandler(w http.ResponseWriter, r *http.Request, file iteminfo.Extend
 	realPath, _, _ := idx.GetRealPath(file.Path)
 	fd, err := os.Open(realPath)
 	if err != nil {
-		return errToStatus(err), err
+		return http.StatusInternalServerError, err
 	}
 	defer fd.Close()
 

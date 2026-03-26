@@ -125,7 +125,9 @@ export default {
         routePath == "/";
       // lets redirect if multiple sources and user went to /files/
       if (state.serverHasMultipleSources && rootRoute) {
-        router.push(`${routePath}/${state.sources.current}`);
+        const currentSourceInfo = state.sources.info[state.sources.current];
+        const path = currentSourceInfo ? currentSourceInfo.pathPrefix : state.sources.current;
+        router.push(`${routePath}/${path}`);
         return;
       }
       this.lastHash = "";

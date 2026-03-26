@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/gtsteffaniak/go-logger/logger"
+	"github.com/jims2025-bot/filebrowserquantum/backend/common/settings"
 	"github.com/jims2025-bot/filebrowserquantum/backend/heatmap"
 )
 
@@ -76,7 +77,7 @@ func handleInspect(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 			scopePath = filepath.ToSlash(scopePath)
 		}
 
-		userscope, _, _ = GetBestScope(d.user, source, path)
+		userscope, _, _ = settings.GetScopeFromSourceString(d.user.Scopes, source)
 	} else {
 		// Global view
 		realSource = ""
@@ -284,10 +285,7 @@ func handleInspect(w http.ResponseWriter, r *http.Request, d *requestContext) (i
 					})
 				}
 			}
-
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(matchPoints)
-			return http.StatusOK, nil
+			goto finishMatchPoints
 		}
 
 		// If failed, continue to standard logic? Or 404?
@@ -762,6 +760,15 @@ finishMatchPoints:
 	finalPoints := make([]heatmap.ClusterPoint, len(matchPoints))
 	for i, p := range matchPoints {
 		newP := p
+		
+		// Fix for Multi-Scope Path Resolution:
+		// If the original request used a scoped source name (e.g. PHOTOS:1), 
+		// we must return that same source name so subsequent API calls (like /preview) 
+		// resolve the relative path against the correct scope.
+		if source != "" && newP.Source == realSource {
+			newP.Source = source
+		}
+
 		originalPath := p.Path
 
 		// Apply trimming if needed

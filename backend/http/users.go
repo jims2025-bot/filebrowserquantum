@@ -212,7 +212,7 @@ func userPutHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (
 		return http.StatusBadRequest, err
 	}
 	// Debug logging for user update
-	logger.Debugf("userPutHandler: Updating user %d. Received %d scopes.", req.Data.ID, len(req.Data.Scopes))
+	logger.Debugf("userPutHandler: Updating user %d. Received %d scopes. DefaultSource: '%s'", req.Data.ID, len(req.Data.Scopes), req.Data.DefaultSource)
 	for i, s := range req.Data.Scopes {
 		logger.Debugf("  Scope[%d]: Name='%s', Scope='%s', Alias='%s'", i, s.Name, s.Scope, s.Alias)
 	}

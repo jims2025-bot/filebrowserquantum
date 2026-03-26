@@ -111,6 +111,7 @@ type NonAdminEditable struct {
 	SavedLocations       []SavedLocation `json:"savedLocations"`
 	PinnedLocation       *SavedLocation  `json:"pinnedLocation"`
 	MapBasemap           string          `json:"mapBasemap"`           // selected maplibre basemap
+	DefaultSource        string          `json:"defaultSource"`        // persisted default source/scope
 }
 
 var PublicUser = User{

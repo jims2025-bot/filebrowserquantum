@@ -128,9 +128,9 @@ export const mutations = {
     // Ideally currentSource matches one of the unique display names we generate below.
     const rawCurrentSource = user.scopes.length > 0 ? user.scopes[0].name : "";
 
-    let sources = { info: {}, current: rawCurrentSource, count: user.scopes.length };
-
+    let sources = { info: {}, current: "", count: user.scopes.length };
     const nameCounts = {};
+    let firstDisplayName = "";
 
     // We iterate with index to creating binding to specific scope index
     user.scopes.forEach((source, index) => {
@@ -147,20 +147,32 @@ export const mutations = {
         }
       }
 
-      // If this is the very first one, update 'current' to use the display name
+      const pathPrefix = sources.count == 1 ? "" : `${source.name}:${index}`;
+
+      // If this is the very first one, record it as fallback
       if (index === 0) {
+        firstDisplayName = displayName;
+      }
+
+      // Check if this matches the persisted default source
+      if (user.defaultSource === pathPrefix || user.defaultSource === displayName) {
         sources.current = displayName;
       }
 
       sources.info[displayName] = {
         // "Name:Index" format
-        pathPrefix: sources.count == 1 ? "" : `${source.name}:${index}`,
+        pathPrefix: pathPrefix,
         used: 0,
         total: 0,
         usedPercentage: 0,
         realName: source.name
       };
     });
+
+    // Fallback to first if no match found
+    if (!sources.current && firstDisplayName) {
+      sources.current = firstDisplayName;
+    }
 
     state.sources = sources;
     emitStateChanged();
@@ -370,7 +382,7 @@ export const mutations = {
     const previousUser = { ...state.user };
 
     // Merge the new values into the current user state
-    state.user = { ...state.user, ...value };
+    Object.assign(state.user, value);
 
     // Handle locale change
     if (state.user.locale !== previousUser.locale) {
@@ -500,7 +512,7 @@ export const mutations = {
     }
 
     // Update users if there's any change in state.user
-    if (JSON.stringify(state.user) !== JSON.stringify(previousUser)) {
+    if (true) {
       usersApi.update(state.user, [
         "locale",
         "dateFormat",
@@ -514,7 +526,8 @@ export const mutations = {
         "sorting",
         "gallerySize",
         "viewMode",
-        "pinnedLocation"
+        "pinnedLocation",
+        "defaultSource"
       ]);
     }
 

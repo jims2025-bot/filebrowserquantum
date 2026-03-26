@@ -172,10 +172,25 @@ func getTileHandler(w http.ResponseWriter, r *http.Request, d *requestContext) (
 		// - Zoom < 15: Uses Badges (Points not needed)
 		// - Zoom >= 15: Uses Fans (Points REQUIRED)
 
-		if z < 15 {
+		if z >= 15 && len(c.Points) > 0 {
+			// Deep copy points to avoid mutating the cache
+			newPoints := make([]heatmap.ClusterPoint, len(c.Points))
+			copy(newPoints, c.Points)
+			for j := range newPoints {
+				if newPoints[j].Source == realSource && source != "" {
+					newPoints[j].Source = source
+				}
+			}
+			responseClusters[i].Points = newPoints
+		} else if z < 15 {
 			responseClusters[i].Points = nil
 		}
 		// If z >= 15, we keep points (passed through from SimplifyClustersByZoom)
+
+		// Fix for Multi-Scope Path Resolution:
+		if source != "" && responseClusters[i].Source == realSource {
+			responseClusters[i].Source = source
+		}
 	}
 
 	logger.Debug(fmt.Sprintf("Tiles: Returning %d clusters for tile %d/%d/%d", len(responseClusters), z, x, y))

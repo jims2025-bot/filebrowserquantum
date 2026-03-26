@@ -105,33 +105,25 @@ func (idx *Index) RemoveDirectory(path string) {
 func GetIndex(name string) *Index {
 	indexesMutex.Lock()
 	defer indexesMutex.Unlock()
-
-	// 1. Direct match in indices map (fast path)
-	if index, ok := indexes[name]; ok {
-		return index
-	}
-
-	// 2. Virtual sources
-	if settings.IsVirtualSource(name) {
-		return nil
-	}
-
-	// 3. Try lookup via settings NameToSource (robust to name mismatches)
-	if src, ok := settings.Config.Server.NameToSource[name]; ok {
-		if idx, ok := indexes[src.Name]; ok {
-			return idx
+	index, ok := indexes[name]
+	if !ok {
+		// Silent return for virtual "ALL" or "ALL_SOURCES" source used in global map views
+		if settings.IsVirtualSource(name) {
+			return nil
 		}
-	}
-
-	// 4. Try lookup via settings SourceMap (resolves indices by their physical path)
-	if src, ok := settings.Config.Server.SourceMap[name]; ok {
-		if idx, ok := indexes[src.Name]; ok {
-			return idx
+		// try path if name fails
+		// todo: update everywhere else so this isn't needed.
+		source, ok := settings.Config.Server.SourceMap[name]
+		if !ok {
+			logger.Errorf("index %s not found", name)
 		}
-	}
+		index, ok = indexes[source.Name]
+		if !ok {
+			logger.Errorf("index %s not found", name)
+		}
 
-	logger.Errorf("index %s not found (tried direct, name, and path)", name)
-	return nil
+	}
+	return index
 }
 
 func GetIndexInfo(sourceName string) (ReducedIndex, error) {

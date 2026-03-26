@@ -42,7 +42,7 @@ server:
   internalUrl: ""
   cacheDir: tmp
   maxArchiveSize: 50
-  siteTesting: true
+  siteTesting: false
   siteTestingMessage: Site is down for maintenance
   siteTestingBackground: ""
   virtualSources: []

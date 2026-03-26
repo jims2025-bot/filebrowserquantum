@@ -44,11 +44,9 @@ export const getters = {
       return false;
     }
     if (state.user.locale == undefined || state.user.locale == null) {
-      let savedLocale = localStorage.getItem("userLocale");
-      if (!savedLocale) {
-        savedLocale = i18n.detectLocale();
-      }
-      mutations.updateCurrentUser({ locale: savedLocale });
+      // Don't trigger a PUT from a getter! 
+      // Just return false for now, or rely on state initialization
+      return false
     }
     if (noAuth) {
       return true

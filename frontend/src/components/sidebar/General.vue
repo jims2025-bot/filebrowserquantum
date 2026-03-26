@@ -91,7 +91,7 @@
           :key="name"
           class="action source-button"
           :class="{ active: activeSource == name }"
-          @click="navigateTo('/files/' + info.pathPrefix)"
+          @click="changeSource(name, info.pathPrefix)"
           :aria-label="$t('sidebar.myFiles')"
 
         >
@@ -188,6 +188,7 @@ import ProgressBar from "@/components/ProgressBar.vue";
 import { state, getters, mutations } from "@/store"; // Import your custom store
 import { getHumanReadableFilesize } from "@/utils/filesizes.js";
 import { fromNow } from "@/utils/moment";
+import { notify } from "@/notify";
 
 export default {
   name: "SidebarGeneral",
@@ -290,6 +291,11 @@ export default {
     },
     toggleSticky() {
       mutations.updateCurrentUser({ stickySidebar: !state.user.stickySidebar });
+    },
+    changeSource(name, pathPrefix) {
+      notify.showSuccess("Default scope saved");
+      mutations.updateCurrentUser({ defaultSource: pathPrefix || name });
+      this.navigateTo("/files/" + pathPrefix);
     },
     navigateTo(path) {
       this.sourceInfoTooltip = ""; // Reset tooltip when navigating
