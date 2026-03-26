@@ -117,7 +117,10 @@ func Initialize(source settings.Source, mock bool) {
 
 // Define a function to recursively index files and directories
 func (idx *Index) indexDirectory(adjustedPath string, quick, recursive bool) error {
-	realPath := filepath.Clean(strings.TrimRight(idx.Source.Path, "/") + adjustedPath)
+	realPath, _, err := idx.GetRealPath(adjustedPath)
+	if err != nil {
+		return err
+	}
 	// Open the directory
 	dir, err := os.Open(realPath)
 	if err != nil {
@@ -312,8 +315,26 @@ func (idx *Index) recursiveUpdateDirSizes(childInfo *iteminfo.FileInfo, previous
 }
 
 func (idx *Index) GetRealPath(relativePath ...string) (string, bool, error) {
+	joined := filepath.Join(relativePath...)
+	
+	// If the path is already absolute and starts with the source path,
+	// we avoid prepending the source path again to prevent double-joining.
+	if len(joined) > 0 && (filepath.IsAbs(joined) || strings.HasPrefix(joined, "/")) {
+		normJoined := filepath.ToSlash(filepath.Clean(joined))
+		normRoot := filepath.ToSlash(filepath.Clean(idx.Source.Path))
+		
+		// Case-insensitive check for Windows robustness, but also handles Linux absolute paths correctly
+		if strings.HasPrefix(strings.ToLower(normJoined), strings.ToLower(normRoot)+"/") || strings.EqualFold(normJoined, normRoot) {
+			return idx.resolveAndCacheRealPath(normJoined)
+		}
+	}
+
 	combined := append([]string{idx.Source.Path}, relativePath...)
 	joinedPath := filepath.Join(combined...)
+	return idx.resolveAndCacheRealPath(joinedPath)
+}
+
+func (idx *Index) resolveAndCacheRealPath(joinedPath string) (string, bool, error) {
 	isDir, _ := RealPathCache.Get(joinedPath + ":isdir").(bool)
 	cached, ok := RealPathCache.Get(joinedPath).(string)
 	if ok && cached != "" {
@@ -328,15 +349,11 @@ func (idx *Index) GetRealPath(relativePath ...string) (string, bool, error) {
 	realPath, err := filepath.EvalSymlinks(absolutePath)
 	if err != nil {
 		// If file doesn't exist (e.g. invalid scope), EvalSymlinks fails.
-		// Fallback to absolutePath so we can at least log the attempted path later.
-		// Returning error here causes 500 in rawHandler immediately.
-		// We prefer to return the path and let GetReducedMetadata return "not found" (404-like).
 		return absolutePath, false, nil
 	}
 
 	// Check if directory
 	info, err := os.Stat(realPath)
-	// isDir is already declared at line 258
 	if err == nil {
 		isDir = iteminfo.IsDirectory(info)
 	}
