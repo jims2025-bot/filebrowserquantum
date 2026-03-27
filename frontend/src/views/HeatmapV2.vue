@@ -163,6 +163,11 @@
                    <i class="material-icons" style="font-size: 20px; color: #81c784;">public</i>
                    <span style="font-weight: bold;">External</span>
               </div>
+              <div @click="activeTab = 'draw'" title="Drawing Tools"
+                   :style="{ borderBottom: activeTab === 'draw' ? '3px solid #ef5350' : '3px solid transparent', opacity: activeTab === 'draw' ? 1 : 0.6, flex: 1, textAlign:'center', padding:'8px', cursor:'pointer', color:'white', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', fontSize: '12px' }">
+                   <i class="material-icons" style="font-size: 20px; color: #ef5350;">edit</i>
+                   <span style="font-weight: bold;">Draw</span>
+              </div>
           </div>
           
           <!-- Overlays View -->
@@ -249,7 +254,7 @@
                    No external maps configured.
                </div>
 
-               <!-- Dynamic Time Slider (Dual Range) -->
+               <!-- Consolidated Temporal Range Slider -->
                <div v-if="activeExternalMapTimeSlider.visible" 
                     id="ext-range-slider"
                     style="margin-top:20px; padding:15px; background:rgba(255,255,255,0.05); border-radius:8px; border:1px solid #444;">
@@ -258,32 +263,87 @@
                        <i class="material-icons" style="font-size:16px;">date_range</i>
                    </div>
                    
-                   <div style="display:flex; gap:10px; align-items:center;">
-                       <div style="flex:1;">
-                           <div style="font-size:10px; color:#aaa; margin-bottom:4px; text-align:center;">From: <b style="color:#eee;">{{ activeExternalMapTimeSlider.lowDisplay }}</b></div>
-                           <input type="range" 
-                                  style="width:100%; height:4px; border-radius:2px; accent-color:#81c784; cursor:pointer;"
-                                  :min="activeExternalMapTimeSlider.min" 
-                                  :max="activeExternalMapTimeSlider.high" 
-                                  step="86400000"
-                                  v-model.number="activeExternalMapTimeSlider.low">
-                       </div>
-                       <div style="flex:1;">
-                           <div style="font-size:10px; color:#aaa; margin-bottom:4px; text-align:center;">To: <b style="color:#eee;">{{ activeExternalMapTimeSlider.highDisplay }}</b></div>
-                           <input type="range" 
-                                  style="width:100%; height:4px; border-radius:2px; accent-color:#81c784; cursor:pointer;"
-                                  :min="activeExternalMapTimeSlider.low" 
-                                  :max="activeExternalMapTimeSlider.max" 
-                                  step="86400000"
-                                  v-model.number="activeExternalMapTimeSlider.high">
-                       </div>
+                   <div class="range-slider-display" style="display:flex; justify-content:space-between; font-size:11px; margin-bottom:8px;">
+                       <span>From: <b style="color:#eee;">{{ activeExternalMapTimeSlider.lowDisplay }}</b></span>
+                       <span>To: <b style="color:#eee;">{{ activeExternalMapTimeSlider.highDisplay }}</b></span>
                    </div>
 
-                   <div style="margin-top:10px; text-align:center; font-size:10px; opacity:0.6;">
-                       Adjust sliders to filter features by date
+                   <div class="range-slider-wrapper">
+                       <div class="range-slider-track"></div>
+                       <div class="range-slider-highlight" :style="timeRangeStyle"></div>
+                       <input type="range" 
+                              class="range-handle"
+                              :min="activeExternalMapTimeSlider.min" 
+                              :max="activeExternalMapTimeSlider.max" 
+                              step="86400000"
+                              v-model.number="activeExternalMapTimeSlider.low">
+                       <input type="range" 
+                              class="range-handle"
+                              :min="activeExternalMapTimeSlider.min" 
+                              :max="activeExternalMapTimeSlider.max" 
+                              step="86400000"
+                              v-model.number="activeExternalMapTimeSlider.high">
+                   </div>
+
+                   <div style="margin-top:15px; text-align:center; font-size:10px; opacity:0.6;">
+                       Use either handle to adjust the visible date range
                    </div>
                </div>
            </div>
+
+           <!-- Drawing View -->
+           <div v-else-if="activeTab === 'draw'" class="overlay-section" style="padding:15px; display:flex; flex-direction:column; gap:20px;">
+                <div style="font-size:14px; font-weight:bold; color:#ef5350; border-bottom:1px solid #444; padding-bottom:8px; display:flex; align-items:center; gap:8px;">
+                    <i class="material-icons" style="font-size:18px;">brush</i>
+                    Annotate Map
+                </div>
+
+                <div class="tool-group">
+                    <div style="font-size:11px; opacity:0.7; margin-bottom:8px; text-transform:uppercase; letter-spacing:1px;">1. Select Tool</div>
+                    <div style="display:flex; gap:10px;">
+                        <button @click="activeDrawTool = (activeDrawTool === 'point' ? null : 'point')" 
+                                :style="{ background: activeDrawTool === 'point' ? '#ef5350' : '#444' }"
+                                style="flex:1; padding:10px; border-radius:8px; border:none; color:white; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:5px; transition:0.2s;">
+                            <i class="material-icons" style="font-size:20px;">place</i>
+                            <span style="font-size:11px;">Point</span>
+                        </button>
+                        <button @click="activeDrawTool = (activeDrawTool === 'arrow' ? null : 'arrow')"
+                                :style="{ background: activeDrawTool === 'arrow' ? '#ef5350' : '#444' }"
+                                style="flex:1; padding:10px; border-radius:8px; border:none; color:white; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:5px; transition:0.2s;">
+                            <i class="material-icons" style="font-size:20px;">trending_flat</i>
+                            <span style="font-size:11px;">Arrow</span>
+                        </button>
+                    </div>
+                    <div v-if="activeDrawTool" style="margin-top:10px; font-size:11px; color:#ef5350; text-align:center; min-height:14px;">
+                        {{ activeDrawTool === 'point' ? 'Click on map to place a point' : (lastDrawCoords ? 'Click destination for arrow' : 'Click start of arrow') }}
+                    </div>
+                </div>
+
+                <div class="tool-group">
+                    <div style="font-size:11px; opacity:0.7; margin-bottom:8px; text-transform:uppercase; letter-spacing:1px;">2. Label (Optional)</div>
+                    <input v-model="drawLabel" placeholder="Type label text..." 
+                           style="width:100%; background:#333; border:1px solid #555; border-radius:4px; padding:10px; color:white; font-size:13px; box-sizing:border-box;">
+                </div>
+
+                <div class="tool-group">
+                    <div style="font-size:11px; opacity:0.7; margin-bottom:8px; text-transform:uppercase; letter-spacing:1px;">3. Color Choice</div>
+                    <div style="display:flex; justify-content:space-between; gap:5px;">
+                        <div v-for="c in ['#ef5350', '#42a5f5', '#66bb6a', '#ffca28', '#ffffff', '#000000']" 
+                             :key="c" @click="drawColor = c"
+                             :style="{ background: c, border: drawColor === c ? '2px solid white' : '2px solid transparent' }"
+                             style="width:28px; height:28px; border-radius:50%; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.3); box-sizing:border-box;">
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-top:auto; padding-top:20px;">
+                    <button @click="clearDrawings" 
+                            style="width:100%; padding:10px; background:rgba(255,255,255,0.05); border:1px solid #555; border-radius:4px; color:white; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;">
+                        <i class="material-icons" style="font-size:18px;">delete_sweep</i>
+                        Clear All Drawings
+                    </button>
+                </div>
+            </div>
 
           <!-- Inspection View (Existing Content wrapped) -->
           <div v-else-if="activeTab === 'inspection'">
@@ -517,6 +577,16 @@ const isBoxSelectMode = ref(false); // Box Selection Mode State
 const selectionBox = ref({ visible: false, startX: 0, startY: 0, currentX: 0, currentY: 0, style: {} });
 const itemsPerPage = 50;
 const displayedCount = ref(itemsPerPage);
+
+// Drawing State
+const activeDrawTool = ref(null); // 'point', 'arrow'
+const drawColor = ref('#ef5350');
+const drawLabel = ref('');
+const drawnFeatures = ref({
+    type: 'FeatureCollection',
+    features: []
+});
+let lastDrawCoords = null;
 const leaderLine = ref({ visible: false, x1: 0, y1: 0, x2: 0, y2: 0, targetLat: null, targetLon: null, startEl: null, svgWidth: 0, svgHeight: 0 });
 const leaderLineSvg = ref(null);
 
@@ -669,6 +739,101 @@ class BasemapControl {
     }
 }
 
+class PrintControl {
+    onAdd(map) {
+        this._map = map;
+        this.container = document.createElement('div');
+        this.container.className = 'maplibregl-ctrl maplibregl-ctrl-group';
+
+        const btn = document.createElement('button');
+        btn.className = 'maplibregl-ctrl-icon';
+        btn.type = 'button';
+        btn.title = 'Print Map';
+        btn.style.display = 'flex';
+        btn.style.alignItems = 'center';
+        btn.style.justifyContent = 'center';
+        btn.innerHTML = '<span class="material-icons" style="font-size: 18px;">print</span>';
+        
+        btn.onclick = (e) => {
+            e.stopPropagation();
+            this.printMap();
+        };
+
+        this.container.appendChild(btn);
+        return this.container;
+    }
+
+    printMap() {
+        // Ask for a custom title
+        const customTitle = window.prompt("Enter a title for this map print:", document.title || 'Map Export');
+        if (customTitle === null) return; // User cancelled
+
+        // Force a render frame
+        this._map.triggerRepaint();
+        
+        requestAnimationFrame(() => {
+            const canvas = this._map.getCanvas();
+            const dataUrl = canvas.toDataURL('image/png');
+            
+            const printWindow = window.open('', '_blank');
+            if (!printWindow) {
+                alert("Popup blocked! Please allow popups for printing.");
+                return;
+            }
+
+            const date = new Date().toLocaleString();
+
+            printWindow.document.write(`
+                <html>
+                    <head>
+                        <title>${customTitle}</title>
+                        <style>
+                            body { margin: 0; padding: 20px; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; background: #fff; }
+                            .map-image { max-width: 100%; height: auto; box-shadow: 0 0 10px rgba(0,0,0,0.1); border: 1px solid #ccc; }
+                            .header { width: 100%; display: flex; justify-content: space-between; margin-bottom: 20px; border-bottom: 2px solid #333; padding-bottom: 10px; }
+                            h1 { font-size: 24px; margin: 0; }
+                            .info { font-size: 12px; color: #666; text-align: right; }
+                            @media print {
+                                body { padding: 0; }
+                                .map-image { border: none; box-shadow: none; border-radius: 0; }
+                                .header { border-bottom-color: #000; }
+                            }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="header">
+                            <h1>${customTitle}</h1>
+                            <div class="info">
+                                Printed on: ${date}
+                            </div>
+                        </div>
+                        <img src="${dataUrl}" class="map-image" id="mapImage" />
+                        <script>
+                            const img = document.getElementById('mapImage');
+                            img.onload = () => {
+                                setTimeout(() => {
+                                    window.print();
+                                }, 300);
+                            };
+                            // Fallback if onload doesn't fire
+                            setTimeout(() => {
+                                if (img.complete) return;
+                                window.print();
+                            }, 5000);
+                        <\/script>
+                    </body>
+                </html>
+            `);
+            printWindow.document.close();
+        });
+    }
+
+    onRemove() {
+        this.container.parentNode.removeChild(this.container);
+        this._map = undefined;
+    }
+}
+
 const displayedItems = computed(() => {
     // If viewing a folder, show its items
     if (currentInspectionFolder.value && currentInspectionFolder.value.items) {
@@ -753,6 +918,23 @@ const groupedDisplayedItems = computed(() => {
     });
 });
 
+// Computed style for the temporal range slider track
+const timeRangeStyle = computed(() => {
+    const s = activeExternalMapTimeSlider.value;
+    if (!s.visible || s.max === s.min) return { left: '0%', width: '100%' };
+    
+    const leftValue = ((s.low - s.min) / (s.max - s.min)) * 100;
+    const rightValue = ((s.high - s.min) / (s.max - s.min)) * 100;
+    
+    const left = Math.min(leftValue, rightValue);
+    const width = Math.abs(rightValue - leftValue);
+    
+    return {
+        left: left + '%',
+        width: width + '%'
+    };
+});
+
 // Dynamic Leader Line Logic
 const updateVisibleMarkers = () => {
     // Placeholder to prevent ReferenceError. 
@@ -816,6 +998,76 @@ const clearLeaderLine = () => {
     leaderLine.value.startEl = null;
     leaderLine.value.targetLat = null;
     leaderLine.value.targetLon = null;
+};
+
+// Drawing Helpers
+const updateDrawSource = () => {
+    if (map && map.getSource('draw-source')) {
+        map.getSource('draw-source').setData(drawnFeatures.value);
+    }
+};
+
+const clearDrawings = () => {
+    drawnFeatures.value.features = [];
+    lastDrawCoords = null;
+    updateDrawSource();
+};
+
+const handleDrawClick = (e) => {
+    const coords = [e.lngLat.lng, e.lngLat.lat];
+    
+    if (activeDrawTool.value === 'point') {
+        const feature = {
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: coords },
+            properties: {
+                color: drawColor.value,
+                label: drawLabel.value || ''
+            }
+        };
+        drawnFeatures.value.features.push(feature);
+        drawLabel.value = ''; // Reset label after use
+        updateDrawSource();
+    } 
+    else if (activeDrawTool.value === 'arrow') {
+        if (!lastDrawCoords) {
+            lastDrawCoords = coords;
+            notify.showSuccess("Start point set. Click destination.");
+        } else {
+            // Calculate Bearing for headache
+            const start = lastDrawCoords;
+            const end = coords;
+            
+            // Approximate bearing
+            const y = Math.sin((end[0] - start[0]) * Math.PI / 180) * Math.cos(end[1] * Math.PI / 180);
+            const x = Math.cos(start[1] * Math.PI / 180) * Math.sin(end[1] * Math.PI / 180) -
+                      Math.sin(start[1] * Math.PI / 180) * Math.cos(end[1] * Math.PI / 180) * Math.cos((end[0] - start[0]) * Math.PI / 180);
+            const bearing = Math.atan2(y, x) * 180 / Math.PI;
+
+            // Add Line
+            drawnFeatures.value.features.push({
+                type: 'Feature',
+                geometry: { type: 'LineString', coordinates: [start, end] },
+                properties: { color: drawColor.value }
+            });
+
+            // Add Head (Point with icon)
+            drawnFeatures.value.features.push({
+                type: 'Feature',
+                geometry: { type: 'Point', coordinates: end },
+                properties: { 
+                    color: drawColor.value, 
+                    label: drawLabel.value || '',
+                    bearing: bearing,
+                    icon: 'triangle' // We'll need to define this icon
+                }
+            });
+
+            drawLabel.value = '';
+            lastDrawCoords = null;
+            updateDrawSource();
+        }
+    }
 };
 
 // Box Selection Logic (MapLibre Version)
@@ -1542,8 +1794,14 @@ watch([() => activeExternalMapTimeSlider.value.low, () => activeExternalMapTimeS
     if (!activeExternalMapTimeSlider.value.visible) return;
     
     const slider = activeExternalMapTimeSlider.value;
-    slider.lowDisplay = new Date(slider.low).toLocaleDateString();
-    slider.highDisplay = new Date(slider.high).toLocaleDateString();
+    
+    // Ensure handles don't cross in a way that breaks logic (low > high)
+    // Most browser range inputs handle this if the other is set as min/max, 
+    // but with two full-range inputs, we want them to "push" each other or just cap.
+    // For now, let's just update displays.
+    
+    slider.lowDisplay = new Date(Math.min(slider.low, slider.high)).toLocaleDateString();
+    slider.highDisplay = new Date(Math.max(slider.low, slider.high)).toLocaleDateString();
     
     applyExternalMapTimeFilter();
 });
@@ -1553,12 +1811,13 @@ const applyExternalMapTimeFilter = () => {
     const item = activeExternalMapTimeSlider.value.mapItem;
     if (!item) return;
 
-    const { low, high } = activeExternalMapTimeSlider.value;
+    const t1 = Math.min(activeExternalMapTimeSlider.value.low, activeExternalMapTimeSlider.value.high);
+    const t2 = Math.max(activeExternalMapTimeSlider.value.low, activeExternalMapTimeSlider.value.high);
     
-    // Create a range filter: StartDate >= Low AND StartDate <= High
+    // Create a range filter: StartDate >= min AND StartDate <= max
     const filter = ['all', 
-        ['>=', ['get', item.timeFieldStart], low],
-        ['<=', ['get', item.timeFieldStart], high]
+        ['>=', ['get', item.timeFieldStart], t1],
+        ['<=', ['get', item.timeFieldStart], t2]
     ];
     
     const layers = activeExternalMaps.value[item.id].layers || [];
@@ -2559,12 +2818,14 @@ const initMap = async () => {
             center: [-18.48507, 38.81225],
             zoom: 2,
             antialias: true,
+            preserveDrawingBuffer: true, // Required for canvas.toDataURL()
             glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf'
         });
 
         map.addControl(new maplibregl.NavigationControl(), 'top-left');
         map.addControl(new maplibregl.FullscreenControl(), 'top-left');
         map.addControl(new BasemapControl(), 'top-left');
+        map.addControl(new PrintControl(), 'top-left');
 
         map.on('load', () => {
             // Add all basemaps explicitly
@@ -2594,7 +2855,93 @@ const initMap = async () => {
                 });
             });
 
+            // Add Arrowhead Icon (Triangle)
+            const triangle = new Uint8Array([
+                0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,
+                0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,
+                0,0,0,0,0,1,1,1,1,1,1,0,0,0,0,0,
+                0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0,
+                0,0,0,1,1,1,1,1,1,1,1,1,1,0,0,0,
+                0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,0,
+                0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,
+                0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,
+                0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,0,
+                0,0,0,1,1,1,1,1,1,1,1,1,1,0,0,0,
+                0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0,
+                0,0,0,0,0,1,1,1,1,1,1,0,0,0,0,0,
+                0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,
+                0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,
+                0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+            ].map(v => v ? 255 : 0));
+            // Use a simple 16x16 alpha mask basically
+            const rgba = new Uint8Array(16 * 16 * 4);
+            for (let i = 0; i < 256; i++) {
+                rgba[i * 4 + 0] = 255;
+                rgba[i * 4 + 1] = 255;
+                rgba[i * 4 + 2] = 255;
+                rgba[i * 4 + 3] = triangle[i];
+            }
+            map.addImage('triangle', { width: 16, height: 16, data: rgba }, { sdf: true });
+
             debugStatus.value = "Map loaded";
+            
+            // Add Drawing Sources/Layers
+            map.addSource('draw-source', {
+                type: 'geojson',
+                data: drawnFeatures.value
+            });
+
+            // Lines (Arrows)
+            map.addLayer({
+                id: 'draw-lines',
+                type: 'line',
+                source: 'draw-source',
+                filter: ['==', '$type', 'LineString'],
+                paint: {
+                    'line-color': ['get', 'color'],
+                    'line-width': 3
+                }
+            });
+
+            // Points
+            map.addLayer({
+                id: 'draw-points',
+                type: 'circle',
+                source: 'draw-source',
+                filter: ['==', '$type', 'Point'],
+                paint: {
+                    'circle-color': ['get', 'color'],
+                    'circle-radius': 6,
+                    'circle-stroke-width': 2,
+                    'circle-stroke-color': '#fff'
+                }
+            });
+
+            // Labels & Arrowheads
+            map.addLayer({
+                id: 'draw-labels',
+                type: 'symbol',
+                source: 'draw-source',
+                layout: {
+                    'text-field': ['get', 'label'],
+                    'text-font': ['Open Sans Semibold'],
+                    'text-size': 14,
+                    'text-offset': [0, 1.2],
+                    'text-anchor': 'top',
+                    'icon-image': ['get', 'icon'],
+                    'icon-allow-overlap': true,
+                    'text-allow-overlap': true,
+                    'icon-rotate': ['get', 'bearing'],
+                    'icon-rotation-alignment': 'map'
+                },
+                paint: {
+                    'text-color': ['get', 'color'],
+                    'text-halo-color': '#fff',
+                    'text-halo-width': 2
+                }
+            });
+
             setupMapEventHandlers();
             resolve();
         });
@@ -2605,6 +2952,7 @@ const initMap = async () => {
 
 const showFeaturePopup = (lngLat, props, title = 'Feature Details', icon = 'info', sourceLabel = 'Overlay Data') => {
     if (!map) return;
+    console.log("[Popup] Showing with props:", props);
 
     let rows = Object.entries(props).map(([key, val], idx) => {
         // Format dates if they look like epoch timestamps
@@ -2630,8 +2978,8 @@ const showFeaturePopup = (lngLat, props, title = 'Feature Details', icon = 'info
                 <i class="material-icons" style="font-size: 18px; color: #81c784;">${icon}</i>
                 <span class="premium-popup-title">${title}</span>
             </div>
-            <div class="premium-popup-body">
-                <table class="premium-popup-table">
+            <div class="premium-popup-body" style="max-height: 350px; overflow-y: scroll !important; display: block; background: #fff;">
+                <table class="premium-popup-table" style="width: 100%; border-collapse: collapse; table-layout: auto;">
                     ${rows}
                 </table>
             </div>
@@ -2666,6 +3014,11 @@ const setupMapEventHandlers = () => {
     });
 
     map.on('click', (e) => {
+        if (activeDrawTool.value) {
+            handleDrawClick(e);
+            return;
+        }
+
         const wrapped = e.lngLat.wrap();
         cursorCoords.value = { lat: wrapped.lat, lng: wrapped.lng };
 
@@ -3244,6 +3597,15 @@ const openOverlaysTab = () => {
     flex: 1;
     overflow-y: auto;
     padding: 10px;
+    scrollbar-width: thin;
+    scrollbar-color: #555 transparent;
+}
+.panel-content::-webkit-scrollbar {
+    width: 6px;
+}
+.panel-content::-webkit-scrollbar-thumb {
+    background: #555;
+    border-radius: 3px;
 }
 .panel-grid {
     display: grid;
@@ -3527,6 +3889,77 @@ const openOverlaysTab = () => {
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
+/* Range Slider Styles */
+.range-slider-wrapper {
+    position: relative;
+    height: 24px;
+    width: 100%;
+    margin: 10px 0;
+    display: flex;
+    align-items: center;
+}
+
+.range-slider-track {
+    position: absolute;
+    height: 6px;
+    width: 100%;
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    z-index: 1;
+}
+
+.range-slider-highlight {
+    position: absolute;
+    height: 6px;
+    background-color: #81c784;
+    border-radius: 3px;
+    z-index: 2;
+}
+
+.range-handle {
+    position: absolute;
+    width: 100%;
+    height: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    pointer-events: none;
+    -webkit-appearance: none;
+    appearance: none;
+    z-index: 3;
+    margin: 0;
+    cursor: pointer;
+}
+
+.range-handle::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #81c784;
+    border: 2px solid white;
+    cursor: pointer;
+    pointer-events: auto;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    transition: transform 0.15s ease-in-out;
+}
+
+.range-handle::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+}
+
+.range-handle::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #81c784;
+    border: 2px solid white;
+    cursor: pointer;
+    pointer-events: auto;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+}
 </style>
 
 <style>
@@ -3695,23 +4128,6 @@ const openOverlaysTab = () => {
     gap: 5px;
     padding: 5px;
 }
-</style>
-
-
-
-<style scoped>
-/* Collapsible Panel Styles */
-.heatmap-side-panel {
-    transition: transform 0.3s ease;
-}
-.heatmap-side-panel.collapsed {
-    transform: translateX(100%);
-    pointer-events: none; /* Let clicks pass through when hidden */
-}
-/* Ensure the tab is clickable */
-.panel-expand-tab {
-    pointer-events: auto;
-}
 
 /* Premium Popup Styles */
 .premium-popup .maplibregl-popup-content {
@@ -3719,6 +4135,8 @@ const openOverlaysTab = () => {
     padding: 0 !important;
     box-shadow: none !important;
     border: none !important;
+    max-height: 420px !important; /* Total height cap */
+    overflow-y: auto !important;
 }
 
 .premium-popup .maplibregl-popup-tip {
@@ -3754,17 +4172,21 @@ const openOverlaysTab = () => {
 }
 
 .premium-popup-body {
-    max-height: 300px;
-    overflow-y: auto;
-    background: #fff;
+    max-height: 350px !important;
+    min-height: 50px;
+    overflow-y: scroll !important; /* Force it to ALWAYS show */
+    overflow-x: hidden;
+    background: #fff !important;
     padding: 2px;
+    display: block;
+    scrollbar-width: auto !important;
 }
 
 .premium-popup-table {
     width: 100%;
     border-collapse: collapse;
     font-size: 11px;
-    table-layout: fixed;
+    table-layout: auto;
 }
 
 .premium-popup-footer {
@@ -3778,13 +4200,42 @@ const openOverlaysTab = () => {
 
 /* Custom Scrollbar for Popup Body */
 .premium-popup-body::-webkit-scrollbar {
-    width: 4px;
+    width: 12px !important; /* Much wider for visibility */
+    display: block !important;
 }
 .premium-popup-body::-webkit-scrollbar-track {
-    background: #f1f1f1;
+    background: #eeeeee !important;
+    border-radius: 6px;
 }
 .premium-popup-body::-webkit-scrollbar-thumb {
-    background: #ccc;
-    border-radius: 10px;
+    background: #888888 !important; /* Darker for contrast */
+    border-radius: 6px;
+    border: 2px solid #eeeeee;
+}
+.premium-popup-body::-webkit-scrollbar-thumb:hover {
+    background: #555555 !important;
+}
+</style>
+
+
+
+<style scoped>
+/* Collapsible Panel Styles */
+.heatmap-side-panel {
+    transition: transform 0.3s ease;
+}
+.heatmap-side-panel.collapsed {
+    transform: translateX(100%);
+    pointer-events: none; /* Let clicks pass through when hidden */
+}
+/* Ensure the tab is clickable */
+.panel-expand-tab {
+    pointer-events: auto;
+}
+.tool-group {
+    background: rgba(255,255,255,0.03);
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.05);
 }
 </style>
