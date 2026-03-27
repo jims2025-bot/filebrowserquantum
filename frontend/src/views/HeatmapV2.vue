@@ -1176,7 +1176,7 @@ const endSelection = (e) => {
     
     // Perform robust backend-driven bounding box inspection
     // This handles all underlying clustered folders correctly, matching Leaflet behavior.
-    inspectLocation(null, currentSource.value, null, { 
+    inspectLocation(currentPath.value, currentSource.value, null, { 
         lat: (sw.lat + ne.lat) / 2, 
         lon: (sw.lng + ne.lng) / 2, 
         minLat: sw.lat, 
@@ -2288,18 +2288,18 @@ const inspectLocation = async (path, sourceArg, directItems = null, coords = nul
                     // If only one folder, manage navigation
                     if (formattedSidePanelData.value.length === 1) {
                         const group = formattedSidePanelData.value[0];
-                        const isExplicitDrillDown = (path !== "" || clusterID !== "");
                         
-                        if (isExplicitDrillDown) {
-                            // Already in a folder? Just show the grid
-                            console.log('[Heatmap] Auto-opening folder grid. TotalImageCount:', group.totalImageCount);
-                            currentInspectionFolder.value = group;
-                        } else if (!group.isVirtual || group.isVirtual) {
-                            // New selection found exactly one folder? Auto-Drill to see images
-                            console.log('[Heatmap] Box selection found single folder. Auto-drilling...');
+                        // AUTO-DRILL: If we found exactly one folder, and it's not the one we are already looking AT, 
+                        // drill into it to see the actual images (Solves "Folders in Boxes" and "Single Folder Clusters")
+                        if (group.isVirtual && group.path !== path) {
+                            console.log(`[Heatmap] Single folder result (${group.path}) detected. Auto-drilling...`);
                             openFolderView(group);
                             return;
                         }
+
+                        // Otherwise, just show the grid for this group
+                        console.log('[Heatmap] Single item result (Already drilled or File). Showing grid.');
+                        currentInspectionFolder.value = group;
                     }
                     
                     sidePanelTitle.value = `Inspection (${sidePanelData.value.length})`;
